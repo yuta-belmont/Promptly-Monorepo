@@ -12,7 +12,6 @@ from pydantic import BaseModel
 
 # Classification agent instructions
 QUERY_CLASSIFIER_INSTRUCTIONS = """You are a query classifier that determines if a user message requires simple or complex processing.
-Today is {current_date} and the current time is {current_time}.
 SIMPLE: Standard conversation, greetings, factual questions, short responses.
 COMPLEX: Reasoning, planning, updating checklists, multi-step tasks, detailed explanations.
 
@@ -44,27 +43,28 @@ Keep your response under 30 words, just acknowledging the update."""
 
 # Checklist agent instructions
 CHECKLIST_AGENT_INSTRUCTIONS = """You are a checklist creation specialist.
-Today is {current_date} and the current time is {current_time}.
+Today is {current_day}, {current_date} and the current time is {current_time}.
 Your task is to create well-structured checklist items based on the user's request.
 Organize items by date in YYYY-MM-DD format.
-For each date, provide meaningful notes that summarize the tasks, provide broader context,
-and include relevant inspirational quotes or wisdom that relate to the day's activities.
-Each item should have a clear title and, when appropriate, a notification time in HH:MM format.
-Be specific, practical, and thorough in creating these checklist items."""
+For complicated tasks, or upon the user's request, provide meaningful notes that summarize the tasks,
+provide broader context, and include relevant inspirational quotes or wisdom that relate to the day's
+activities. Do not add notes for simple tasks.
+Each item should have a clear title and, when requested (generally don't), a notification time in HH:MM format.
+Be specific, practical, and thorough in creating these checklist items.
+DO NOT over complicate simple tasks. A single item per day with a title is preffered.
+"""
 
 CHECKLIST_FORMAT_INSTRUCTIONS = """Please format your response as a JSON object with the following structure:
 {
-  "checklists": {
     "YYYY-MM-DD": {
-      "notes": "Notes summarizing the day's tasks",
-      "items": [
+        "notes": "Notes summarizing the day's tasks",
+        "items": [
         {
-          "title": "Task description",
-          "notification": "HH:MM or null"
+            "title": "Task description",
+            "notification": "HH:MM or null"
         }
-      ]
+        ]
     }
-  }
 }
 
 Use the date in YYYY-MM-DD format as the key in the checklists object."""
@@ -390,11 +390,13 @@ class AIService:
         try:
             # Get current date and time
             now = datetime.now()
-            current_date = now.strftime("%A, %B %d, %Y")
+            current_day = now.strftime("%A")  # Get the day of the week (e.g., Monday, Tuesday)
+            current_date = now.strftime("%B %d, %Y")
             current_time = now.strftime("%I:%M %p")
             
             # Create a specialized system message for checklist generation
             checklist_system_message = CHECKLIST_AGENT_INSTRUCTIONS.format(
+                current_day=current_day,
                 current_date=current_date,
                 current_time=current_time
             )
