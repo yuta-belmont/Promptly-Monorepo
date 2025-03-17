@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Alfred</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="/static/js/auth.js"></script>
+    <style>
+        .login-container {
+            max-width: 500px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+        
+        input {
+            width: 100%;
+            padding: 0.8rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+        
+        .submit-btn {
+            background-color: #4A90E2;
+            color: white;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 4px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            font-size: 1rem;
+            transition: background-color 0.3s;
+        }
+        
+        .submit-btn:hover {
+            background-color: #3A80D2;
+        }
+        
+        .error-message {
+            color: #e74c3c;
+            margin-top: 1rem;
+            display: none;
+        }
+        
+        .success-message {
+            color: #2ecc71;
+            margin-top: 1rem;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo"><a href="/" style="color: inherit; text-decoration: none;">Alfred</a></div>
+        <nav id="main-nav">
+            <a href="/docs" class="nav-link">API Docs</a>
+            <a href="#" class="nav-link">About</a>
+            <!-- Auth links will be dynamically inserted here -->
+        </nav>
+    </header>
+
+    <main>
+        <div class="login-container">
+            <h1 style="margin-bottom: 1.5rem; color: #4A90E2;">Login to Alfred</h1>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="username">Email</label>
+                    <input type="email" id="username" name="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" class="submit-btn">Login</button>
+                <div id="error-message" class="error-message"></div>
+                <div id="success-message" class="success-message"></div>
+            </form>
+            <p style="margin-top: 1.5rem; text-align: center;">
+                Don't have an account? <a href="/static/register.html">Register</a>
+            </p>
+        </div>
+    </main>
+
+    <footer>
+        <div class="footer-content">
+            <div class="footer-logo">Alfred</div>
+            <div class="footer-links">
+                <a href="#">Privacy Policy</a>
+                <a href="#">Terms of Service</a>
+                <a href="#">Contact Us</a>
+            </div>
+            <div class="footer-copyright">
+                &copy; 2025 Alfred App. All rights reserved.
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Check if already logged in when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            // If already logged in, redirect to home
+            redirectIfLoggedIn();
+            
+            document.getElementById('login-form').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const username = document.getElementById('username').value;
+                const password = document.getElementById('password').value;
+                
+                const errorMessage = document.getElementById('error-message');
+                const successMessage = document.getElementById('success-message');
+                
+                errorMessage.style.display = 'none';
+                successMessage.style.display = 'none';
+                
+                try {
+                    // Create form data for OAuth2 password flow
+                    const formData = new URLSearchParams();
+                    formData.append('username', username);
+                    formData.append('password', password);
+                    
+                    const response = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: formData
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (!response.ok) {
+                        throw new Error(data.detail || 'Login failed');
+                    }
+                    
+                    // Store the token in localStorage
+                    localStorage.setItem('token', data.access_token);
+                    
+                    successMessage.textContent = 'Login successful! Redirecting...';
+                    successMessage.style.display = 'block';
+                    
+                    // Redirect to dashboard or home page after 500ms (reduced from 2000ms)
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 500);
+                    
+                } catch (error) {
+                    errorMessage.textContent = error.message;
+                    errorMessage.style.display = 'block';
+                }
+            });
+        });
+    </script>
+</body>
+</html> 
