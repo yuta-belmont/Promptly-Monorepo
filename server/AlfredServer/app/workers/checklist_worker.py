@@ -48,8 +48,6 @@ class ChecklistWorker:
             max_runtime: Maximum time in seconds to run before returning (None for infinite)
                          This controls how long we poll for tasks, not how long we process each task
         """
-        logger.info(f"Starting checklist worker with polling window: {max_runtime or 'infinite'} seconds")
-        logger.info(f"Maximum concurrent tasks: {MAX_CONCURRENT_TASKS}")
         
         # Track start time for the polling window
         start_time = time.time() if max_runtime else None
@@ -63,16 +61,14 @@ class ChecklistWorker:
                 remaining_time = max_runtime - elapsed_time if max_runtime else None
                 
                 if max_runtime and elapsed_time > max_runtime:
-                    logger.info(f"Reached max polling window of {max_runtime} seconds, processed {tasks_processed} tasks, returning")
-                    # Wait for any remaining tasks to complete before returning
+                    # Wait for any remaining tasks to complete before shutting down
                     if pending_tasks:
-                        logger.info(f"Waiting for {len(pending_tasks)} pending tasks to complete before returning")
+                        logger.info(f"Waiting for {len(pending_tasks)} pending tasks to complete before shutting down")
                         await asyncio.gather(*pending_tasks)
                     return
                 
                 # Log current task status
                 active_task_count = len(self.active_tasks)
-                logger.info(f"Active tasks: {active_task_count}/{MAX_CONCURRENT_TASKS}, processed so far: {tasks_processed}")
                 
                 # Calculate available capacity
                 available_capacity = MAX_CONCURRENT_TASKS - active_task_count
@@ -80,7 +76,6 @@ class ChecklistWorker:
                 if available_capacity > 0:
                     # Get pending tasks up to available capacity
                     fetch_limit = min(available_capacity, 10)  # Fetch at most 10 at a time to avoid large batches
-                    logger.info(f"Checking Firestore for new tasks (available capacity: {available_capacity}, fetch limit: {fetch_limit})")
                     
                     tasks = self.firebase_service.get_pending_tasks('checklist_tasks', limit=fetch_limit)
                     
@@ -141,7 +136,7 @@ class ChecklistWorker:
         try:
             # Use semaphore to limit concurrency
             async with self.semaphore:
-                logger.info(f"Starting task {task_id} with max processing time of {MAX_TASK_PROCESSING_TIME} seconds")
+                logger.info(f"Starting task {task_id}")
                 
                 try:
                     # Process with timeout
@@ -178,8 +173,6 @@ class ChecklistWorker:
         # Convert Firestore data to JSON-serializable format
         task_data = convert_firestore_data(task_data)
         
-        logger.info(f"Processing task {task_id}")
-        
         try:
             # Extract task data
             user_id = task_data.get('user_id')
@@ -188,13 +181,11 @@ class ChecklistWorker:
             message_content = task_data.get('message_content')
             message_history = task_data.get('message_history', [])
             
-            logger.info(f"Task {task_id}: Generating checklist for message: {message_content[:50]}...")
             # Generate checklist
             checklist_data = await self.ai_service.generate_checklist(
                 message=message_content,
                 message_history=message_history
             )
-            logger.info(f"Task {task_id}: Generated checklist with {len(checklist_data.get('items', []))} items")
             
             if checklist_data:
                 # Create database session
@@ -202,7 +193,6 @@ class ChecklistWorker:
                 try:
                     # Get the next sequence number
                     next_sequence = crud.chat_message.get_last_message_sequence(db, chat_id=chat_id) + 1
-                    logger.info(f"Task {task_id}: Creating checklist message with sequence {next_sequence}")
                     
                     # Create a message for the checklist data
                     checklist_message = schemas.ChatMessageCreate(
@@ -212,10 +202,8 @@ class ChecklistWorker:
                         sequence=next_sequence
                     )
                     checklist_message_db = crud.chat_message.create(db, obj_in=checklist_message)
-                    logger.info(f"Task {task_id}: Created checklist message {checklist_message_db.id} in PostgreSQL")
                     
                     # Store the checklist in Firestore using the new date-sharded method
-                    logger.info(f"Task {task_id}: Storing checklist in Firestore...")
                     self.firebase_service.store_checklist(
                         user_id=user_id,
                         chat_id=chat_id,
@@ -233,7 +221,6 @@ class ChecklistWorker:
                             'checklist_message_id': checklist_message_db.id
                         }
                     )
-                    logger.info(f"Task {task_id}: Updated task status to completed in Firestore")
                     
                 finally:
                     db.close()

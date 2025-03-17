@@ -56,14 +56,16 @@ DO NOT over complicate simple tasks. A single item per day with a title is preff
 
 CHECKLIST_FORMAT_INSTRUCTIONS = """Please format your response as a JSON object with the following structure:
 {
-    "YYYY-MM-DD": {
-        "notes": "Notes summarizing the day's tasks",
-        "items": [
-        {
-            "title": "Task description",
-            "notification": "HH:MM or null"
+    "checklists": {
+        "YYYY-MM-DD": {
+            "notes": "Notes summarizing the day's tasks",
+            "items": [
+            {
+                "title": "Task description",
+                "notification": "HH:MM or null"
+            }
+            ]
         }
-        ]
     }
 }
 
