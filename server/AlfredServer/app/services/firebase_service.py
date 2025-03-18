@@ -44,16 +44,12 @@ class FirebaseService:
             # Get the Firebase project ID from environment variables
             project_id = os.getenv("FIREBASE_PROJECT_ID")
             
-            print(f"[FIREBASE] Initializing Firebase with project ID: {project_id}")
-            print(f"[FIREBASE] Service account path: {service_account_path}")
-            
             # Check if the file exists
             if not os.path.exists(service_account_path):
                 logger.warning(f"Firebase credentials file not found at {service_account_path}")
                 
                 if project_id:
                     logger.info(f"Using application default credentials with project ID: {project_id}")
-                    print(f"[FIREBASE] Using application default credentials with project ID: {project_id}")
                     # Initialize with application default credentials and project ID
                     if not firebase_admin._apps:
                         firebase_admin.initialize_app(options={
@@ -61,13 +57,11 @@ class FirebaseService:
                         })
                 else:
                     logger.warning("Using application default credentials without project ID")
-                    print(f"[FIREBASE] Using application default credentials without project ID")
                     # Initialize without credentials (will use application default credentials)
                     if not firebase_admin._apps:
                         firebase_admin.initialize_app()
             else:
                 logger.info(f"Using service account credentials from {service_account_path}")
-                print(f"[FIREBASE] Using service account credentials from {service_account_path}")
                 # Initialize with service account credentials
                 if not firebase_admin._apps:
                     cred = credentials.Certificate(service_account_path)
@@ -77,7 +71,6 @@ class FirebaseService:
             self.db = firestore.client()
             self._initialized = True
             logger.info("Firebase initialized successfully")
-            print(f"[FIREBASE] Firebase initialized successfully with project: {project_id}")
             
         except Exception as e:
             logger.error(f"Error initializing Firebase: {e}")
@@ -122,7 +115,6 @@ class FirebaseService:
             }
             task_ref.set(task_data)
             
-            print(f"[FIREBASE] Added checklist task {task_ref.id} for user {user_id}, chat {chat_id}, message {message_id}")
             logger.info(f"Added checklist task {task_ref.id} for user {user_id}, chat {chat_id}")
             return task_ref.id
             
@@ -162,7 +154,6 @@ class FirebaseService:
             # Update the task
             task_ref.update(update_data)
             
-            print(f"[FIREBASE] Updated {collection} task {task_id} status to {status}")
             logger.info(f"Updated {collection} task {task_id} status to {status}")
             
         except Exception as e:
@@ -254,7 +245,6 @@ class FirebaseService:
                 'updated_at': firestore.SERVER_TIMESTAMP
             })
             
-            print(f"[FIREBASE] Updated checklist task {task_id} with message ID {message_id}")
             logger.info(f"Updated checklist task {task_id} with message ID {message_id}")
             
         except Exception as e:
@@ -290,7 +280,6 @@ class FirebaseService:
             # Set the document
             task_ref.set(task_data)
             
-            print(f"[FIREBASE] Stored checklist data for user {user_id}, chat {chat_id}")
             logger.info(f"Stored checklist data for user {user_id}, chat {chat_id}")
             
         except Exception as e:

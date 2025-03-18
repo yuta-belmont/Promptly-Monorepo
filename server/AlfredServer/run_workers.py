@@ -91,7 +91,6 @@ def start_checklist_worker(worker_id=0):
     Args:
         worker_id: ID of this worker instance, passed to run_checklist_worker
     """
-    logger.info(f"Starting checklist worker {worker_id}")
     asyncio.run(run_checklist_worker(worker_id))
 
 def signal_handler(sig, frame):

@@ -113,7 +113,6 @@ async def send_message(
     
     For AI responses, it will simply store the message in the database.
     """
-    print(f"[API] Received message from user {current_user.id} for chat {chat_id}: {message_in.content[:50]}...")
     
     try:
         # Check if the chat exists and belongs to the user
@@ -135,7 +134,6 @@ async def send_message(
             sequence=next_sequence
         )
         user_message_db = crud.chat_message.create(db, obj_in=user_message)
-        print(f"[API] Created user message {user_message_db.id} in PostgreSQL with sequence {next_sequence}")
         
         # Get all messages for this chat to provide context
         all_messages = crud.chat_message.get_by_chat_id(db, chat_id=chat_id)
@@ -151,59 +149,67 @@ async def send_message(
         # Initialize task_info dictionary
         task_info = {}
         
-        # Generate AI response immediately for all queries (no more complex query handling)
-        print(f"[API] Processing query immediately")
+        # Generate AI response immediately for all queries
         # Get the next sequence number for the AI response
         next_sequence = crud.chat_message.get_last_message_sequence(db, chat_id=chat_id) + 1
         
-        # Generate AI response
-        ai_response = await ai_service.generate_response(
+        # Generate AI response and get checklist classification in one call
+        ai_response, needs_checklist = await ai_service.generate_response_with_classification(
             message=message_in.content,
             user_id=str(current_user.id),
             message_history=ai_messages,
             user_full_name=current_user.full_name
         )
         
-        # Check if we should generate a checklist
-        needs_checklist = await ai_service.should_generate_checklist(
-            message=message_in.content,
-            message_history=ai_messages
-        )
-        print(f"[API] Needs checklist: {needs_checklist}")
-        
         # If this is a checklist request, create a Firestore task for that
         if needs_checklist:
-            # Log the message history being sent to Firebase
-            print(f"[API] Sending the following message history to Firebase:")
-            for i, msg in enumerate(ai_messages):
-                print(f"[API] Message {i}: role={msg['role']}, content={msg['content'][:50]}...")
-            
-            checklist_task_id = firebase_service.add_checklist_task(
-                user_id=str(current_user.id),
-                chat_id=chat_id,
-                message_id=user_message_db.id,  # Use the user message ID
-                message_content=message_in.content,
+            # First, check if we need more information before generating a checklist
+            needs_more_info = await ai_service.should_inquire_further(
+                message=message_in.content,
                 message_history=ai_messages
             )
             
-            # Store the checklist task ID in the task_info dictionary
-            task_info["checklist_task_id"] = checklist_task_id
-            print(f"[API] Created checklist task with ID: {checklist_task_id}")
-            
-            # Create a structured response with the checklist task ID
-            structured_response = json.dumps({
-                "message": ai_response,
-                "checklist_task_id": checklist_task_id
-            })
-            print(f"[API] Structured response: {structured_response[:100]}...")
-            
-            # Create AI response message with the structured content
-            ai_message = schemas.ChatMessageCreate(
-                chat_id=chat_id,
-                role="assistant",
-                content=structured_response,
-                sequence=next_sequence
-            )
+            if needs_more_info:
+                # Generate an inquiry response instead of creating a checklist task
+                inquiry_response = await ai_service.generate_inquiry_response(
+                    message=message_in.content,
+                    message_history=ai_messages,
+                    user_full_name=current_user.full_name
+                )
+                
+                # Create AI response message with the inquiry response
+                ai_message = schemas.ChatMessageCreate(
+                    chat_id=chat_id,
+                    role="assistant",
+                    content=inquiry_response,
+                    sequence=next_sequence
+                )
+            else:
+                # We have enough information, proceed with creating a checklist task
+                checklist_task_id = firebase_service.add_checklist_task(
+                    user_id=str(current_user.id),
+                    chat_id=chat_id,
+                    message_id=user_message_db.id,  # Use the user message ID
+                    message_content=message_in.content,
+                    message_history=ai_messages
+                )
+                
+                # Store the checklist task ID in the task_info dictionary
+                task_info["checklist_task_id"] = checklist_task_id
+                
+                # Create a structured response with the checklist task ID
+                structured_response = json.dumps({
+                    "message": ai_response,
+                    "checklist_task_id": checklist_task_id
+                })
+                
+                # Create AI response message with the structured content
+                ai_message = schemas.ChatMessageCreate(
+                    chat_id=chat_id,
+                    role="assistant",
+                    content=structured_response,
+                    sequence=next_sequence
+                )
         else:
             # Create AI response message with the raw content
             ai_message = schemas.ChatMessageCreate(
@@ -215,7 +221,6 @@ async def send_message(
         
         # Create the message in the database
         ai_message_db = crud.chat_message.create(db, obj_in=ai_message)
-        print(f"[API] Created AI response message {ai_message_db.id} in PostgreSQL with sequence {next_sequence}")
         
         try:
             # Update chat's updated_at timestamp and title
