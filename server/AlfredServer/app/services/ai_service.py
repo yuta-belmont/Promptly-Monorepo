@@ -45,9 +45,9 @@ Analyze if the user's message, combined with chat history, provides enough speci
 - Enough context from previous messages to infer missing details
 - Sufficient clarity about what the user wants to accomplish
 
-Remember that the purpose of creating a checklist is to track actionable items with concrete deadlines or timeframes.
+We require a clear time frame, specific tasks, and enough context to infer missing details so that we can createa a useful detailed planner.
 
-Respond with ONLY 'sufficient' if we have enough information to create a useful checklist, or 'insufficient' if we need to ask for more details."""
+Respond with ONLY one word:'enough' or 'more'."""
 
 # -------------------------------------------------------------------------
 # Message Agent - Generates conversational responses
@@ -383,9 +383,9 @@ class AIService:
             result = response.choices[0].message.content.strip().lower()
             
             # Determine the final result
-            needs_more_info = 'insufficient' in result
+            needs_more_info = 'more' in result
             
-            print(f"Output: Needs more information: {needs_more_info} (raw: '{result}')")
+            print(f"Output: Needs more information: {needs_more_info}")
             print(f"Context msgs: {len(context_messages)}")
             print(f"Model: gpt-4o-mini-2024-07-18")
             print("===========================================\n")
@@ -822,4 +822,253 @@ class AIService:
             return f"{greeting}! I'm here to help you. What specific assistance do you need today?"
         
         # Default fallback response
-        return f"{greeting}! I'm here to help you with your tasks and objectives. How can I assist you today?" 
+        return f"{greeting}! I'm here to help you with your tasks and objectives. How can I assist you today?"
+        
+    async def _generate_checklist_acknowledgment(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, user_full_name: Optional[str] = None) -> str:
+        """
+        Generate a simple acknowledgment for checklist creation.
+        Uses the MESSAGE_AGENT_BASE_INSTRUCTIONS + MESSAGE_AGENT_CHECKLIST_INSTRUCTIONS.
+        
+        Args:
+            message: The user's message
+            message_history: Previous message history for context
+            user_full_name: The user's full name for personalization
+            
+        Returns:
+            str: A brief acknowledgment message
+        """
+        try:
+            # Get current date and time
+            now = datetime.now()
+            current_date = now.strftime("%A, %B %d, %Y")
+            current_time = now.strftime("%I:%M %p")
+            
+            # Create a personalized system message with date/time combining both instruction sets
+            system_message = MESSAGE_AGENT_BASE_INSTRUCTIONS.format(
+                user_full_name=user_full_name or 'the user',
+                current_date=current_date,
+                current_time=current_time
+            ) + MESSAGE_AGENT_CHECKLIST_INSTRUCTIONS
+            
+            # Create messages array
+            api_messages = [
+                {"role": "system", "content": system_message}
+            ]
+            
+            # Prepare context from message history
+            context_messages = self._prepare_context_messages(message_history)
+            
+            # Add context messages if available
+            if context_messages:
+                api_messages.extend(context_messages)
+            
+            # Add the current message
+            api_messages.append({"role": "user", "content": message})
+            
+            # Always use mini model for checklist acknowledgments
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini-2024-07-18",
+                messages=api_messages,
+                temperature=0.7,
+            )
+            
+            acknowledgment = response.choices[0].message.content
+            
+            # Log the response
+            print("\n=== AGENT: Checklist Acknowledgment Generator ===")
+            print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
+            print(f"Output: \"{acknowledgment[:75]}{'...' if len(acknowledgment) > 75 else ''}\"")
+            print(f"Context msgs: {len(context_messages)}")
+            print(f"Model: gpt-4o-mini-2024-07-18")
+            print("=======================================\n")
+            
+            return acknowledgment
+            
+        except Exception as e:
+            print(f"Error generating checklist acknowledgment: {e}")
+            # Return a simple hardcoded acknowledgment
+            greeting = f"{user_full_name.split()[0] if user_full_name else 'there'}"
+            fallback = f"I'll update your planner with those items."
+            
+            # Log the fallback
+            print(f"Output: Using fallback acknowledgment: \"{fallback}\"")
+            print("=======================================\n")
+            
+            return fallback
+    
+    async def _generate_standard_response(self, message: str, query_type: str, 
+                                         message_history: Optional[List[Dict[str, Any]]] = None,
+                                         user_full_name: Optional[str] = None) -> str:
+        """
+        Generate a standard response for non-checklist queries based on complexity.
+        Uses MESSAGE_AGENT_BASE_INSTRUCTIONS.
+        
+        Args:
+            message: The user's message
+            query_type: Classification of the query ('simple' or 'complex')
+            message_history: Previous message history for context
+            user_full_name: The user's full name for personalization
+            
+        Returns:
+            str: A response message
+        """
+        try:
+            # Get current date and time
+            now = datetime.now()
+            current_date = now.strftime("%A, %B %d, %Y")
+            current_time = now.strftime("%I:%M %p")
+            
+            # Create a personalized system message with date/time
+            system_message = MESSAGE_AGENT_BASE_INSTRUCTIONS.format(
+                user_full_name=user_full_name or 'the user',
+                current_date=current_date,
+                current_time=current_time
+            )
+            
+            # Create messages array
+            api_messages = [
+                {"role": "system", "content": system_message}
+            ]
+            
+            # Prepare context from message history
+            context_messages = self._prepare_context_messages(message_history)
+            
+            # Add context messages if available
+            if context_messages:
+                api_messages.extend(context_messages)
+            else:
+                # If no history provided, just add the current message
+                api_messages.append({"role": "user", "content": message})
+            
+            # Choose model based on query complexity
+            message_model = "gpt-4o-2024-11-20" if query_type == "complex" else "gpt-4o-mini-2024-07-18"
+            
+            try:
+                # Generate response
+                response = self.client.chat.completions.create(
+                    model=message_model,
+                    messages=api_messages,
+                    temperature=0.7,
+                )
+                
+                conversation_response = response.choices[0].message.content
+                
+                # Log the response
+                print("\n=== AGENT: Standard Response Generator ===")
+                print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
+                print(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
+                print(f"Context msgs: {len(context_messages)}")
+                print(f"Model: {message_model}")
+                print("===============================\n")
+                
+                return conversation_response
+                
+            except Exception as e:
+                # If we hit a rate limit or quota error, try falling back to GPT-4o-mini
+                print(f"Error with {message_model}, falling back to gpt-4o-mini-2024-07-18: {e}")
+                try:
+                    # Try with the fallback model
+                    response = self.client.chat.completions.create(
+                        model="gpt-4o-mini-2024-07-18",
+                        messages=api_messages,
+                        temperature=0.7,
+                    )
+                    
+                    conversation_response = response.choices[0].message.content
+                    
+                    print(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
+                    print(f"Context msgs: {len(context_messages)}")
+                    print(f"Model: gpt-4o-mini-2024-07-18 (fallback)")
+                    print("===============================\n")
+                    
+                    return conversation_response
+                    
+                except Exception as fallback_error:
+                    # If even the fallback fails, provide a hardcoded response
+                    print(f"Fallback model also failed: {fallback_error}")
+                    fallback_message = self._generate_fallback_response(message, user_full_name)
+                    
+                    print(f"Output: \"{fallback_message[:75]}{'...' if len(fallback_message) > 75 else ''}\"")
+                    print(f"Context msgs: {len(context_messages)}")
+                    print(f"Model: hardcoded fallback")
+                    print("===============================\n")
+                    
+                    return fallback_message
+        except Exception as e:
+            print(f"Error in _generate_standard_response: {e}")
+            # Provide a fallback response
+            fallback_message = self._generate_fallback_response(message, user_full_name)
+            
+            print(f"Output: \"{fallback_message[:75]}{'...' if len(fallback_message) > 75 else ''}\"")
+            print(f"Context msgs: 0")
+            print(f"Model: hardcoded fallback (error)")
+            print("===============================\n")
+            
+            return fallback_message
+    
+    async def generate_optimized_response(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, 
+                                         user_full_name: Optional[str] = None, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Optimized response generation that avoids unnecessary API calls.
+        Makes decisions in the correct sequence to ensure no wasted API calls.
+        
+        Args:
+            message: The user's message
+            message_history: Previous message history for context
+            user_full_name: The user's full name for personalization
+            user_id: The user's ID
+            
+        Returns:
+            Dict[str, Any]: A dictionary containing:
+                - 'response_text': The text response to send to the user
+                - 'needs_checklist': Whether a checklist is needed
+                - 'needs_more_info': Whether more information is needed before generating a checklist
+                - 'query_type': Classification of the query (simple/complex)
+        """
+        result = {
+            'response_text': '',
+            'needs_checklist': False,
+            'needs_more_info': False,
+            'query_type': 'simple'
+        }
+        
+        try:
+            # Step 1: First determine query complexity (ALWAYS needed for model selection)
+            result['query_type'] = await self.classify_query(message, message_history)
+            
+            # Step 2: Check if this is a checklist request
+            result['needs_checklist'] = await self.should_generate_checklist(message, message_history)
+            
+            # Step 3: If it's a checklist request, check if we need more information
+            if result['needs_checklist']:
+                result['needs_more_info'] = await self.should_inquire_further(message, message_history)
+                
+                if result['needs_more_info']:
+                    # Generate an inquiry response asking for more details
+                    result['response_text'] = await self.generate_inquiry_response(message, message_history, user_full_name)
+                else:
+                    # It's a checklist and we have enough info, generate acknowledgment
+                    # Using the dedicated method with proper instructions
+                    result['response_text'] = await self._generate_checklist_acknowledgment(message, message_history, user_full_name)
+            else:
+                # Not a checklist request, generate standard response based on query complexity
+                result['response_text'] = await self._generate_standard_response(
+                    message, result['query_type'], message_history, user_full_name
+                )
+            
+            return result
+            
+        except Exception as e:
+            print(f"Error in generate_optimized_response: {e}")
+            # Provide a fallback response
+            result['response_text'] = self._generate_fallback_response(message, user_full_name)
+            
+            # Log the error fallback
+            print("\n=== AGENT: Optimized Response (Error) ===")
+            print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
+            print(f"Output: \"{result['response_text'][:75]}{'...' if len(result['response_text']) > 75 else ''}\"")
+            print(f"Context msgs: 0")
+            print(f"Model: hardcoded fallback")
+            print("===============================\n")
+            
+            return result 

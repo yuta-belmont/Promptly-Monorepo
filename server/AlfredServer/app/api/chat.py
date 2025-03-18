@@ -149,69 +149,76 @@ async def send_message(
         # Initialize task_info dictionary
         task_info = {}
         
-        # Generate AI response immediately for all queries
         # Get the next sequence number for the AI response
         next_sequence = crud.chat_message.get_last_message_sequence(db, chat_id=chat_id) + 1
         
-        # Generate AI response and get checklist classification in one call
-        ai_response, needs_checklist = await ai_service.generate_response_with_classification(
+        # -----------------------------------------------------------------
+        # Optimized Response Generation
+        # -----------------------------------------------------------------
+        # This approach eliminates unnecessary OpenAI API calls by:
+        # 1. First determining if a message needs checklist generation
+        # 2. Only then checking if more information is needed
+        # 3. Generating only the appropriate response (standard, checklist acknowledgment, or inquiry)
+        # 
+        # Previous approach made redundant API calls - generating responses that were
+        # discarded when we discovered more information was needed.
+        # 
+        # The optimized response contains:
+        # - response_text: The appropriate message to send to the user
+        # - needs_checklist: Whether this is a checklist request
+        # - needs_more_info: Whether we need more details before generating a checklist
+        # - query_type: Classification of query complexity ('simple' or 'complex')
+        # -----------------------------------------------------------------
+        result = await ai_service.generate_optimized_response(
             message=message_in.content,
-            user_id=str(current_user.id),
             message_history=ai_messages,
-            user_full_name=current_user.full_name
+            user_full_name=current_user.full_name,
+            user_id=str(current_user.id)
         )
         
-        # If this is a checklist request, create a Firestore task for that
-        if needs_checklist:
-            # First, check if we need more information before generating a checklist
-            needs_more_info = await ai_service.should_inquire_further(
-                message=message_in.content,
+        # Extract the results from the optimized response
+        ai_response = result['response_text']
+        needs_checklist = result['needs_checklist']
+        needs_more_info = result['needs_more_info']
+        query_type = result['query_type']
+        
+        # Log the decision flow for debugging
+        print(f"\n=== API Decision Flow ===")
+        print(f"Query Type: {query_type}")
+        print(f"Needs Checklist: {needs_checklist}")
+        print(f"Needs More Info: {needs_more_info}")
+        print("======================\n")
+        
+        # If this is a checklist request and we have enough information, create a task
+        if needs_checklist and not needs_more_info:
+            # Create a checklist task
+            checklist_task_id = firebase_service.add_checklist_task(
+                user_id=str(current_user.id),
+                chat_id=chat_id,
+                message_id=user_message_db.id,  # Use the user message ID
+                message_content=message_in.content,
                 message_history=ai_messages
             )
             
-            if needs_more_info:
-                # Generate an inquiry response instead of creating a checklist task
-                inquiry_response = await ai_service.generate_inquiry_response(
-                    message=message_in.content,
-                    message_history=ai_messages,
-                    user_full_name=current_user.full_name
-                )
-                
-                # Create AI response message with the inquiry response
-                ai_message = schemas.ChatMessageCreate(
-                    chat_id=chat_id,
-                    role="assistant",
-                    content=inquiry_response,
-                    sequence=next_sequence
-                )
-            else:
-                # We have enough information, proceed with creating a checklist task
-                checklist_task_id = firebase_service.add_checklist_task(
-                    user_id=str(current_user.id),
-                    chat_id=chat_id,
-                    message_id=user_message_db.id,  # Use the user message ID
-                    message_content=message_in.content,
-                    message_history=ai_messages
-                )
-                
-                # Store the checklist task ID in the task_info dictionary
-                task_info["checklist_task_id"] = checklist_task_id
-                
-                # Create a structured response with the checklist task ID
-                structured_response = json.dumps({
-                    "message": ai_response,
-                    "checklist_task_id": checklist_task_id
-                })
-                
-                # Create AI response message with the structured content
-                ai_message = schemas.ChatMessageCreate(
-                    chat_id=chat_id,
-                    role="assistant",
-                    content=structured_response,
-                    sequence=next_sequence
-                )
+            # Store the checklist task ID in the task_info dictionary
+            task_info["checklist_task_id"] = checklist_task_id
+            
+            # Create a structured response with the checklist task ID
+            structured_response = json.dumps({
+                "message": ai_response,
+                "checklist_task_id": checklist_task_id
+            })
+            
+            # Create AI response message with the structured content
+            ai_message = schemas.ChatMessageCreate(
+                chat_id=chat_id,
+                role="assistant",
+                content=structured_response,
+                sequence=next_sequence
+            )
         else:
             # Create AI response message with the raw content
+            # This handles both standard responses and inquiry responses
             ai_message = schemas.ChatMessageCreate(
                 chat_id=chat_id,
                 role="assistant",
