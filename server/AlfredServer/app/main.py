@@ -4,14 +4,29 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, FileResponse
 import os
+import logging
 
-from app.api import ai, auth, users, chat
+from app.api import auth, users, chat
 from app.core.config import settings
 from app.db.base import Base
 from app.db.session import engine
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("alfred")
+
 # Create database tables
 Base.metadata.create_all(bind=engine)
+
+# Log important settings at startup
+logger.info("⚙️ SERVER SETTINGS ⚙️")
+logger.info(f"API Version: {settings.API_V1_STR}")
+logger.info(f"Token Expiration: {settings.ACCESS_TOKEN_EXPIRE_MINUTES} minutes")
+# Don't log the actual SECRET_KEY, just whether it's from env or random
+if os.getenv("SECRET_KEY"):
+    logger.info("SECRET_KEY: Using persistent key from environment")
+else:
+    logger.info("⚠️ SECRET_KEY: Using randomly generated key - tokens will invalidate on restart!")
 
 app = FastAPI(
     title="Alfred - Your Personal Life Assistant",
@@ -43,5 +58,4 @@ def health_check():
 # Include routers
 app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(users.router, prefix=settings.API_V1_STR)
-app.include_router(ai.router, prefix=settings.API_V1_STR)
 app.include_router(chat.router, prefix=settings.API_V1_STR) 

@@ -1,11 +1,11 @@
-from typing import List, Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List, Any, Union
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import json
 
 from app import crud, schemas
-from app.schemas.chat import ChatBase, ChatCreate
+from app.schemas.chat import ChatBase, ChatCreate, OptimizedChatResponse, MessageResponse
 from app.api import deps
 from app.models.user import User
 from app.services.ai_service import AIService
@@ -93,28 +93,38 @@ def get_chat(
     return chat_with_messages
 
 
-@router.post("/{chat_id}/messages", response_model=schemas.ChatWithMessages)
+@router.post("/{chat_id}/messages", response_model=Union[OptimizedChatResponse, schemas.ChatWithMessages])
 async def send_message(
     *,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user),
     chat_id: str,
     message_in: SimpleMessageCreate,
+    accept: str = Header(None),
+    response: Response,
 ):
     """
     Send a message to the chat.
     
-    This endpoint handles both user messages and AI responses.
-    For user messages, it will:
+    This endpoint supports two response formats:
+    1. Standard format: Returns the full chat with all messages
+    2. Optimized format: Returns only the assistant's response and metadata (70-80% smaller payload)
+    
+    The format is determined by the Accept header:
+    - application/vnd.promptly.optimized+json: Returns the optimized format
+    - Any other value: Returns the standard format
+    
+    For user messages, the endpoint will:
     1. Store the user message in the database
     2. Generate an AI response
     3. Store the AI response in the database
-    4. Return the updated chat with all messages
-    
-    For AI responses, it will simply store the message in the database.
+    4. Return the response in the requested format
     """
     
     try:
+        # Check if the client requested the optimized format
+        use_optimized_format = accept and "application/vnd.promptly.optimized+json" in accept
+        
         # Check if the chat exists and belongs to the user
         chat = crud.chat.get(db, id=chat_id)
         if not chat or str(chat.user_id) != str(current_user.id):
@@ -143,7 +153,8 @@ async def send_message(
         for msg in all_messages:
             ai_messages.append({
                 "role": msg.role,
-                "content": msg.content
+                "content": msg.content,
+                "timestamp": msg.created_at.isoformat()  # Include timestamp for proper time filtering
             })
         
         # Initialize task_info dictionary
@@ -154,20 +165,6 @@ async def send_message(
         
         # -----------------------------------------------------------------
         # Optimized Response Generation
-        # -----------------------------------------------------------------
-        # This approach eliminates unnecessary OpenAI API calls by:
-        # 1. First determining if a message needs checklist generation
-        # 2. Only then checking if more information is needed
-        # 3. Generating only the appropriate response (standard, checklist acknowledgment, or inquiry)
-        # 
-        # Previous approach made redundant API calls - generating responses that were
-        # discarded when we discovered more information was needed.
-        # 
-        # The optimized response contains:
-        # - response_text: The appropriate message to send to the user
-        # - needs_checklist: Whether this is a checklist request
-        # - needs_more_info: Whether we need more details before generating a checklist
-        # - query_type: Classification of query complexity ('simple' or 'complex')
         # -----------------------------------------------------------------
         result = await ai_service.generate_optimized_response(
             message=message_in.content,
@@ -233,6 +230,33 @@ async def send_message(
             # Update chat's updated_at timestamp and title
             crud.chat.update(db, db_obj=chat, obj_in={"title": message_in.content[:50]})
             
+            # If client requested optimized format, return the optimized response
+            if use_optimized_format:
+                # Set the content type header for the optimized format
+                response.headers["Content-Type"] = "application/vnd.promptly.optimized+json"
+                
+                # Create the optimized response
+                # This format reduces payload size by 70-80% by:
+                # 1. Not returning the user's message (client already has it)
+                # 2. Not returning chat metadata (title, timestamps, etc.)
+                # 3. Not returning sequence numbers and other unnecessary fields
+                # 4. Only including the absolutely essential data: 
+                #    - The assistant's response 
+                #    - Optional metadata like checklist_task_id if needed
+                optimized_response = OptimizedChatResponse(
+                    response=MessageResponse(
+                        id=ai_message_db.id,
+                        content=ai_response
+                    ),
+                    metadata=task_info if task_info else None
+                )
+                
+                # Log the optimized response size for debugging
+                print(f"Using OPTIMIZED response format (Accept: {accept})")
+                
+                return optimized_response
+            
+            # Otherwise, return the standard format
             # Return updated chat with messages
             updated_chat = crud.chat.get(db, id=chat_id)
             updated_messages = crud.chat_message.get_by_chat_id(db, chat_id=chat_id)

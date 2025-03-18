@@ -22,32 +22,43 @@ Respond with ONLY one word: either 'simple' or 'complex'."""
 # -------------------------------------------------------------------------
 # Checklist Classifier Agent - Determines if a checklist should be generated
 # -------------------------------------------------------------------------
-CHECKLIST_CLASSIFIER_INSTRUCTIONS = """You are a classifier that determines if a response should include checklist items.
-Today is {current_date} and the current time is {current_time}.
-Determine if the user's message is requesting or implying the creation of:
-- A to-do list or checklist
-- Task reminders
-- Action items
-- Scheduled activities
-- Any form of trackable items that should be added to their planner
+CHECKLIST_CLASSIFIER_INSTRUCTIONS = """You are a classifier agent who helps determine if a user wants to add items to a digital planner/calendar/checklist.
 
-Respond with ONLY 'yes' if checklist items should be generated, or 'no' if not."""
+Classify the following as 'yes' because they imply the user wants to add items to their planner/calendar/checklist:
+The user implying they want anything added to their planner.
+The user implying they want to plan something out.
+The user mentioning a checklist/calendar/planner/reminder.
+The user mentioning a specific date, task, goal, or timeframe.
+
+Respond with ONLY one word: 'yes' or 'no'.
+'yes': If the user wants us to generate planner/calendar/checklist/reminder content.
+'no': ONLY if the user is not having a conversation about adding items to their planner/calendar/checklist.
+"""
 
 # -------------------------------------------------------------------------
 # Checklist Inquiry Agent - Determines if more information is needed before generating a checklist
 # -------------------------------------------------------------------------
 CHECKLIST_INQUIRY_INSTRUCTIONS = """You are an inquiry classifier that determines if we have enough information to create a meaningful checklist.
-Today is {current_day}, {current_date} and the current time is {current_time}.
+Today is {current_day}, {current_date} and the current time is {current_time}. We are in the process of updating the user's planner/calendar/checklist.
 
-Analyze if the user's message, combined with chat history, provides enough specific details to create a good checklist, such as:
-- Clear timeframes (dates, days, times)
-- Specific tasks to be done
-- Enough context from previous messages to infer missing details
-- Sufficient clarity about what the user wants to accomplish
+Based on the context, can we infer the task(s) and on what day(s) the tasks on are?
+Respond with ONLY one word: 'more' or 'enough'.
 
-We require a clear time frame, specific tasks, and enough context to infer missing details so that we can createa a useful detailed planner.
+'more':
+1. We don't know the day(s) the task(s) are on.
+2. We don't know what the task is.
+3. The user implies they want feedback on the task.
+4. We are uncertain about specific details pertaining to complex tasks or long term plans.
+5. They need to be notified of something at a specific but yet unspecified time.
+'enough': 
+1. The user if frustrated with us not creating the task yet.
+2. The user has already been asked for more information and assumes the agent will figure it out for them.
+3. We can infer the day (and time if its a reminder) and the task.
+4. If we've been directed to make a plan for them.
+5. The task is simple.
 
-Respond with ONLY one word:'enough' or 'more'."""
+Enough supercedes more.
+"""
 
 # -------------------------------------------------------------------------
 # Message Agent - Generates conversational responses
@@ -56,13 +67,19 @@ MESSAGE_AGENT_BASE_INSTRUCTIONS = """You are Alfred, a personal assistant curren
 Today is {current_date} and the current time is {current_time}.
 Your ultimate goal is to make the {user_full_name}'s life better in the long term.
 Be as concise, casual, reserved, and practical as you can. Remove all fluff and redundancy.
-One word responses are preferred when appropriate."""
+One word responses are preferred when appropriate.
+
+You are an agent that is only active when we have have NOT updated the user's planner/calendar/checklist yet.
+This implies that you have not updated anything related to the user's planner/calendar/checklist.
+"""
 
 MESSAGE_AGENT_CHECKLIST_INSTRUCTIONS = """
 The user is asking about tasks, reminders, or to-do items.
 Respond with a brief acknowledgment that you're updating their planner.
 DO NOT include any details about the tasks or plans - those will be handled separately.
-Keep your response under 30 words, just acknowledging the update."""
+Do not confirm the checklist/calendar will be updated - but instead say that you're working on it.
+Do NOT, under any circumstances, ask a question.
+"""
 
 # -------------------------------------------------------------------------
 # Checklist Generation Agent - Creates structured checklist items
@@ -87,7 +104,7 @@ Today is {current_day}, {current_date} and the current time is {current_time}.
 
 The user is requesting a checklist or set of tasks to be added to their planner, but I need more specific information.
 Your job is to ask 1-2 BRIEF, FRIENDLY questions to gather the necessary details like:
-- Timeframes or deadlines
+- Timeframes or deadlines (don't ask for specific times of day unless it's obvious the reminder requires it)
 
 And only if it's absolutely necessary due to how vague it is:
 - Specific tasks they want to accomplish
@@ -95,6 +112,8 @@ And only if it's absolutely necessary due to how vague it is:
 
 Be conversational but CONCISE (keep your response under 50 words if possible). 
 Don't lecture the user or explain why you need more information - just ask for it directly.
+
+You only exist to ask questions and gather information, NEVER make any statements or assertions.
 """
 
 CHECKLIST_FORMAT_INSTRUCTIONS = """Please format your response as a JSON object with the following structure:
@@ -134,71 +153,78 @@ class AIService:
         self.client = OpenAI(api_key=api_key)
         
     def _prepare_context_messages(self, message_history: Optional[List[Dict[str, Any]]] = None, 
-                                max_messages: int = 30, hours_window: int = 2) -> List[Dict[str, Any]]:
+                                max_messages: int = 10, hours_window: float = 5/60, 
+                                absolute_max: int = 50) -> List[Dict[str, Any]]:
         """
         Standardized method to prepare context messages from history.
-        Filters messages to only include those from the last X hours, 
-        limited to Y most recent messages.
+        With a hard cap of absolute_max messages (default: 50), returns the larger of:
+        1. The last max_messages messages (default: 10)
+        2. All messages from the last hours_window (default: 5 minutes)
         
         Args:
             message_history: List of message dictionaries
-            max_messages: Maximum number of messages to include
-            hours_window: Only include messages from the last X hours
+            max_messages: Minimum number of most recent messages to include
+            hours_window: Include all messages from the last X hours (default: 5 minutes = 5/60 hours)
+            absolute_max: Hard cap on the total number of messages returned
             
         Returns:
             List of filtered message dictionaries with only role and content
         """
-        context_messages = []
-        
         if not message_history:
-            return context_messages
+            return []
             
         # Filter out system messages from history to avoid conflicts
         filtered_history = [msg for msg in message_history if msg.get("role") != "system"]
         
-        # Apply time constraint - only messages from the last X hours
-        # Use UTC timezone for consistency
-        x_hours_ago = datetime.now(timezone.utc) - timedelta(hours=hours_window)
-        recent_history = []
-        
+        # First apply the absolute max cap - we'll never return more than this many messages
+        # This ensures we don't process too many messages even if they all pass other filters
+        if len(filtered_history) > absolute_max:
+            filtered_history = filtered_history[-absolute_max:]
+            
+        # Create a clean version of each message with just role and content
+        clean_history = []
         for msg in filtered_history:
-            # Check if the message has a timestamp
-            if "timestamp" in msg:
+            if "role" in msg and "content" in msg:
+                clean_history.append({"role": msg["role"], "content": msg["content"]})
+            
+        # APPROACH 1: Get messages from the last X minutes
+        x_hours_ago = datetime.now(timezone.utc) - timedelta(hours=hours_window)
+        recent_by_time = []
+        
+        for i, msg in enumerate(clean_history):
+            original_msg = filtered_history[i]
+            # Only check timestamp if it exists
+            if "timestamp" in original_msg:
                 msg_time = None
                 # Try to parse the timestamp
                 try:
-                    if isinstance(msg["timestamp"], str):
-                        # Parse string to datetime with timezone awareness
-                        msg_time = datetime.fromisoformat(msg["timestamp"].replace('Z', '+00:00'))
-                    elif isinstance(msg["timestamp"], datetime):
-                        # Ensure datetime is timezone aware
-                        if msg["timestamp"].tzinfo is None:
-                            # If naive, assume it's in UTC
-                            msg_time = msg["timestamp"].replace(tzinfo=timezone.utc)
+                    if isinstance(original_msg["timestamp"], str):
+                        msg_time = datetime.fromisoformat(original_msg["timestamp"].replace('Z', '+00:00'))
+                    elif isinstance(original_msg["timestamp"], datetime):
+                        if original_msg["timestamp"].tzinfo is None:
+                            msg_time = original_msg["timestamp"].replace(tzinfo=timezone.utc)
                         else:
-                            msg_time = msg["timestamp"]
-                except (ValueError, TypeError) as e:
-                    # If we can't parse the timestamp, include the message (assume it's recent)
-                    # Only add role and content fields
-                    if "role" in msg and "content" in msg:
-                        recent_history.append({"role": msg["role"], "content": msg["content"]})
+                            msg_time = original_msg["timestamp"]
+                except (ValueError, TypeError):
+                    # If parsing fails, include the message (assume it's recent)
+                    recent_by_time.append(msg)
                     continue
                 
-                # Only include messages from the last X hours
+                # Include if it's from the last X minutes
                 if msg_time and msg_time >= x_hours_ago:
-                    # Only add role and content fields
-                    if "role" in msg and "content" in msg:
-                        recent_history.append({"role": msg["role"], "content": msg["content"]})
+                    recent_by_time.append(msg)
             else:
-                # If no timestamp, include the message (assume it's recent)
-                # Only add role and content fields
-                if "role" in msg and "content" in msg:
-                    recent_history.append({"role": msg["role"], "content": msg["content"]})
+                # No timestamp, assume it's recent
+                recent_by_time.append(msg)
         
-        # Take only the last max_messages
-        context_messages = recent_history[-max_messages:] if len(recent_history) > max_messages else recent_history
+        # APPROACH 2: Get the last N messages
+        recent_by_count = clean_history[-max_messages:] if len(clean_history) > max_messages else clean_history
         
-        return context_messages
+        # Pick whichever collection is larger
+        if len(recent_by_time) >= len(recent_by_count):
+            return recent_by_time
+        else:
+            return recent_by_count
         
     async def classify_query(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None) -> str:
         """
@@ -208,7 +234,7 @@ class AIService:
         Complex: Reasoning, planning, updating checklists, multi-step tasks
         """
         try:
-            print("\n=== AGENT: Query Classifier ===")
+            print("=== AGENT: Query Classifier ===")
             print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
             
             # Get current date and time
@@ -223,7 +249,8 @@ class AIService:
             )
             
             # Prepare context from message history using the standardized method
-            context_messages = self._prepare_context_messages(message_history)
+            # Limit to only the last 10 messages
+            context_messages = self._prepare_context_messages(message_history, max_messages=5)
             
             # Create messages array for classification
             classification_messages = [
@@ -254,7 +281,8 @@ class AIService:
             else:
                 result = "simple"  # Default to 'simple' for any other response
             
-            print(f"Output: Query classified as: {result}")
+            print(f"Query classified as: {result}")
+            print(f"Raw: {result}")
             print(f"Context msgs: {len(context_messages)}")
             print(f"Model: gpt-4o-mini-2024-07-18")
             print("=============================\n")
@@ -275,22 +303,15 @@ class AIService:
         Returns True if the user's query is related to tasks, todos, or checklists
         """
         try:
-            print("\n=== AGENT: Checklist Classifier ===")
+            print("=== AGENT: Checklist Classifier ===")
             print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
             
-            # Get current date and time
-            now = datetime.now()
-            current_date = now.strftime("%A, %B %d, %Y")
-            current_time = now.strftime("%I:%M %p")
-            
             # Create a specialized system message for checklist classification
-            classification_prompt = CHECKLIST_CLASSIFIER_INSTRUCTIONS.format(
-                current_date=current_date,
-                current_time=current_time
-            )
+            classification_prompt = CHECKLIST_CLASSIFIER_INSTRUCTIONS
             
             # Prepare context from message history using the standardized method
-            context_messages = self._prepare_context_messages(message_history)
+            # Limit to only the last 10 messages
+            context_messages = self._prepare_context_messages(message_history, max_messages=5)
             
             # Create messages array for classification
             classification_messages = [
@@ -317,6 +338,8 @@ class AIService:
             
             # Determine the final result
             needs_checklist = 'yes' in result
+
+            print("Raw:", result)
             
             print(f"Output: Needs checklist: {needs_checklist}")
             print(f"Context msgs: {len(context_messages)}")
@@ -340,7 +363,7 @@ class AIService:
         Returns True if we need more details from the user, False if we have enough information.
         """
         try:
-            print("\n=== AGENT: Checklist Inquiry Classifier ===")
+            print("=== AGENT: Checklist Inquiry Classifier ===")
             print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
             
             # Get current date and time
@@ -407,7 +430,7 @@ class AIService:
         This is used when the checklist_inquiry_agent determines we need more information.
         """
         try:
-            print("\n=== AGENT: Inquiry Response Generator ===")
+            print("=== AGENT: Inquiry Response Generator ===")
             print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
             
             # Get current date and time
@@ -463,259 +486,6 @@ class AIService:
             print(f"Output: Using fallback response due to error")
             print("========================================\n")
             return fallback
-        
-    async def generate_response(self, message: str, user_id: Optional[str] = None, message_history: Optional[List[Dict[str, Any]]] = None, user_full_name: Optional[str] = None) -> str:
-        """
-        Generate an AI response to the user's message, optionally using message history for context.
-        This method only handles the conversational response, not checklist generation.
-        """
-        try:
-            print("\n=== AGENT: Message Generator ===")
-            print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
-            
-            # First, classify the query
-            query_type = await self.classify_query(message, message_history)
-            
-            # Determine if we should generate checklist items
-            needs_checklist = await self.should_generate_checklist(message, message_history)
-            
-            # Get current date and time
-            now = datetime.now()
-            current_date = now.strftime("%A, %B %d, %Y")
-            current_time = now.strftime("%I:%M %p")
-            
-            # Prepare messages for the API - only include role and content fields
-            api_messages = []
-            
-            # Create a personalized system message with date/time
-            system_message = MESSAGE_AGENT_BASE_INSTRUCTIONS.format(
-                user_full_name=user_full_name or 'the user',
-                current_date=current_date,
-                current_time=current_time
-            )
-            
-            # If this is a checklist request, modify the system message to be very brief
-            instruction_type = "Base Instructions"
-            if needs_checklist:
-                system_message += MESSAGE_AGENT_CHECKLIST_INSTRUCTIONS
-                instruction_type = "Checklist Instructions"
-            
-            # Add system message
-            api_messages.append({"role": "system", "content": system_message})
-            
-            # Prepare context from message history using the standardized method
-            context_messages = self._prepare_context_messages(message_history)
-            
-            # Add context messages if available
-            if context_messages:
-                api_messages.extend(context_messages)
-            else:
-                # If no history provided, just add the current message
-                api_messages.append({"role": "user", "content": message})
-            
-            # For checklist requests, use the simpler model for the acknowledgment message
-            # For complex queries without checklist, use the more capable model
-            message_model = "gpt-4o-mini-2024-07-18" if needs_checklist else ("gpt-4o-2024-11-20" if query_type == "complex" else "gpt-4o-mini-2024-07-18")
-            
-            try:
-                # Generate the conversational response
-                response = self.client.chat.completions.create(
-                    model=message_model,
-                    messages=api_messages,
-                    temperature=0.7,
-                )
-                
-                conversation_response = response.choices[0].message.content
-                
-                print(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
-                print(f"Context msgs: {len(context_messages)}")
-                print(f"Model: {message_model}")
-                print("===============================\n")
-                
-                # Return the raw conversation response - we'll structure it in the calling code
-                return conversation_response
-                
-            except Exception as e:
-                # If we hit a rate limit or quota error, try falling back to GPT-4o-mini
-                print(f"Error with {message_model}, falling back to gpt-4o-mini-2024-07-18: {e}")
-                try:
-                    # Try with the fallback model
-                    response = self.client.chat.completions.create(
-                        model="gpt-4o-mini-2024-07-18",
-                        messages=api_messages,
-                        temperature=0.7,
-                    )
-                    
-                    conversation_response = response.choices[0].message.content
-                    
-                    print(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
-                    print(f"Context msgs: {len(context_messages)}")
-                    print(f"Model: gpt-4o-mini-2024-07-18 (fallback)")
-                    print("===============================\n")
-                    
-                    # Return the raw conversation response
-                    return conversation_response
-                    
-                except Exception as fallback_error:
-                    # If even the fallback fails, provide a hardcoded response
-                    print(f"Fallback model also failed: {fallback_error}")
-                    fallback_message = self._generate_fallback_response(message, user_full_name)
-                    
-                    print(f"Output: \"{fallback_message[:75]}{'...' if len(fallback_message) > 75 else ''}\"")
-                    print(f"Context msgs: {len(context_messages)}")
-                    print(f"Model: hardcoded fallback")
-                    print("===============================\n")
-                    
-                    # Return the fallback message
-                    return fallback_message
-            
-        except Exception as e:
-            print(f"Error generating AI response: {e}")
-            # Provide a fallback response instead of raising an exception
-            fallback_message = self._generate_fallback_response(message, user_full_name)
-            
-            print(f"Output: \"{fallback_message[:75]}{'...' if len(fallback_message) > 75 else ''}\"")
-            print(f"Context msgs: 0")
-            print(f"Model: hardcoded fallback")
-            print("===============================\n")
-            
-            # Return the fallback message
-            return fallback_message
-    
-    async def generate_response_with_classification(self, message: str, user_id: Optional[str] = None, 
-                                                   message_history: Optional[List[Dict[str, Any]]] = None, 
-                                                   user_full_name: Optional[str] = None) -> Tuple[str, bool]:
-        """
-        Generate an AI response and return the checklist classification result together.
-        This method avoids duplicate classification calls and returns both values.
-        
-        Returns:
-            Tuple[str, bool]: (response_text, needs_checklist)
-        """
-        try:
-            # Note: We're no longer logging at the start - we'll log everything at the end
-            
-            # First, classify the query
-            query_type = await self.classify_query(message, message_history)
-            
-            # Determine if we should generate checklist items
-            # This classification will be returned along with the response
-            needs_checklist = await self.should_generate_checklist(message, message_history)
-            
-            # Get current date and time
-            now = datetime.now()
-            current_date = now.strftime("%A, %B %d, %Y")
-            current_time = now.strftime("%I:%M %p")
-            
-            # Prepare messages for the API - only include role and content fields
-            api_messages = []
-            
-            # Create a personalized system message with date/time
-            system_message = MESSAGE_AGENT_BASE_INSTRUCTIONS.format(
-                user_full_name=user_full_name or 'the user',
-                current_date=current_date,
-                current_time=current_time
-            )
-            
-            # If this is a checklist request, modify the system message to be very brief
-            instruction_type = "Base Instructions"
-            if needs_checklist:
-                system_message += MESSAGE_AGENT_CHECKLIST_INSTRUCTIONS
-                instruction_type = "Checklist Instructions"
-            
-            # Add system message
-            api_messages.append({"role": "system", "content": system_message})
-            
-            # Prepare context from message history using the standardized method
-            context_messages = self._prepare_context_messages(message_history)
-            
-            # Add context messages if available
-            if context_messages:
-                api_messages.extend(context_messages)
-            else:
-                # If no history provided, just add the current message
-                api_messages.append({"role": "user", "content": message})
-            
-            # For checklist requests, use the simpler model for the acknowledgment message
-            # For complex queries without checklist, use the more capable model
-            message_model = "gpt-4o-mini-2024-07-18" if needs_checklist else ("gpt-4o-2024-11-20" if query_type == "complex" else "gpt-4o-mini-2024-07-18")
-            
-            try:
-                # Generate the conversational response
-                response = self.client.chat.completions.create(
-                    model=message_model,
-                    messages=api_messages,
-                    temperature=0.7,
-                )
-                
-                conversation_response = response.choices[0].message.content
-                
-                # Only log after we have the final response
-                print("\n=== AGENT: Message Generator ===")
-                print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
-                print(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
-                print(f"Context msgs: {len(context_messages)}")
-                print(f"Model: {message_model}")
-                print("===============================\n")
-                
-                # Return both the response and the classification result
-                return conversation_response, needs_checklist
-                
-            except Exception as e:
-                # If we hit a rate limit or quota error, try falling back to GPT-4o-mini
-                print(f"Error with {message_model}, falling back to gpt-4o-mini-2024-07-18: {e}")
-                try:
-                    # Try with the fallback model
-                    response = self.client.chat.completions.create(
-                        model="gpt-4o-mini-2024-07-18",
-                        messages=api_messages,
-                        temperature=0.7,
-                    )
-                    
-                    conversation_response = response.choices[0].message.content
-                    
-                    # Only log after we have the final response
-                    print("\n=== AGENT: Message Generator ===")
-                    print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
-                    print(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
-                    print(f"Context msgs: {len(context_messages)}")
-                    print(f"Model: gpt-4o-mini-2024-07-18 (fallback)")
-                    print("===============================\n")
-                    
-                    # Return both the response and the classification result
-                    return conversation_response, needs_checklist
-                    
-                except Exception as fallback_error:
-                    # If even the fallback fails, provide a hardcoded response
-                    print(f"Fallback model also failed: {fallback_error}")
-                    fallback_message = self._generate_fallback_response(message, user_full_name)
-                    
-                    # Only log after we have the final fallback response
-                    print("\n=== AGENT: Message Generator ===")
-                    print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
-                    print(f"Output: \"{fallback_message[:75]}{'...' if len(fallback_message) > 75 else ''}\"")
-                    print(f"Context msgs: {len(context_messages)}")
-                    print(f"Model: hardcoded fallback")
-                    print("===============================\n")
-                    
-                    # Return both the fallback message and the classification result
-                    return fallback_message, needs_checklist
-            
-        except Exception as e:
-            print(f"Error generating AI response with classification: {e}")
-            # Provide a fallback response instead of raising an exception
-            fallback_message = self._generate_fallback_response(message, user_full_name)
-            
-            # Only log after we have the final fallback response
-            print("\n=== AGENT: Message Generator ===")
-            print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
-            print(f"Output: \"{fallback_message[:75]}{'...' if len(fallback_message) > 75 else ''}\"")
-            print(f"Context msgs: 0")
-            print(f"Model: hardcoded fallback")
-            print("===============================\n")
-            
-            # Return the fallback message and default classification (False)
-            return fallback_message, False
     
     async def generate_checklist(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
         """
@@ -726,7 +496,7 @@ class AIService:
             Optional[Dict[str, Any]]: A dictionary of checklist data, or None if generation fails
         """
         try:
-            print("\n=== AGENT: Checklist Generator ===")
+            print("=== AGENT: Checklist Generator ===")
             print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
             
             # Get current date and time
@@ -827,7 +597,7 @@ class AIService:
     async def _generate_checklist_acknowledgment(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, user_full_name: Optional[str] = None) -> str:
         """
         Generate a simple acknowledgment for checklist creation.
-        Uses the MESSAGE_AGENT_BASE_INSTRUCTIONS + MESSAGE_AGENT_CHECKLIST_INSTRUCTIONS.
+        Uses the MESSAGE_AGENT_CHECKLIST_INSTRUCTIONS.
         
         Args:
             message: The user's message
@@ -844,11 +614,7 @@ class AIService:
             current_time = now.strftime("%I:%M %p")
             
             # Create a personalized system message with date/time combining both instruction sets
-            system_message = MESSAGE_AGENT_BASE_INSTRUCTIONS.format(
-                user_full_name=user_full_name or 'the user',
-                current_date=current_date,
-                current_time=current_time
-            ) + MESSAGE_AGENT_CHECKLIST_INSTRUCTIONS
+            system_message = MESSAGE_AGENT_CHECKLIST_INSTRUCTIONS
             
             # Create messages array
             api_messages = [
@@ -875,7 +641,7 @@ class AIService:
             acknowledgment = response.choices[0].message.content
             
             # Log the response
-            print("\n=== AGENT: Checklist Acknowledgment Generator ===")
+            print("=== AGENT: Checklist Acknowledgment Generator ===")
             print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
             print(f"Output: \"{acknowledgment[:75]}{'...' if len(acknowledgment) > 75 else ''}\"")
             print(f"Context msgs: {len(context_messages)}")
@@ -954,7 +720,7 @@ class AIService:
                 conversation_response = response.choices[0].message.content
                 
                 # Log the response
-                print("\n=== AGENT: Standard Response Generator ===")
+                print("=== AGENT: Standard Response Generator ===")
                 print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
                 print(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
                 print(f"Context msgs: {len(context_messages)}")
@@ -1033,25 +799,30 @@ class AIService:
         }
         
         try:
-            # Step 1: First determine query complexity (ALWAYS needed for model selection)
-            result['query_type'] = await self.classify_query(message, message_history)
             
-            # Step 2: Check if this is a checklist request
+            # Step 1: Check if this is a checklist request
             result['needs_checklist'] = await self.should_generate_checklist(message, message_history)
             
-            # Step 3: If it's a checklist request, check if we need more information
+            # Step 2: If it's a checklist request, check if we need more information
             if result['needs_checklist']:
                 result['needs_more_info'] = await self.should_inquire_further(message, message_history)
                 
+                #Step 2a: If we need more info, generate an inquiry response asking for more details
                 if result['needs_more_info']:
                     # Generate an inquiry response asking for more details
                     result['response_text'] = await self.generate_inquiry_response(message, message_history, user_full_name)
+                
+                #Step 2b: If we have enough info, generate an acknowledgment
                 else:
                     # It's a checklist and we have enough info, generate acknowledgment
                     # Using the dedicated method with proper instructions
                     result['response_text'] = await self._generate_checklist_acknowledgment(message, message_history, user_full_name)
+            
+            # Step 3: If it's not a checklist request, generate a standard response based on query complexity
             else:
-                # Not a checklist request, generate standard response based on query complexity
+                # Step 3a: First determine query complexity (ALWAYS needed for model selection)...
+                #...then generate a standard response based on query complexity
+                result['query_type'] = await self.classify_query(message, message_history)
                 result['response_text'] = await self._generate_standard_response(
                     message, result['query_type'], message_history, user_full_name
                 )
@@ -1064,7 +835,7 @@ class AIService:
             result['response_text'] = self._generate_fallback_response(message, user_full_name)
             
             # Log the error fallback
-            print("\n=== AGENT: Optimized Response (Error) ===")
+            print("=== AGENT: Optimized Response (Error) ===")
             print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
             print(f"Output: \"{result['response_text'][:75]}{'...' if len(result['response_text']) > 75 else ''}\"")
             print(f"Context msgs: 0")

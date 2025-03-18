@@ -1,16 +1,24 @@
 import os
 import secrets
 from typing import Any, Dict, List, Optional, Union
+from pathlib import Path
 
 from pydantic import AnyHttpUrl, PostgresDsn, validator, model_validator
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
-load_dotenv()
+# Priority: .env.local (for secrets), then .env (for default settings)
+dotenv_local = Path(__file__).resolve().parent.parent.parent / ".env.local"
+dotenv_default = Path(__file__).resolve().parent.parent.parent / ".env"
+
+if dotenv_local.exists():
+    load_dotenv(dotenv_path=dotenv_local)
+load_dotenv(dotenv_path=dotenv_default, override=False)  # Don't override existing env vars
 
 class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
-    SECRET_KEY: str = secrets.token_urlsafe(32)
+    # Use environment variable for SECRET_KEY, or generate a random one if not set
+    SECRET_KEY: str = os.getenv("SECRET_KEY", secrets.token_urlsafe(32))
     # 60 minutes * 24 hours * 8 days = 8 days
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
     # BACKEND_CORS_ORIGINS is a JSON-formatted list of origins

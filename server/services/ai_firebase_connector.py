@@ -124,54 +124,6 @@ class AIFirebaseConnector:
             The task data, or None if the task doesn't exist
         """
         return get_task_status('checklist_tasks', task_id)
-    
-    async def generate_immediate_response(self, 
-                                         message_content: str, 
-                                         message_history: List[Dict[str, Any]]) -> str:
-        """
-        Generate an immediate response for all queries.
-        
-        Args:
-            message_content: The content of the user's message
-            message_history: The history of messages in the chat
-            
-        Returns:
-            The generated response
-        """
-        try:
-            # Determine if we should generate a checklist
-            needs_checklist = await self.ai_service.should_generate_checklist(
-                message_content, 
-                message_history
-            )
-            
-            # Use the AI service to generate a response
-            response = await self.ai_service.generate_response(
-                message=message_content,
-                message_history=message_history
-            )
-            
-            # If this needs a checklist, structure the response
-            if needs_checklist:
-                # Note: In this simplified version, we don't create the checklist task here
-                # That will be handled by the FastAPI endpoint
-                # We just indicate that a checklist is needed
-                structured_response = json.dumps({
-                    "message": response,
-                    "needs_checklist": True
-                })
-                return structured_response
-            else:
-                # For regular queries, return just the conversation response
-                return response
-            
-        except Exception as e:
-            logger.error(f"Error generating immediate response: {e}")
-            # Return a fallback response
-            fallback_response = self.ai_service._generate_fallback_response(message_content)
-            
-            # Return the fallback response directly
-            return fallback_response
 
 # Create a singleton instance
 _connector = None

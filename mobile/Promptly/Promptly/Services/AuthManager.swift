@@ -61,7 +61,7 @@ class AuthManager: ObservableObject {
         let formData = "username=\(email)&password=\(password)"
             .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         
-        guard let url = URL(string: "\(baseURL)/auth/login") else {
+        guard let url = URL(string: "\(baseURL)/v1/auth/login") else {
             DispatchQueue.main.async {
                 self.error = "Invalid URL"
                 self.isLoading = false

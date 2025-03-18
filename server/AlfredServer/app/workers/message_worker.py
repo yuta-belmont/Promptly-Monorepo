@@ -73,12 +73,14 @@ class MessageWorker:
                 await asyncio.sleep(10)
     
     async def process_task(self, task_id: str, task_data: Dict[str, Any]):
+
         """
         Process a single message task.
         
         Args:
             task_id: The ID of the task
             task_data: The task data from Firestore
+        """
         """
         logger.info(f"Processing message task {task_id}")
         
@@ -208,6 +210,7 @@ class MessageWorker:
                 }
             )
             print(f"[MESSAGE WORKER] Task {task_id}: Updated task status to failed in Firestore")
+            """
 
 async def main():
     """Main entry point for the worker."""
