@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="23605" systemVersion="24D70" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithSwiftData="YES" userDefinedModelVersionIdentifier="">
+    <entity name="ChatHistory" representedClassName=".ChatHistory" syncable="YES">
+        <attribute name="id" attributeType="UUID" usesScalarValueType="YES"/>
+        <attribute name="isMainHistory" attributeType="Boolean" defaultValueString="YES" usesScalarValueType="YES"/>
+        <relationship name="chatMessages" optional="YES" toMany="YES" deletionRule="Cascade" ordered="YES" destinationEntity="ChatMessage" inverseName="chatHistory" inverseEntity="ChatMessage"/>
+    </entity>
+    <entity name="ChatMessage" representedClassName=".ChatMessage" syncable="YES">
+        <attribute name="content" attributeType="String" defaultValueString=""/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="YES"/>
+        <attribute name="role" attributeType="String"/>
+        <attribute name="timestamp" attributeType="Date" usesScalarValueType="NO"/>
+        <relationship name="chatHistory" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="ChatHistory" inverseName="chatMessages" inverseEntity="ChatHistory"/>
+    </entity>
+    <entity name="Checklist" representedClassName="Promptly.Checklist" syncable="YES">
+        <attribute name="date" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="YES"/>
+        <attribute name="notes" attributeType="String" defaultValueString=""/>
+        <relationship name="checklistItem" optional="YES" toMany="YES" deletionRule="Cascade" ordered="YES" destinationEntity="ChecklistItem" inverseName="checklist" inverseEntity="ChecklistItem"/>
+    </entity>
+    <entity name="ChecklistItem" representedClassName="Promptly.ChecklistItem" syncable="YES">
+        <attribute name="date" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="YES"/>
+        <attribute name="isCompleted" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="notification" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <relationship name="checklist" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Checklist" inverseName="checklistItem" inverseEntity="Checklist"/>
+        <relationship name="itemGroup" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="ItemGroup" inverseName="checklistItem" inverseEntity="ItemGroup"/>
+    </entity>
+    <entity name="ItemGroup" representedClassName="Promptly.ItemGroup" syncable="YES">
+        <attribute name="colorBlue" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <attribute name="colorGreen" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <attribute name="colorRed" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <attribute name="hasColor" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="YES"/>
+        <attribute name="title" attributeType="String" defaultValueString=""/>
+        <relationship name="checklistItem" optional="YES" toMany="YES" deletionRule="Nullify" ordered="YES" destinationEntity="ChecklistItem" inverseName="itemGroup" inverseEntity="ChecklistItem"/>
+    </entity>
+</model>

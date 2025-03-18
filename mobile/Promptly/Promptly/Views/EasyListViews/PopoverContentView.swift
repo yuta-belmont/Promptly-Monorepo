@@ -1,0 +1,249 @@
+import SwiftUI
+import UIKit
+
+struct PopoverContentView: View {
+    let item: Models.ChecklistItem
+    @Binding var isGroupSectionExpanded: Bool
+    let onNotificationChange: ((Date?) -> Void)?
+    let onGroupChange: ((UUID?) -> Void)?
+    let onDelete: () -> Void
+    @State private var isNotificationEnabled: Bool
+    @State private var selectedTime: Date
+    @State private var isTestSectionExpanded: Bool = false
+    @State private var selectedOption: Int? = nil
+    @ObservedObject private var groupStore = GroupStore.shared
+    private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
+    @State private var deleteConfirmationActive = false
+    @State private var deleteTimer: Timer?
+    @Environment(\.dismiss) private var dismiss
+    
+    init(item: Models.ChecklistItem, isGroupSectionExpanded: Binding<Bool>, onNotificationChange: ((Date?) -> Void)?, onGroupChange: ((UUID?) -> Void)? = nil, onDelete: @escaping () -> Void) {
+        self.item = item
+        self._isGroupSectionExpanded = isGroupSectionExpanded
+        self.onNotificationChange = onNotificationChange
+        self.onGroupChange = onGroupChange
+        self.onDelete = onDelete
+        _isNotificationEnabled = State(initialValue: item.notification != nil)
+        _selectedTime = State(initialValue: item.notification ?? Date())
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Notify Row - Only toggle is interactive
+            HStack {
+                Image(systemName: "bell")
+                    .frame(width: 24)
+                Text("Notify")
+                Spacer()
+                Toggle("", isOn: $isNotificationEnabled)
+                    .labelsHidden()
+                    .onChange(of: isNotificationEnabled) { oldValue, newValue in
+                        if newValue {
+                            // Toggle turned ON - set notification with current time
+                            let calendar = Calendar.current
+                            let timeComponents = calendar.dateComponents([.hour, .minute], from: selectedTime)
+                            var dateComponents = calendar.dateComponents([.year, .month, .day], from: item.date)
+                            dateComponents.hour = timeComponents.hour
+                            dateComponents.minute = timeComponents.minute
+                            
+                            if let combinedDate = calendar.date(from: dateComponents) {
+                                onNotificationChange?(combinedDate)
+                            }
+                        } else {
+                            // Toggle turned OFF - remove notification
+                            onNotificationChange?(nil)
+                        }
+                    }
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            
+            // Time Picker (shown when notification is enabled)
+            if isNotificationEnabled {
+                DatePicker("", selection: $selectedTime, displayedComponents: .hourAndMinute)
+                    .datePickerStyle(.wheel)
+                    .labelsHidden()
+                    .scaleEffect(0.6)
+                    .colorScheme(.dark)
+                    .frame(height: 100)
+                    .padding(.horizontal, 0)
+                    .onChange(of: selectedTime) { oldTime, newTime in
+                        if isNotificationEnabled {
+                            // Combine the selected time with the checklist date
+                            let calendar = Calendar.current
+                            let timeComponents = calendar.dateComponents([.hour, .minute], from: newTime)
+                            var dateComponents = calendar.dateComponents([.year, .month, .day], from: item.date)
+                            dateComponents.hour = timeComponents.hour
+                            dateComponents.minute = timeComponents.minute
+                            
+                            if let combinedDate = calendar.date(from: dateComponents) {
+                                onNotificationChange?(combinedDate)
+                            }
+                        }
+                    }
+            }
+            
+            Divider()
+                .background(Color.white.opacity(0.2))
+            
+            // Group Row - Entire row is tappable
+            Button(action: {
+                withAnimation(.linear(duration: 0.1)) {
+                    isGroupSectionExpanded.toggle()
+                }
+            }) {
+                HStack {
+                    Image(systemName: "folder")
+                        .frame(width: 24)
+                    Text("Group")
+                    Spacer()
+                    Image(systemName: isGroupSectionExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())  // Make entire area tappable
+            }
+            .buttonStyle(.plain)
+            
+            // Group Section (expanded)
+            if isGroupSectionExpanded {
+                VStack(spacing: 0) {
+                    // Existing Groups List
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            ForEach(groupStore.groups) { group in
+                                Button(action: {
+                                    // If already in this group, remove from group (toggle behavior)
+                                    if item.groupId == group.id {
+                                        feedbackGenerator.impactOccurred()
+                                        onGroupChange?(nil)
+                                    } else {
+                                        feedbackGenerator.impactOccurred()
+                                        onGroupChange?(group.id)
+                                    }
+                                     
+                                }) {
+                                    HStack {
+                                        // Check if this is the current group
+                                        let isCurrentGroup = item.group?.id == group.id || item.groupId == group.id
+                                        
+                                        Image(systemName: isCurrentGroup ? "checkmark.circle.fill" : "circle")
+                                            .foregroundColor(isCurrentGroup ? .green : .gray)
+                                            .frame(width: 24)
+                                            .padding(.leading, 12)
+                                        
+                                        Text(group.title)
+                                            .font(.subheadline)
+                                            .lineLimit(1)
+                                        
+                                        Spacer()
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.vertical, 8)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            
+                            // Show a message if no groups exist
+                            if groupStore.groups.isEmpty {
+                                VStack(spacing: 8) {
+                                    Text("You have no groups.")
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                    
+                                    Button(action: {
+                                        // Close the current popover
+                                        isGroupSectionExpanded = false
+                                        
+                                        // Dismiss the parent popover
+                                        dismiss()
+                                        
+                                        // Show the ManageGroupsView
+                                        NotificationCenter.default.post(
+                                            name: NSNotification.Name("ShowManageGroupsView"),
+                                            object: nil
+                                        )
+                                        
+                                        // Provide haptic feedback
+                                        feedbackGenerator.impactOccurred()
+                                    }) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "line.3.horizontal")
+                                                .font(.caption)
+                                                .foregroundColor(.blue)
+                                            Text("Manage groups")
+                                                .font(.caption)
+                                                .foregroundColor(.blue)
+                                                .underline()
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 150)  // Increased height since we removed the creation UI
+                }
+                .background(Color.black.opacity(0.3))
+                .cornerRadius(8)
+                .padding(.horizontal, 4)
+            }
+            
+            Divider()
+                .background(Color.white.opacity(0.2))
+
+            // Delete Row - Entire row is tappable
+            Button(action: {
+                feedbackGenerator.impactOccurred()
+                
+                if deleteConfirmationActive {
+                    // Second tap - perform delete
+                    deleteTimer?.invalidate()
+                    deleteTimer = nil
+                    deleteConfirmationActive = false
+                    onDelete()
+                    // No need to wait for animation to complete - close popover immediately
+                } else {
+                    // First tap - start confirmation timer
+                    deleteConfirmationActive = true
+                    deleteTimer?.invalidate()
+                    deleteTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { _ in
+                        deleteConfirmationActive = false
+                    }
+                }
+            }) {
+                HStack {
+                    Image(systemName: "trash")
+                        .frame(width: 24)
+                    Text(deleteConfirmationActive ? "Confirm" : "Delete")
+                    Spacer()
+                }
+                .foregroundColor(.red)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())  // Make entire area tappable
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 180)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .onAppear {
+            // Prepare haptic feedback when view appears
+            feedbackGenerator.prepare()
+        }
+        .onDisappear {
+            // Clean up timer when view disappears
+            deleteTimer?.invalidate()
+            deleteTimer = nil
+            deleteConfirmationActive = false
+        }
+    }
+} 
