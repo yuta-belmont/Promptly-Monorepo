@@ -83,6 +83,113 @@ final class EasyListViewModel: ObservableObject {
         saveChecklist()
     }
     
+    // MARK: - Item Methods with ID Parameter
+    
+    /// Finds and returns an item by its ID
+    func getItem(id: UUID) -> Models.ChecklistItem? {
+        return checklist.items.first { $0.id == id }
+    }
+    
+    /// Toggles the completion state of an item identified by ID
+    func toggleItem(id: UUID) {
+        guard let item = getItem(id: id) else { return }
+        var updatedItem = item
+        updatedItem.isCompleted.toggle()
+        
+        // When the main item is toggled, apply the same state to all subitems
+        if !updatedItem.subItems.isEmpty {
+            for index in 0..<updatedItem.subItems.count {
+                updatedItem.subItems[index].isCompleted = updatedItem.isCompleted
+            }
+        }
+        
+        updateItemAndSave(updatedItem)
+    }
+    
+    /// Updates the text of an item identified by ID
+    func updateItemText(id: UUID, text: String) {
+        guard let item = getItem(id: id) else { return }
+        var updatedItem = item
+        updatedItem.title = text
+        updateItemAndSave(updatedItem)
+    }
+    
+    /// Adds a subitem to an item identified by ID
+    func addSubItem(to itemId: UUID, text: String) {
+        guard let item = getItem(id: itemId) else { return }
+        
+        var updatedItem = item
+        
+        // Create and add the new subitem
+        let newSubItem = Models.SubItem(
+            id: UUID(),
+            title: text,
+            isCompleted: false
+        )
+        
+        updatedItem.subItems.append(newSubItem)
+        
+        // Adding a new incomplete subitem might need to change the parent item's completion status
+        // If the parent was previously complete, it should now be incomplete since we've added an incomplete subitem
+        if updatedItem.isCompleted {
+            updatedItem.isCompleted = false
+        }
+        
+        updateItemAndSave(updatedItem)
+    }
+    
+    /// Saves an item identified by ID (used after editing)
+    func saveItem(id: UUID) {
+        guard let item = getItem(id: id) else { return }
+        updateItemAndSave(item)
+    }
+    
+    /// Deletes an item identified by ID
+    func deleteItem(id: UUID) {
+        guard let index = checklist.items.firstIndex(where: { $0.id == id }) else { return }
+        // Use the existing method to handle cleanup
+        deleteItems(at: IndexSet([index]))
+    }
+    
+    /// Toggles the completion state of a subitem within an item
+    func toggleSubItem(id: UUID, itemId: UUID) {
+        guard let item = getItem(id: itemId),
+              let subItemIndex = item.subItems.firstIndex(where: { $0.id == id }) else { return }
+        
+        var updatedItem = item
+        var updatedSubItem = updatedItem.subItems[subItemIndex]
+        updatedSubItem.isCompleted.toggle()
+        updatedItem.subItems[subItemIndex] = updatedSubItem
+        
+        // Update parent item completion based on subitems
+        let allSubItemsCompleted = updatedItem.subItems.allSatisfy { $0.isCompleted }
+        let anySubItemsIncomplete = updatedItem.subItems.contains { !$0.isCompleted }
+        
+        // If all subitems are complete, mark parent complete
+        if !updatedItem.subItems.isEmpty && allSubItemsCompleted {
+            updatedItem.isCompleted = true
+        }
+        // If any subitems are incomplete, mark parent incomplete
+        else if anySubItemsIncomplete {
+            updatedItem.isCompleted = false
+        }
+        
+        updateItemAndSave(updatedItem)
+    }
+    
+    /// Updates the text of a subitem within an item
+    func updateSubItemText(id: UUID, itemId: UUID, text: String) {
+        guard let item = getItem(id: itemId),
+              let subItemIndex = item.subItems.firstIndex(where: { $0.id == id }) else { return }
+        
+        var updatedItem = item
+        var updatedSubItem = updatedItem.subItems[subItemIndex]
+        updatedSubItem.title = text
+        updatedItem.subItems[subItemIndex] = updatedSubItem
+        
+        updateItemAndSave(updatedItem)
+    }
+    
     func updateItem(_ item: Models.ChecklistItem, with newTitle: String) {
         var updatedItem = item
         updatedItem.title = newTitle

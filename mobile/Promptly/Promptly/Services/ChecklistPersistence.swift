@@ -104,6 +104,9 @@ final class ChecklistPersistence {
                 coreDataItem = existingItem
                 coreDataItem.update(from: structItem, context: context)
                 
+                // Sync subitems
+                coreDataItem.syncSubItems(from: structItem, context: context)
+                
                 // Update group relationship if needed
                 if let structGroup = structItem.group {
                     // Find or create the group

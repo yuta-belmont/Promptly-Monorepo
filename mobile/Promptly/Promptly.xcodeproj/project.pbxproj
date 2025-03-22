@@ -58,6 +58,10 @@
 		8FE0E26E2D874DDA00EE0D83 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 8FE0E26D2D874DDA00EE0D83 /* FirebaseFirestore */; };
 		8FE0E2702D87D48900EE0D83 /* FirestoreService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE0E26F2D87D48900EE0D83 /* FirestoreService.swift */; };
 		8FE0E2722D888CD100EE0D83 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 8FE0E2712D888CD100EE0D83 /* FirebaseAuth */; };
+		8FE0E2782D8B837100EE0D83 /* SubItem+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE0E2772D8B837100EE0D83 /* SubItem+CoreDataProperties.swift */; };
+		8FE0E2792D8B837100EE0D83 /* SubItem+CoreDataClass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE0E2762D8B837100EE0D83 /* SubItem+CoreDataClass.swift */; };
+		8FE0E27B2D8B84ED00EE0D83 /* SubItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE0E27A2D8B84ED00EE0D83 /* SubItem.swift */; };
+		8FE0E27F2D8C8AB200EE0D83 /* PlannerItemViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE0E27E2D8C8AB200EE0D83 /* PlannerItemViewModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXBuildRule section */
@@ -119,6 +123,10 @@
 		8FCD49662D819D9200C0A2E3 /* DataModel.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = DataModel.xcdatamodel; sourceTree = "<group>"; };
 		8FE0E2592D874BDA00EE0D83 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		8FE0E26F2D87D48900EE0D83 /* FirestoreService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirestoreService.swift; sourceTree = "<group>"; };
+		8FE0E2762D8B837100EE0D83 /* SubItem+CoreDataClass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SubItem+CoreDataClass.swift"; sourceTree = "<group>"; };
+		8FE0E2772D8B837100EE0D83 /* SubItem+CoreDataProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SubItem+CoreDataProperties.swift"; sourceTree = "<group>"; };
+		8FE0E27A2D8B84ED00EE0D83 /* SubItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubItem.swift; sourceTree = "<group>"; };
+		8FE0E27E2D8C8AB200EE0D83 /* PlannerItemViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerItemViewModel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -153,6 +161,8 @@
 		8F35F35E2D81E94B00A112F1 /* CoreData */ = {
 			isa = PBXGroup;
 			children = (
+				8FE0E2762D8B837100EE0D83 /* SubItem+CoreDataClass.swift */,
+				8FE0E2772D8B837100EE0D83 /* SubItem+CoreDataProperties.swift */,
 				8F35F3582D81E94B00A112F1 /* Checklist+CoreDataClass.swift */,
 				8F35F3592D81E94B00A112F1 /* Checklist+CoreDataProperties.swift */,
 				8F35F35A2D81E94B00A112F1 /* ChecklistItem+CoreDataClass.swift */,
@@ -252,6 +262,7 @@
 		8F9DFF042D70AE5F00F62D5E /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
+				8FE0E27E2D8C8AB200EE0D83 /* PlannerItemViewModel.swift */,
 				8F2F11A02D83C5B200B47051 /* ManageGroupsViewModel.swift */,
 				8F3C830E2D7A07F30072CCAF /* EasyListViewModel.swift */,
 				8FB9D7A52D761D0C00F8B0E2 /* DashboardViewModel.swift */,
@@ -264,6 +275,7 @@
 		8F9DFF052D70AE6900F62D5E /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				8FE0E27A2D8B84ED00EE0D83 /* SubItem.swift */,
 				8F35F3672D81E98100A112F1 /* ModelNamespace.swift */,
 				8F35F35E2D81E94B00A112F1 /* CoreData */,
 				8FC455FE2D7B651A007EE5DB /* ItemGroup.swift */,
@@ -375,6 +387,7 @@
 			files = (
 				8FC4560B2D7CB83B007EE5DB /* BaseView.swift in Sources */,
 				8FCD49672D819D9200C0A2E3 /* DataModel.xcdatamodeld in Sources */,
+				8FE0E27F2D8C8AB200EE0D83 /* PlannerItemViewModel.swift in Sources */,
 				8F31EDE72D753A570041A5F9 /* LoadingView.swift in Sources */,
 				8F8FE7432D85EA7100355B3D /* AuthManager.swift in Sources */,
 				8F31EDDB2D74B9A10041A5F9 /* ChatHistory.swift in Sources */,
@@ -410,6 +423,9 @@
 				8F9DFEF52D6FA66900F62D5E /* PromptlyApp.swift in Sources */,
 				8FC456112D7E71CC007EE5DB /* ThemeManager.swift in Sources */,
 				8F7DEA3F2D80DD7400287676 /* PersistenceController.swift in Sources */,
+				8FE0E27B2D8B84ED00EE0D83 /* SubItem.swift in Sources */,
+				8FE0E2782D8B837100EE0D83 /* SubItem+CoreDataProperties.swift in Sources */,
+				8FE0E2792D8B837100EE0D83 /* SubItem+CoreDataClass.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -64,6 +64,7 @@ struct CustomTextField: UIViewRepresentable {
 
         init(_ parent: CustomTextField) {
             self.parent = parent
+            super.init()
         }
 
         @objc func textChanged(_ textField: UITextField) {
@@ -85,6 +86,7 @@ struct CustomTextField: UIViewRepresentable {
         
         // Handle return key press
         func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            print("Return key pressed in CustomTextField")
             if let onReturn = parent.onReturn {
                 onReturn()
             }
@@ -684,19 +686,12 @@ struct ListContent: View {
             ScrollViewReader { proxy in
                 List {
                     ForEach(viewModel.items) { item in
-                        ChecklistItemRow(
-                            item: item,
-                            isEditing: editingItemId == item.id,
-                            onToggle: { handleItemToggle(item) },
-                            onSubmit: { text in handleItemReturn(item, proxy: proxy) },
-                            onLoseFocus: { text in handleItemLoseFocus(item, text: text) },
-                            onStartEdit: { handleItemStartEdit(item) },
-                            onTextChange: { newText in handleItemTextChange(item, newText: newText) },
-                            onNotificationChange: { newTime in handleNotificationChange(item, newTime: newTime) },
-                            onGroupChange: { groupId in handleGroupChange(item, groupId: groupId) }
-                        )
-                        .focused($focusedItemId, equals: item.id)
-                        .id(item.id)
+                        makePlannerItemView(for: item)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets())
+                            .padding(.horizontal, 0)
+                            .padding(.vertical, 0)
                     }
                     .onMove { from, to in
                         handleMoveItems(from: from, to: to)
@@ -821,6 +816,68 @@ struct ListContent: View {
                 }
             }
         }
+    }
+    
+    // Helper function to create PlannerItemView with all necessary callbacks
+    private func makePlannerItemView(for item: Models.ChecklistItem) -> some View {
+        PlannerItemView.create(
+            item: item,
+            externalFocusState: $focusedItemId,
+            onToggle: {
+                viewModel.toggleItem(item)
+            },
+            onTextChange: { newText in
+                viewModel.updateItem(item, with: newText)
+            },
+            onLoseFocus: { text in
+                // Only save non-empty items when losing focus
+                if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    viewModel.updateItem(item, with: text)
+                } else {
+                    handleItemLoseFocus(item, text: "")
+                }
+            },
+            onReturn: {
+                // If there's a next item, focus on it
+                if let currentIndex = viewModel.items.firstIndex(where: { $0.id == item.id }),
+                   currentIndex < viewModel.items.count - 1 {
+                    focusedItemId = viewModel.items[currentIndex + 1].id
+                } else {
+                    // If it's the last item, focus on the new item field
+                    isNewItemFocused = true
+                }
+            },
+            onAddSubItem: { text in
+                // Create a new updated item with the subitem
+                var updatedItem = item
+                let newSubItem = Models.SubItem(
+                    id: UUID(),
+                    title: text,
+                    isCompleted: false
+                )
+                updatedItem.subItems.append(newSubItem)
+                viewModel.updateItem(updatedItem, with: updatedItem.title)
+            },
+            onSubItemToggle: { subItemId in
+                // Handle subitem toggle
+                var updatedItem = item
+                updatedItem.toggleSubItem(withId: subItemId)
+                viewModel.updateItem(updatedItem, with: updatedItem.title)
+            },
+            onSubItemTextChange: { subItemId, newText in
+                // Handle subitem text change
+                var updatedItem = item
+                updatedItem.updateSubItem(withId: subItemId, newTitle: newText)
+                viewModel.updateItem(updatedItem, with: updatedItem.title)
+            },
+            onNotificationChange: { date in
+                viewModel.updateItemNotification(item, with: date)
+            },
+            onGroupChange: { groupId in
+                viewModel.updateItemGroup(item, with: groupId)
+            }
+        )
+        .id(item.id)
     }
 }
 

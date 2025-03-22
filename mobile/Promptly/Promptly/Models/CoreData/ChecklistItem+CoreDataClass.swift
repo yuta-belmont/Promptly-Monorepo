@@ -25,13 +25,27 @@ public class ChecklistItem: NSManagedObject {
             )
         }
         
+        // Convert subItems to array of struct models
+        var subItemStructs: [Models.SubItem] = []
+        if let subItemsSet = subItems as? NSOrderedSet {
+            for case let subItem as SubItem in subItemsSet {
+                let subItemStruct = Models.SubItem(
+                    id: subItem.id ?? UUID(),
+                    title: subItem.title ?? "",
+                    isCompleted: subItem.isCompleted
+                )
+                subItemStructs.append(subItemStruct)
+            }
+        }
+        
         return Models.ChecklistItem(
             id: id ?? UUID(),
             title: title ?? "",
             date: date ?? Date(),
             isCompleted: isCompleted,
             notification: notification,
-            group: groupStruct
+            group: groupStruct,
+            subItems: subItemStructs
         )
     }
     
@@ -46,6 +60,27 @@ public class ChecklistItem: NSManagedObject {
         // We don't update relationships here as they're handled separately
     }
     
+    // Helper method to sync subItems from struct model
+    func syncSubItems(from structModel: Models.ChecklistItem, context: NSManagedObjectContext) {
+        // Remove all existing subItems first
+        if let subItemsSet = subItems as? NSOrderedSet, subItemsSet.count > 0 {
+            removeFromSubItems(subItemsSet)
+        }
+        
+        // Create new subItems from the struct model
+        for subItemStruct in structModel.subItems {
+            // Create a new SubItem entity
+            let subItem = NSEntityDescription.insertNewObject(forEntityName: "SubItem", into: context) as! SubItem
+            subItem.id = subItemStruct.id
+            subItem.title = subItemStruct.title
+            subItem.isCompleted = subItemStruct.isCompleted
+            subItem.parent = self
+            
+            // Add to the subItems relationship
+            addToSubItems(subItem)
+        }
+    }
+    
     // Helper method to create a new ChecklistItem from a struct
     static func create(from structModel: Models.ChecklistItem, context: NSManagedObjectContext) -> ChecklistItem {
         // Use insertNewObject instead of direct initialization for better reliability
@@ -55,6 +90,10 @@ public class ChecklistItem: NSManagedObject {
         item.date = structModel.date
         item.isCompleted = structModel.isCompleted
         item.notification = structModel.notification
+        
+        // Create and add subItems
+        item.syncSubItems(from: structModel, context: context)
+        
         return item
     }
 } 
