@@ -98,7 +98,6 @@ class AuthManager: ObservableObject {
                     // Sign in to Firebase anonymously
                     do {
                         try await Auth.auth().signInAnonymously()
-                        print("Successfully signed in to Firebase anonymously")
                     } catch {
                         print("Error signing in to Firebase anonymously: \(error.localizedDescription)")
                         // Continue anyway since we're authenticated with the server
@@ -152,7 +151,6 @@ class AuthManager: ObservableObject {
         Task {
             do {
                 try await Auth.auth().signInAnonymously()
-                print("Successfully signed in to Firebase anonymously (guest mode)")
             } catch {
                 print("Error signing in to Firebase anonymously: \(error.localizedDescription)")
                 // Continue anyway since we're in guest mode

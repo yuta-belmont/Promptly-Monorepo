@@ -21,8 +21,6 @@ class FirestoreService {
     ///   - taskId: The task ID
     ///   - onUpdate: Callback when the task is updated
     func listenForChecklistTask(taskId: String, onUpdate: @escaping (String, [String: Any]?) -> Void) {
-        print("CHECKLIST DEBUG: FirestoreService setting up listener for checklist task: \(taskId)")
-        print("CHECKLIST DEBUG: Firestore path: checklist_tasks/\(taskId)")
         
         let listener = db.collection("checklist_tasks").document(taskId)
             .addSnapshotListener { snapshot, error in
@@ -44,16 +42,11 @@ class FirestoreService {
                 let data = snapshot.data()
                 let status = data?["status"] as? String ?? "unknown"
                 
-                print("CHECKLIST DEBUG: FirestoreService received update for checklist task: \(taskId), status: \(status)")
-                print("CHECKLIST DEBUG: Metadata: isFromCache=\(snapshot.metadata.isFromCache), hasPendingWrites=\(snapshot.metadata.hasPendingWrites)")
-                
                 onUpdate(status, data)
             }
         
         // Store the listener with a unique key
-        messageListeners["checklist_task_\(taskId)"] = listener
-        print("CHECKLIST DEBUG: FirestoreService stored listener for checklist task: \(taskId)")
-    }
+        messageListeners["checklist_task_\(taskId)"] = listener    }
     
     /// Remove a message listener
     /// - Parameter key: The listener key

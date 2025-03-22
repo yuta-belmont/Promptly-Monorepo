@@ -15,20 +15,17 @@ struct CustomTextField: UIViewRepresentable {
     var textColor: UIColor = .white
     var placeholder: String = ""
     var placeholderColor: UIColor = .gray
+    var isStrikethrough: Bool = false
     var onReturn: (() -> Void)?
     var onTextChange: ((String) -> Void)?
 
     func makeUIView(context: Context) -> UITextField {
         let textField = UITextField()
-        textField.text = text
-        textField.textColor = textColor
         textField.backgroundColor = .clear
         textField.returnKeyType = .next
         textField.delegate = context.coordinator
-        textField.attributedPlaceholder = NSAttributedString(
-            string: placeholder,
-            attributes: [.foregroundColor: placeholderColor]
-        )
+        
+        updateTextFieldAttributes(textField)
         
         // Support dynamic type with size constraints
         textField.adjustsFontForContentSizeCategory = true
@@ -45,14 +42,24 @@ struct CustomTextField: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UITextField, context: Context) {
-        if uiView.text != text {
-            uiView.text = text
-        }
-        uiView.textColor = textColor
+        // Always update attributes to ensure strikethrough and other properties are current
+        updateTextFieldAttributes(uiView)
+        
         uiView.attributedPlaceholder = NSAttributedString(
             string: placeholder,
             attributes: [.foregroundColor: placeholderColor]
         )
+    }
+    
+    private func updateTextFieldAttributes(_ textField: UITextField) {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .strikethroughStyle: isStrikethrough ? NSUnderlineStyle.single.rawValue : 0,
+            .strikethroughColor: UIColor.gray,
+            .foregroundColor: textColor,
+            .font: UIFont.preferredFont(forTextStyle: .body)
+        ]
+        
+        textField.attributedText = NSAttributedString(string: text, attributes: attributes)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -86,7 +93,6 @@ struct CustomTextField: UIViewRepresentable {
         
         // Handle return key press
         func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-            print("Return key pressed in CustomTextField")
             if let onReturn = parent.onReturn {
                 onReturn()
             }
@@ -582,12 +588,13 @@ struct NewItemRow: View {
             .focused(isFocused)
             .frame(width: UIScreen.main.bounds.width * 0.80, alignment: .topTrailing)
             .clipped(antialiased: true)
+            .padding(.leading, 4)
         }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
         .listRowSeparator(.hidden)
         .padding(.vertical, 4)
-        .padding(.horizontal, 8)
+        .padding(.leading, 16)
     }
 }
 

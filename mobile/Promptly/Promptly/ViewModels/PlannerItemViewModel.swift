@@ -53,14 +53,6 @@ final class PlannerItemViewModel: ObservableObject {
     func toggleItem() {
         var updatedItem = item
         updatedItem.isCompleted.toggle()
-        
-        // When the main item is toggled, apply the same state to all subitems
-        if !updatedItem.subItems.isEmpty {
-            for index in 0..<updatedItem.subItems.count {
-                updatedItem.subItems[index].isCompleted = updatedItem.isCompleted
-            }
-        }
-        
         updateItem(updatedItem)
     }
     
@@ -136,42 +128,17 @@ final class PlannerItemViewModel: ObservableObject {
     
     /// Toggles completion state of a subitem
     func toggleSubItem(_ subItemId: UUID) {
-        print("\n=== SUBITEM TOGGLE START ===")
-        print("Attempting to toggle subitem: \(subItemId)")
-        print("BEFORE - All subitems state:")
-        for subItem in item.subItems {
-            print("SubItem \(subItem.id): isCompleted = \(subItem.isCompleted)")
-        }
-        
-        guard let index = item.subItems.firstIndex(where: { $0.id == subItemId }) else { 
-            print("❌ ERROR: Could not find subitem with ID: \(subItemId)")
-            return 
-        }
-        print("Found subitem at index: \(index)")
+        guard let index = item.subItems.firstIndex(where: { $0.id == subItemId }) else { return }
         
         var updatedItem = item
-        print("Current main item completion state: \(updatedItem.isCompleted)")
-        
-        // Toggle only this specific subitem
-        print("Toggling subitem at index \(index)")
-        updatedItem.subItems[index].isCompleted.toggle()
-        
-        print("\nAFTER toggle - All subitems state:")
-        for subItem in updatedItem.subItems {
-            print("SubItem \(subItem.id): isCompleted = \(subItem.isCompleted)")
-        }
-        
-        // If ALL subitems are complete, parent should be complete
-        let allComplete = updatedItem.subItems.allSatisfy { $0.isCompleted }
-        print("\nChecking all subitems completion: allComplete = \(allComplete)")
-        updatedItem.isCompleted = allComplete
-        print("Setting main item completion to: \(updatedItem.isCompleted)")
+        var updatedSubItem = updatedItem.subItems[index]
+        updatedSubItem.isCompleted.toggle()
+        updatedItem.subItems[index] = updatedSubItem
         
         updateItem(updatedItem)
-        print("=== SUBITEM TOGGLE END ===\n")
     }
     
-    /// Updates a subitem's text
+    /// Updates the text of a subitem
     func updateSubItemText(_ subItemId: UUID, newText: String) {
         guard let index = item.subItems.firstIndex(where: { $0.id == subItemId }) else { return }
         
@@ -186,9 +153,6 @@ final class PlannerItemViewModel: ObservableObject {
         updatedSubItem.title = newText
         updatedItem.subItems[index] = updatedSubItem
         
-        // Check completion status of remaining subitems
-        updateCompletionBasedOnSubitems(updatedItem: &updatedItem)
-        
         updateItem(updatedItem)
     }
     
@@ -196,23 +160,7 @@ final class PlannerItemViewModel: ObservableObject {
     func deleteSubItem(_ subItemId: UUID) {
         var updatedItem = item
         updatedItem.subItems.removeAll { $0.id == subItemId }
-        
-        // Check completion status of remaining subitems
-        updateCompletionBasedOnSubitems(updatedItem: &updatedItem)
-        
         updateItem(updatedItem)
-    }
-    
-    /// Helper function to update the main item's completion status based on subitems
-    private func updateCompletionBasedOnSubitems(updatedItem: inout Models.ChecklistItem) {
-        if updatedItem.subItems.isEmpty {
-            // No subitems, don't change the main item's status
-            return
-        }
-        
-        // Parent is complete ONLY if ALL subitems are complete
-        // If ANY subitem is incomplete, parent must be incomplete
-        updatedItem.isCompleted = updatedItem.subItems.allSatisfy { $0.isCompleted }
     }
     
     // MARK: - UI State Management
@@ -257,17 +205,8 @@ final class PlannerItemViewModel: ObservableObject {
     
     /// Updates the item and saves changes
     private func updateItem(_ updatedItem: Models.ChecklistItem) {
-        print("\n=== UPDATE ITEM START ===")
-        print("Updating item with ID: \(updatedItem.id)")
-        print("Item completion state: \(updatedItem.isCompleted)")
-        print("Subitems states:")
-        for subItem in updatedItem.subItems {
-            print("SubItem \(subItem.id): isCompleted = \(subItem.isCompleted)")
-        }
-        
         self.item = updatedItem
         saveItem()
-        print("=== UPDATE ITEM END ===\n")
     }
     
     /// Gets a group by ID
