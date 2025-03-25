@@ -414,14 +414,24 @@ final class EasyListViewModel: ObservableObject {
                 // Get the group if it exists
                 let group = sourceItem.group ?? (sourceItem.groupId != nil ? groupStore.getGroup(by: sourceItem.groupId!) : nil)
                 
+                // Create new copies of subitems with new IDs
+                let newSubItems = sourceItem.subItems.map { subItem in
+                    Models.SubItem(
+                        id: UUID(),  // New ID for each subitem
+                        title: subItem.title,
+                        isCompleted: false  // Reset completion state like parent
+                    )
+                }
+                
                 // Create a new item with a new ID but keep the group
                 let newItem = Models.ChecklistItem(
                     id: UUID(),
                     title: sourceItem.title,
                     date: self.date,
-                    isCompleted: false, // Always set as incomplete when importing
+                    isCompleted: sourceItem.isCompleted, // Keep completion status of subitems
                     notification: nil, // Reset notifications
-                    group: group
+                    group: group,
+                    subItems: newSubItems  // Add the copied subitems
                 )
                 
                 // Add to group if needed

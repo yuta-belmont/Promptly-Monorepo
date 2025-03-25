@@ -77,7 +77,7 @@ final class ChatService {
         
         // Try to parse the response as JSON
         var messageContent: String = responseMessage
-        var checklistItems: [Models.ChecklistItem]? = nil
+        let checklistItems: [Models.ChecklistItem]? = nil
         
         // Check if the response is structured as JSON
         if let data = responseMessage.data(using: .utf8),

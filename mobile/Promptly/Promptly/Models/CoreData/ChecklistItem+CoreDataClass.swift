@@ -27,7 +27,7 @@ public class ChecklistItem: NSManagedObject {
         
         // Convert subItems to array of struct models
         var subItemStructs: [Models.SubItem] = []
-        if let subItemsSet = subItems as? NSOrderedSet {
+        if let subItemsSet = subItems {
             for case let subItem as SubItem in subItemsSet {
                 let subItemStruct = Models.SubItem(
                     id: subItem.id ?? UUID(),

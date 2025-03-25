@@ -121,6 +121,8 @@ final class PlannerItemViewModel: ObservableObject {
         
         // Make a single update to the published property to minimize UI redraws
         self.item = updatedItem
+        // Clear the new subitem text after adding
+        self.newSubItemText = ""
         saveItem()
         
         // No need to animate expansion here - handled by the view

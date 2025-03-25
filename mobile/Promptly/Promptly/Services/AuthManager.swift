@@ -32,7 +32,7 @@ class AuthManager: ObservableObject {
     
     /// Check if the user is already authenticated
     private func checkAuthStatus() {
-        if let token = UserDefaults.standard.string(forKey: tokenKey) {
+        if UserDefaults.standard.string(forKey: tokenKey) != nil {
             // Token exists, validate it
             self.isAuthenticated = true
             self.userEmail = UserDefaults.standard.string(forKey: userEmailKey)

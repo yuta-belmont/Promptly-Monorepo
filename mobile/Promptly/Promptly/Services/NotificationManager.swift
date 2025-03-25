@@ -143,9 +143,9 @@ class NotificationManager: NSObject {
     }
     
     func processNotificationsForChecklist(_ checklist: Models.Checklist) -> Models.Checklist {
-        var updatedChecklist = checklist
+        let updatedChecklist = checklist
         
-        for (index, item) in checklist.items.enumerated() {
+        for (_, item) in checklist.items.enumerated() {
             if let notification = item.notification {
                 // Remove existing notification
                 removeAllNotificationsForItem(item)
@@ -207,7 +207,7 @@ class NotificationManager: NSObject {
             return
         }
         
-        let checklistDate = Date(timeIntervalSince1970: checklistTimestamp)
+        _ = Date(timeIntervalSince1970: checklistTimestamp)
         
         // Handle the "Complete" action
         if response.actionIdentifier == "COMPLETE_ACTION" {

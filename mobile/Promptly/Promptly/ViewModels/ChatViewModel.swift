@@ -82,7 +82,7 @@ final class ChatViewModel: ObservableObject {
         }
         
         // Check for pending response (keep this as a fallback)
-        if let pendingId = persistenceService.loadPendingResponse() {
+        if persistenceService.loadPendingResponse() != nil {
             self.isLoading = true
             self.isPendingResponse = true
         }
@@ -340,7 +340,7 @@ final class ChatViewModel: ObservableObject {
             persistenceService.saveLoadingState(messageId: messageId)
             
             do {
-                let (responseMsg, checklistItems) = try await chatService.sendMessage(messages: messages)
+                let (responseMsg, _) = try await chatService.sendMessage(messages: messages)
 
                 if let responseMsg = responseMsg {
                     // Check if the response content is structured JSON

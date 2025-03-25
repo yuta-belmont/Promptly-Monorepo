@@ -9,97 +9,7 @@ struct IsEditingPreferenceKey: PreferenceKey {
 }
 
 // MARK: - Custom TextField Component
-
-struct CustomTextField: UIViewRepresentable {
-    @Binding var text: String
-    var textColor: UIColor = .white
-    var placeholder: String = ""
-    var placeholderColor: UIColor = .gray
-    var isStrikethrough: Bool = false
-    var onReturn: (() -> Void)?
-    var onTextChange: ((String) -> Void)?
-
-    func makeUIView(context: Context) -> UITextField {
-        let textField = UITextField()
-        textField.backgroundColor = .clear
-        textField.returnKeyType = .next
-        textField.delegate = context.coordinator
-        
-        updateTextFieldAttributes(textField)
-        
-        // Support dynamic type with size constraints
-        textField.adjustsFontForContentSizeCategory = true
-        textField.font = .preferredFont(forTextStyle: .body)
-        textField.adjustsFontSizeToFitWidth = false
-        
-        // Align text to the left
-        textField.textAlignment = .left
-        
-        textField.addTarget(context.coordinator, action: #selector(Coordinator.textChanged(_:)), for: .editingChanged)
-        textField.addTarget(context.coordinator, action: #selector(Coordinator.didBeginEditing(_:)), for: .editingDidBegin)
-        textField.addTarget(context.coordinator, action: #selector(Coordinator.didEndEditing(_:)), for: .editingDidEnd)
-        return textField
-    }
-
-    func updateUIView(_ uiView: UITextField, context: Context) {
-        // Always update attributes to ensure strikethrough and other properties are current
-        updateTextFieldAttributes(uiView)
-        
-        uiView.attributedPlaceholder = NSAttributedString(
-            string: placeholder,
-            attributes: [.foregroundColor: placeholderColor]
-        )
-    }
-    
-    private func updateTextFieldAttributes(_ textField: UITextField) {
-        let attributes: [NSAttributedString.Key: Any] = [
-            .strikethroughStyle: isStrikethrough ? NSUnderlineStyle.single.rawValue : 0,
-            .strikethroughColor: UIColor.gray,
-            .foregroundColor: textColor,
-            .font: UIFont.preferredFont(forTextStyle: .body)
-        ]
-        
-        textField.attributedText = NSAttributedString(string: text, attributes: attributes)
-    }
-
-    func makeCoordinator() -> Coordinator {
-        return Coordinator(self)
-    }
-
-    class Coordinator: NSObject, UITextFieldDelegate {
-        var parent: CustomTextField
-
-        init(_ parent: CustomTextField) {
-            self.parent = parent
-            super.init()
-        }
-
-        @objc func textChanged(_ textField: UITextField) {
-            let newText = textField.text ?? ""
-            parent.text = newText
-            parent.onTextChange?(newText)
-        }
-
-        @objc func didBeginEditing(_ textField: UITextField) {
-            DispatchQueue.main.async {
-                textField.selectedTextRange = textField.textRange(from: textField.endOfDocument, to: textField.endOfDocument)
-            }
-        }
-        
-        @objc func didEndEditing(_ textField: UITextField) {
-            // Clear text selection when editing ends
-            textField.selectedTextRange = nil
-        }
-        
-        // Handle return key press
-        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-            if let onReturn = parent.onReturn {
-                onReturn()
-            }
-            return true
-        }
-    }
-}
+// Remove CustomTextField implementation since it's now in its own file
 
 // MARK: - Delete Confirmation View
 struct DeleteConfirmationView: View {
@@ -318,7 +228,12 @@ struct EasyListHeader: View {
                 }
                 
                 if isEditing {
-                    Button(action: onDone) {
+                    Button(action: {
+                        // Add haptic feedback before calling onDone
+                        feedbackGenerator.prepare()
+                        feedbackGenerator.impactOccurred()
+                        onDone()
+                    }) {
                         Text("Done")
                             .foregroundColor(.white)
                             .dynamicTypeSize(.small...DynamicTypeSize.large)
@@ -576,19 +491,27 @@ struct NewItemRow: View {
             Image(systemName: "circle")
                 .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0))
                 .font(.system(size: 22))
+                .zIndex(2)
             
             CustomTextField(
                 text: $text,
                 textColor: isFocused.wrappedValue ? .white : .gray,
                 placeholder: isFocused.wrappedValue ? "New item" : "Add new item...",
                 placeholderColor: .gray,
-                onReturn: onSubmit
+                onReturn: {
+                    if !text.isEmpty {
+                        onSubmit()
+                    } else {
+                        isFocused.wrappedValue = false
+                    }
+                }
             )
             .foregroundColor(isFocused.wrappedValue ? .white : .gray)
             .focused(isFocused)
             .frame(width: UIScreen.main.bounds.width * 0.80, alignment: .topTrailing)
             .clipped(antialiased: true)
             .padding(.leading, 4)
+            .zIndex(1)
         }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
@@ -608,6 +531,7 @@ struct ListContent: View {
     @FocusState var isNewItemFocused: Bool
     @Binding var isEditing: Bool
     @EnvironmentObject private var focusManager: FocusManager
+    let focusCoordinator: PlannerFocusCoordinator
     let headerTitle: String
     let availableHeight: CGFloat
     let removeAllFocus: () -> Void
@@ -723,18 +647,30 @@ struct ListContent: View {
                 // Constrain the List to exactly match the available height
                 .frame(height: availableHeight)
                 .onChange(of: focusedItemId) { oldValue, newValue in
+                    print("[ListContent] focusedItemId changed from \(String(describing: oldValue)) to \(String(describing: newValue))")
                     if let id = newValue {
                         withAnimation {
                             proxy.scrollTo(id, anchor: .center)
                         }
+                        print("[ListContent] Requesting focus for EasyList")
                         focusManager.requestFocus(for: .easyList)
                     }
+                    if newValue == nil {
+                        print("[ListContent] Setting editingItemId to nil due to focusedItemId being nil")
+                        editingItemId = nil
+                        // Use the coordinator to properly remove focus from all items
+                        focusCoordinator.removeAllFocus()
+                    }
+                    updateEditingState()
+                    print("[ListContent] isEditing is now: \(isEditing)")
                 }
                 .onChange(of: isNewItemFocused) { oldValue, newValue in
+                    print("[ListContent] isNewItemFocused changed from \(oldValue) to \(newValue)")
                     if newValue && !viewModel.isItemLimitReached {
                         withAnimation {
                             proxy.scrollTo("newItemRow", anchor: .center)
                         }
+                        print("[ListContent] Requesting focus for EasyList")
                         focusManager.requestFocus(for: .easyList)
                     }
                 }
@@ -750,23 +686,31 @@ struct ListContent: View {
         // Constrain the entire ZStack to the available height
         .frame(height: availableHeight)
         .onChange(of: editingItemId) { oldValue, newValue in
+            print("[ListContent] editingItemId changed from \(String(describing: oldValue)) to \(String(describing: newValue))")
             if let id = newValue {
+                print("[ListContent] Setting focusedItemId to \(id)")
                 focusedItemId = id
             }
             updateEditingState()
+            print("[ListContent] isEditing updated to: \(isEditing)")
         }
         .onChange(of: focusedItemId) { oldValue, newValue in
+            print("[ListContent] focusedItemId changed (outer) from \(String(describing: oldValue)) to \(String(describing: newValue))")
             if newValue == nil {
+                print("[ListContent] Setting editingItemId to nil due to focusedItemId being nil (outer)")
                 editingItemId = nil
             }
             updateEditingState()
+            print("[ListContent] isEditing updated to: \(isEditing) (outer)")
         }
         .onChange(of: isNewItemFocused) { oldValue, newValue in
+            print("[ListContent] isNewItemFocused changed (outer) from \(oldValue) to \(newValue)")
             if !newValue && !newItemText.isEmpty {
                 viewModel.addItem(newItemText)
                 newItemText = ""
             }
             updateEditingState()
+            print("[ListContent] isEditing updated to: \(isEditing) (outer)")
         }
         .onChange(of: isEditing) { oldValue, newValue in
             if !newValue {
@@ -781,6 +725,11 @@ struct ListContent: View {
                 finishEditing()
             }
         }
+        .onChange(of: focusCoordinator.focusedItemId) { _, newId in
+            print("[ListContent] focusCoordinator.focusedItemId changed to: \(String(describing: newId))")
+            editingItemId = newId
+            updateEditingState()
+        }
         .manageFocus(for: .easyList)
     }
     
@@ -789,17 +738,17 @@ struct ListContent: View {
             viewModel.addItem(newItemText)
             newItemText = ""
         }
-        
-        focusedItemId = nil
         isNewItemFocused = false
-        editingItemId = nil
     }
     
     private func updateEditingState() {
-        isEditing = focusedItemId != nil || isNewItemFocused || editingItemId != nil
+        let newIsEditing = focusedItemId != nil || isNewItemFocused || editingItemId != nil
+        print("[ListContent] updateEditingState: focusedItemId=\(String(describing: focusedItemId)), isNewItemFocused=\(isNewItemFocused), editingItemId=\(String(describing: editingItemId))")
+        isEditing = newIsEditing
     }
     
     private func startEditing(_ item: Models.ChecklistItem) {
+        print("[ListContent] startEditing called for item: \(item.id)")
         editingItemId = item.id
     }
     
@@ -829,7 +778,8 @@ struct ListContent: View {
     private func makePlannerItemView(for item: Models.ChecklistItem) -> some View {
         PlannerItemView.create(
             item: item,
-            externalFocusState: $focusedItemId,
+            focusCoordinator: focusCoordinator,
+            externalFocusState: $editingItemId,
             onToggle: {
                 viewModel.toggleItem(item)
             },
@@ -842,16 +792,6 @@ struct ListContent: View {
                     viewModel.updateItem(item, with: text)
                 } else {
                     handleItemLoseFocus(item, text: "")
-                }
-            },
-            onReturn: {
-                // If there's a next item, focus on it
-                if let currentIndex = viewModel.items.firstIndex(where: { $0.id == item.id }),
-                   currentIndex < viewModel.items.count - 1 {
-                    focusedItemId = viewModel.items[currentIndex + 1].id
-                } else {
-                    // If it's the last item, focus on the new item field
-                    isNewItemFocused = true
                 }
             },
             onAddSubItem: { text in
@@ -1148,13 +1088,23 @@ struct EasyListView: View {
     @FocusState private var isNotesFocused: Bool
     @EnvironmentObject private var focusManager: FocusManager
     @ObservedObject private var groupStore = GroupStore.shared
+    @StateObject private var focusCoordinator = PlannerFocusCoordinator()
     
     init(date: Date = Date()) {
         _viewModel = StateObject(wrappedValue: EasyListViewModel(date: date))
     }
     
     private func RemoveAllFocus() {
+        print("[EasyListView] RemoveAllFocus called")
+        if !focusManager.isEasyListFocused {
+            print("[EasyListView] RemoveAllFocus returned early")
+            return
+        }
+        // First remove coordinator focus which will trigger PlannerItemView focus removal
+        focusCoordinator.removeAllFocus()
+        // Then remove global focus which will prevent re-entry into EasyList
         focusManager.removeAllFocus()
+        // Finally clear local focus states
         focusedItemId = nil
         isNewItemFocused = false
         isNotesFocused = false
@@ -1216,6 +1166,7 @@ struct EasyListView: View {
                                 focusedItemId: _focusedItemId,
                                 isNewItemFocused: _isNewItemFocused,
                                 isEditing: $isEditing,
+                                focusCoordinator: focusCoordinator,
                                 headerTitle: viewModel.headerTitle,
                                 availableHeight: geometry.size.height,
                                 removeAllFocus: RemoveAllFocus
@@ -1257,26 +1208,28 @@ struct EasyListView: View {
         }
         .padding(.bottom, 0)
         .preference(key: IsEditingPreferenceKey.self, value: isEditing)
+        .onChange(of: isEditing) { oldValue, newValue in
+            if newValue {
+                focusManager.requestFocus(for: .easyList)
+            }
+        }
         .onChange(of: isNotesFocused) { oldValue, newValue in
             if newValue {
                 focusManager.requestFocus(for: .easyList)
             }
         }
+        .onChange(of: focusManager.currentFocusedView) { oldValue, newValue in
+            if newValue != .easyList {
+                RemoveAllFocus()
+            }
+        }
         .onChange(of: groupStore.lastGroupUpdateTimestamp) { oldValue, newValue in
-            // Refresh the view model when group data changes
             reloadChecklistData()
         }
         .alert("Item Limit Reached", isPresented: $viewModel.showingImportLimitAlert) {
             Button("OK", role: .cancel) { }
         } message: {
             Text("You've reached the maximum limit of 99 items per day. Delete some items to add more.")
-        }
-    }
-    
-    private func finishEditing() {
-        if !isNewItemFocused && focusedItemId == nil && !isNotesFocused {
-            editingItemId = nil
-            isEditing = false
         }
     }
 }

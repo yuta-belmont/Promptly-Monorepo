@@ -7,7 +7,7 @@ struct ChatView: View {
     @State private var lastSentMessageId: UUID?
     @State private var messageOffset: [UUID: CGFloat] = [:]
     @State private var inputFieldHeight: CGFloat = 0
-    @State private var height: CGFloat = UIScreen.main.bounds.height * 0.45
+    @State private var height: CGFloat = UIScreen.main.bounds.height * 0.55
     @State private var keyboardHeight: CGFloat = 0
     @State private var isHoveringClose: Bool = false
     @State private var isDragging = false
@@ -17,7 +17,7 @@ struct ChatView: View {
     @Binding var isExpanded: Bool
     
     private let snapThreshold: CGFloat = UIScreen.main.bounds.height * 0.20
-    private let initialHeight: CGFloat = UIScreen.main.bounds.height * 0.45
+    private let initialHeight: CGFloat = UIScreen.main.bounds.height * 0.55
 
     // Computed property for isFullyExpanded
     private var isFullyExpanded: Bool {

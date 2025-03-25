@@ -18,6 +18,18 @@ class PlannerFocusManager: ObservableObject {
         self.focusedSubItemId = subItemId
         self.isNewSubItemFocused = newSubItemFocused
     }
+    
+    // Remove all focus states
+    func removeAllFocus() {
+        
+        if self.hasAnyFocus {
+            updateFocusState(
+                titleEditing: false,
+                subItemId: nil,
+                newSubItemFocused: false
+            )
+        }
+    }
 }
 
 // Break callbacks into smaller, focused structures
@@ -25,7 +37,6 @@ struct ItemCallbacks {
     let onToggle: (() -> Void)?
     let onTextChange: ((String) -> Void)?
     let onLoseFocus: ((String) -> Void)?
-    let onReturn: (() -> Void)?
     
     init(
         onToggle: (() -> Void)? = nil,
@@ -36,7 +47,6 @@ struct ItemCallbacks {
         self.onToggle = onToggle
         self.onTextChange = onTextChange
         self.onLoseFocus = onLoseFocus
-        self.onReturn = onReturn
     }
 }
 
@@ -76,9 +86,11 @@ private struct MainItemRow: View {
     let itemCallbacks: ItemCallbacks
     let metadataCallbacks: MetadataCallbacks
     @Binding var shouldShowTextEditor: Bool
-    @FocusState var isTitleEditing: Bool
+    let isTitleEditing: FocusState<Bool>.Binding
     let focusTitle: () -> Void
     let focusNewSubItem: () -> Void
+    let focusCoordinator: PlannerFocusCoordinator
+    let removeAllFocus: () -> Void
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
     var body: some View {
@@ -100,10 +112,12 @@ private struct MainItemRow: View {
             ItemTextInputArea(
                 viewModel: viewModel,
                 shouldShowTextEditor: $shouldShowTextEditor,
-                isTitleEditing: _isTitleEditing,
+                isTitleEditing: isTitleEditing,
                 itemCallbacks: itemCallbacks,
                 focusManager: focusManager,
-                focusTitle: focusTitle
+                focusCoordinator: focusCoordinator,
+                focusTitle: focusTitle,
+                removeAllFocus: removeAllFocus
             )
             
             // Expand/collapse button
@@ -130,30 +144,37 @@ private struct MainItemRow: View {
 private struct ItemTextInputArea: View {
     @ObservedObject var viewModel: PlannerItemViewModel
     @Binding var shouldShowTextEditor: Bool
-    @FocusState var isTitleEditing: Bool
+    let isTitleEditing: FocusState<Bool>.Binding
     let itemCallbacks: ItemCallbacks
     let focusManager: PlannerFocusManager
+    let focusCoordinator: PlannerFocusCoordinator
     let focusTitle: () -> Void
+    let removeAllFocus: () -> Void
     
     var body: some View {
         ZStack(alignment: .topLeading) {
             if shouldShowTextEditor || viewModel.areSubItemsExpanded {
                 TextEditor(text: $viewModel.text)
-                    .focused($isTitleEditing)
+                    .focused(isTitleEditing)
                     .onChange(of: viewModel.text) { oldValue, newValue in
                         if newValue.contains("\n") {
                             viewModel.text = newValue.replacingOccurrences(of: "\n", with: "")
-                            itemCallbacks.onReturn?()
+                            removeAllFocus()
                         } else {
                             itemCallbacks.onTextChange?(newValue)
                         }
                     }
-                    .submitLabel(.next)
+                    .onSubmit {
+                        if viewModel.text.isEmpty {
+                            removeAllFocus()
+                        }
+                    }
+                    .submitLabel(.done)
                     .foregroundColor(.white)
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
                     .padding(.vertical, -1)
-                    .padding(.trailing, -6)
+                    .padding(.trailing, -4)
                     .opacity(viewModel.item.isCompleted ? 0.7 : 1.0)
             } else {
                 Text(viewModel.text.isEmpty ? "Enter task here..." : viewModel.text)
@@ -165,7 +186,7 @@ private struct ItemTextInputArea: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 8)
                     .padding(.leading, 5)
-                    .padding(.trailing, -8)
+                    .padding(.trailing, -6)
             }
         }
         .contentShape(Rectangle())
@@ -322,18 +343,43 @@ private struct SubItemRowView: View {
     let subItem: Models.SubItem
     let onReturn: (UUID) -> Void
     @FocusState.Binding var focusedSubItemId: UUID?
-    let onStartEdit: () -> Void
+    let onStartEdit: (UUID) -> Void
+    let onStartNewSubItem: () -> Void
     @State private var localText: String
     @State private var lastTapTime: Date? = nil
+    @State private var forceRefresh: Bool = false
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
 
-    init(viewModel: PlannerItemViewModel, subItem: Models.SubItem, onReturn: @escaping (UUID) -> Void, focusedSubItemId: FocusState<UUID?>.Binding, onStartEdit: @escaping () -> Void) {
+    init(viewModel: PlannerItemViewModel, 
+         subItem: Models.SubItem, 
+         onReturn: @escaping (UUID) -> Void, 
+         focusedSubItemId: FocusState<UUID?>.Binding, 
+         onStartEdit: @escaping (UUID) -> Void,
+         onStartNewSubItem: @escaping () -> Void) {
         self.viewModel = viewModel
         self.subItem = subItem
         self.onReturn = onReturn
         self._focusedSubItemId = focusedSubItemId
         self.onStartEdit = onStartEdit
+        self.onStartNewSubItem = onStartNewSubItem
         self._localText = State(initialValue: subItem.title)
+    }
+    
+    private func handleDeletion() {
+        // Find the current subitem's index
+        if let currentIndex = viewModel.item.subItems.firstIndex(where: { $0.id == subItem.id }) {
+            if currentIndex > 0 {
+                // If there's a subitem above, focus it directly
+                let previousSubItem = viewModel.item.subItems[currentIndex - 1]
+                focusedSubItemId = previousSubItem.id  // Set focus directly
+            } else {
+                // If this is the first subitem, focus the new subitem field
+                focusedSubItemId = nil
+                DispatchQueue.main.async {
+                    onStartNewSubItem()
+                }
+            }
+        }
     }
     
     var body: some View {
@@ -342,6 +388,7 @@ private struct SubItemRowView: View {
             Button(action: {
                 feedbackGenerator.impactOccurred()
                 viewModel.toggleSubItem(subItem.id)
+                forceRefresh.toggle()
             }) {
                 Image(systemName: subItem.isCompleted ? "checkmark.circle.fill" : "circle")
                     .foregroundColor(subItem.isCompleted ? .green : .gray)
@@ -353,28 +400,36 @@ private struct SubItemRowView: View {
                     .animation(.spring(response: 0.2, dampingFraction: 0.6), value: subItem.isCompleted)
             }
             .buttonStyle(.plain)
+            .zIndex(2)
             
             CustomTextField(
                 text: $localText,
                 textColor: .white,
                 isStrikethrough: subItem.isCompleted,
+                textStyle: .subheadline,  // Use smaller text for subitems
                 onReturn: { onReturn(subItem.id) },
                 onTextChange: { newText in
                     localText = newText
+                    if newText.isEmpty {
+                        // If text is becoming empty, handle deletion focus
+                        handleDeletion()
+                    }
                     viewModel.updateSubItemText(subItem.id, newText: newText)
                 }
             )
+            .id(forceRefresh)
             .focused($focusedSubItemId, equals: subItem.id)
             .simultaneousGesture(
                 TapGesture().onEnded {
                     if focusedSubItemId != subItem.id {
-                        onStartEdit()
+                        onStartEdit(subItem.id)
                     }
                 }
             )
             .opacity(subItem.isCompleted ? 0.7 : 1.0)
             .frame(maxWidth: UIScreen.main.bounds.width * 0.78, alignment: focusedSubItemId == subItem.id ? .trailing : .leading)
             .clipped()
+            .zIndex(1)
         }
         .padding(.leading, 0)
         .frame(height: 30)
@@ -390,6 +445,7 @@ private struct SubItemListView: View {
     let onSubItemReturn: (UUID) -> Void
     @FocusState.Binding var focusedSubItemId: UUID?
     let onStartEdit: (UUID) -> Void
+    let onStartNewSubItem: () -> Void
     
     var body: some View {
         ForEach(viewModel.item.subItems, id: \.id) { subItem in
@@ -398,7 +454,10 @@ private struct SubItemListView: View {
                 subItem: subItem,
                 onReturn: onSubItemReturn,
                 focusedSubItemId: $focusedSubItemId,
-                onStartEdit: { onStartEdit(subItem.id) }
+                onStartEdit: { subItemId in
+                    onStartEdit(subItemId)
+                },
+                onStartNewSubItem: onStartNewSubItem
             )
         }
     }
@@ -424,7 +483,9 @@ struct NewSubItemView: View {
                 placeholder: "Add subitem...",
                 placeholderColor: .gray,
                 isStrikethrough: false,
+                textStyle: .subheadline,
                 onReturn: handleAddSubItem
+                
             )
             .focused($isNewSubItemFocused)
             .simultaneousGesture(
@@ -434,6 +495,11 @@ struct NewSubItemView: View {
                     }
                 }
             )
+            .onChange(of: isNewSubItemFocused) { oldValue, newValue in
+                if !newValue && oldValue && !viewModel.newSubItemText.isEmpty {
+                    viewModel.addSubItem(viewModel.newSubItemText)
+                }
+            }
             .frame(maxWidth: UIScreen.main.bounds.width * 0.78, alignment: isNewSubItemFocused ? .trailing : .leading)
             .clipped()
         }
@@ -447,6 +513,8 @@ struct NewSubItemView: View {
             viewModel.addSubItem(textToAdd)
             viewModel.newSubItemText = ""
             onSubmit()
+        } else {
+            isNewSubItemFocused = false
         }
     }
 }
@@ -475,7 +543,8 @@ private struct SubItemsSection: View {
                         focusedSubItemId: $focusedSubItemId,
                         onStartEdit: { subItemId in
                             onStartEditSubItem(subItemId)
-                        }
+                        },
+                        onStartNewSubItem: onStartNewSubItem
                     )
                     
                     NewSubItemView(
@@ -497,7 +566,9 @@ private struct SubItemsSection: View {
         if let currentIndex = viewModel.item.subItems.firstIndex(where: { $0.id == subItemId }),
            currentIndex < viewModel.item.subItems.count - 1 {
             onStartEditSubItem(viewModel.item.subItems[currentIndex + 1].id)
-        } else {
+        }
+        else {
+            isNewSubItemFocused = true
             onStartNewSubItem()
         }
     }
@@ -508,13 +579,14 @@ struct PlannerItemView: View {
     @StateObject private var viewModel: PlannerItemViewModel
     @StateObject private var focusManager = PlannerFocusManager()
     @EnvironmentObject private var appFocusManager: FocusManager
+    @ObservedObject var focusCoordinator: PlannerFocusCoordinator
     
     @FocusState private var isTitleEditing: Bool
     @FocusState private var focusedSubItemId: UUID?
     @FocusState private var isNewSubItemFocused: Bool
     @State private var isGlowing: Bool = false
     
-    let externalFocusState: FocusState<UUID?>.Binding?
+    let externalFocusState: Binding<UUID?>?
     let itemId: UUID
     
     @State private var shouldShowTextEditor: Bool = false
@@ -523,19 +595,25 @@ struct PlannerItemView: View {
     let subItemCallbacks: SubItemCallbacks
     let metadataCallbacks: MetadataCallbacks
     
+    // Add instance identifier
+    private let instanceId: String
+    
     init(
         item: Models.ChecklistItem,
-        externalFocusState: FocusState<UUID?>.Binding?,
+        focusCoordinator: PlannerFocusCoordinator,
+        externalFocusState: Binding<UUID?>?,
         itemCallbacks: ItemCallbacks,
         subItemCallbacks: SubItemCallbacks,
         metadataCallbacks: MetadataCallbacks
     ) {
         self._viewModel = StateObject(wrappedValue: PlannerItemViewModel(item: item))
+        self.focusCoordinator = focusCoordinator
         self.itemId = item.id
         self.externalFocusState = externalFocusState
         self.itemCallbacks = itemCallbacks
         self.subItemCallbacks = subItemCallbacks
         self.metadataCallbacks = metadataCallbacks
+        self.instanceId = String(item.id.uuidString.prefix(4))
     }
     
     var body: some View {
@@ -546,9 +624,11 @@ struct PlannerItemView: View {
                 itemCallbacks: itemCallbacks,
                 metadataCallbacks: metadataCallbacks,
                 shouldShowTextEditor: $shouldShowTextEditor,
-                isTitleEditing: _isTitleEditing,
+                isTitleEditing: $isTitleEditing,
                 focusTitle: focusTitle,
-                focusNewSubItem: { startNewSubItem() }
+                focusNewSubItem: { startNewSubItem() },
+                focusCoordinator: focusCoordinator,
+                removeAllFocus: removeAllFocus
             )
             
             MetadataRow(viewModel: viewModel)
@@ -566,11 +646,11 @@ struct PlannerItemView: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.white.opacity(0.07))
+                    .fill(Color.black.opacity(0.2))
                 
                 if viewModel.isDeleting {
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.red.opacity(0.95 * viewModel.opacity))
+                        .fill(Color.red.opacity(0.65 * viewModel.opacity))
                 } else if let color = viewModel.groupColor {
                     RoundedRectangle(cornerRadius: 16)
                         .fill(color.opacity(0.25))
@@ -581,7 +661,7 @@ struct PlannerItemView: View {
                     RoundedRectangle(cornerRadius: 16)
                         .fill(Color.white)
                         .blur(radius: 8)
-                        .opacity(0.1)
+                        .opacity(0.15)
                 }
             }
         )
@@ -590,7 +670,19 @@ struct PlannerItemView: View {
         .padding(.vertical, 2)
         
         // One-way focus management
+        .onAppear {
+            shouldShowTextEditor = focusManager.hasAnyFocus
+            focusCoordinator.register(focusManager, for: itemId)
+        }
+        .onDisappear {
+            focusCoordinator.unregister(itemId: itemId)
+        }
+        .onChange(of: focusManager.hasAnyFocus) { _, isEditing in
+            print("[PlannerItemView \(instanceId)] hasAnyFocus changed to: \(isEditing)")
+            focusCoordinator.updateFocus(for: itemId, hasAnyFocus: isEditing)
+        }
         .onChange(of: isTitleEditing) { oldValue, newValue in
+            print("[PlannerItemView \(instanceId)] isTitleEditing changed from: \(oldValue) to: \(newValue)")
             focusManager.updateFocusState(
                 titleEditing: newValue,
                 subItemId: focusedSubItemId,
@@ -603,37 +695,22 @@ struct PlannerItemView: View {
             }
         }
         .onChange(of: focusedSubItemId) { oldValue, newValue in
+            print("[PlannerItemView \(instanceId)] focusedSubItemId changed from: \(String(describing: oldValue)) to: \(String(describing: newValue))")
             focusManager.updateFocusState(
                 titleEditing: isTitleEditing,
                 subItemId: newValue,
                 newSubItemFocused: isNewSubItemFocused
             )
             shouldShowTextEditor = focusManager.hasAnyFocus
-            if oldValue != nil && newValue == nil {
-                saveEntireItem()
-            }
         }
         .onChange(of: isNewSubItemFocused) { oldValue, newValue in
+            print("[PlannerItemView \(instanceId)] isNewSubItemFocused changed from: \(oldValue) to: \(newValue)")
             focusManager.updateFocusState(
                 titleEditing: isTitleEditing,
                 subItemId: focusedSubItemId,
                 newSubItemFocused: newValue
             )
             shouldShowTextEditor = focusManager.hasAnyFocus
-            if oldValue && !newValue {
-                saveEntireItem()
-            }
-        }
-        .onChange(of: externalFocusState?.wrappedValue) { _, newValue in
-            if newValue == itemId && !isTitleEditing {
-                focusTitle()
-            }
-        }
-        .onChange(of: focusManager.hasAnyFocus) { _, isEditing in
-            if !isEditing {
-                // Save when we lose focus on any editable field
-                saveEntireItem()
-            }
         }
         .onChange(of: viewModel.item.isCompleted) { _, isCompleted in
             if isCompleted {
@@ -641,29 +718,39 @@ struct PlannerItemView: View {
                 isGlowing = true
                 // Remove glow after delay
                 DispatchQueue.main.asyncAfter(deadline: .now()) {
-                    withAnimation(.easeInOut(duration: 0.3)) {
+                    withAnimation(.easeInOut(duration: 0.5)) {
                         isGlowing = false
                     }
                 }
             }
         }
-        .onAppear {
-            shouldShowTextEditor = focusManager.hasAnyFocus
+        .onChange(of: focusCoordinator.focusedItemId) { _, newId in
+            print("[PlannerItemView \(instanceId)] focusCoordinator.focusedItemId changed to: \(String(describing: newId))")
+            if newId != itemId {
+                removeAllFocus()
+            }
+        }
+        // Remove the direct focus handling from global focus manager changes
+        // Let the coordinator handle it through EasyListView's RemoveAllFocus
+        .onChange(of: appFocusManager.currentFocusedView) { oldValue, newValue in
+            print("[PlannerItemView \(instanceId)] appFocusManager.currentFocusedView changed from: \(String(describing: oldValue)) to: \(String(describing: newValue))")
         }
     }
     
     // Focus methods that directly set @FocusState
     func focusTitle() {
-        isTitleEditing = true
-        focusedSubItemId = nil
-        isNewSubItemFocused = false
-        shouldShowTextEditor = true
-        if let externalFocusState = externalFocusState {
-            externalFocusState.wrappedValue = itemId
+        print("[PlannerItemView \(instanceId)] focusTitle() called for itemId: \(itemId)")
+        shouldShowTextEditor = true  // First ensure TextEditor is present
+        // Use DispatchQueue to ensure TextEditor is rendered before setting focus
+        DispatchQueue.main.async {
+            isTitleEditing = true
+            focusedSubItemId = nil
+            isNewSubItemFocused = false
         }
     }
     
     private func startEditingSubItem(_ id: UUID) {
+        print("[PlannerItemView \(instanceId)] startEditingSubItem() called for subItemId: \(id)")
         // First, update the focus manager state
         focusManager.updateFocusState(
             titleEditing: false,
@@ -680,19 +767,41 @@ struct PlannerItemView: View {
     }
     
     private func startNewSubItem() {
-        isTitleEditing = false
-        focusedSubItemId = nil
-        isNewSubItemFocused = true
+        print("[PlannerItemView \(instanceId)] startNewSubItem() called")
+        //First update focus manager state
         focusManager.updateFocusState(
             titleEditing: false,
             subItemId: nil,
             newSubItemFocused: true
         )
+        
+        // Batch the focus state updates in the next run loop
+        DispatchQueue.main.async {
+            self.isTitleEditing = false
+            self.focusedSubItemId = nil
+            self.isNewSubItemFocused = true
+        }
     }
     
     private func saveEntireItem() {
         // Save the entire item with its current state
+        print("[PlannerItemView \(instanceId)] saveEntireItem() called")
         viewModel.save()
+    }
+    
+    func removeAllFocus() {
+        print("[PlannerItemView \(instanceId)] Removing all focus")
+        // Update local focus states
+        isTitleEditing = false
+        focusedSubItemId = nil
+        isNewSubItemFocused = false
+        shouldShowTextEditor = false
+        
+        // Update focus manager state
+        focusManager.removeAllFocus()
+        
+        // Save any pending changes
+        saveEntireItem()
     }
 }
 
@@ -704,91 +813,6 @@ extension UIView {
             result.append(contentsOf: subview.findSubviews(ofType: type))
         }
         return result
-    }
-}
-
-// SwipeAction implementation
-struct SwipeAction<Content: View>: View {
-    @ViewBuilder let content: Content
-    let onDelete: () -> Void
-    
-    @State private var offset: CGFloat = 0
-    @State private var isSwiped: Bool = false
-    
-    // Swipe threshold
-    private let threshold: CGFloat = 80
-    
-    var body: some View {
-        ZStack {
-            // Background layer with delete button (only visible when swiped)
-            HStack(spacing: 0) {
-                Spacer()
-                
-                // Delete button appears only when swiped
-                // The width is calculated based on how far the user has swiped
-                if offset < 0 || isSwiped {
-                    Image(systemName: "trash.fill")
-                        .font(.system(size: 18))
-                        .foregroundColor(.white)
-                        .frame(width: min(abs(offset), threshold), height: nil)
-                        .padding(.vertical, 6)
-                        .background(Color.red)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                        .opacity(min(abs(offset) / threshold, 1.0)) // Gradually increase opacity as user swipes
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                // Return to non-swiped state
-                                offset = 0
-                                isSwiped = false
-                                
-                                // Execute the delete with a small delay to allow animation to complete
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                    onDelete()
-                                }
-                            }
-                        }
-                }
-            }
-            
-            // Content layer that can be swiped
-            content
-                .background(Color.white.opacity(0.001)) // Nearly invisible background to help with gestures
-                .offset(x: offset)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture()
-                        .onChanged { value in
-                            // Allow only left swipe (negative values), clamp to prevent rightward movement
-                            withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.7, blendDuration: 0)) {
-                                // Restrict to negative or zero values only, never positive (rightward)
-                                offset = min(0, value.translation.width) // Prevent rightward dragging
-                            }
-                        }
-                        .onEnded { value in
-                            // Check if swipe is past threshold
-                            let swipedLeft = value.translation.width < -threshold/2
-                            
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                if swipedLeft {
-                                    offset = -threshold
-                                    isSwiped = true
-                                } else {
-                                    offset = 0
-                                    isSwiped = false
-                                }
-                            }
-                        }
-                )
-        }
-        // Reset offset when tapped outside the swipe area
-        .onTapGesture {
-            if isSwiped {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    offset = 0
-                    isSwiped = false
-                }
-            }
-        }
     }
 }
 
@@ -845,7 +869,8 @@ struct SubItemsTransitionModifier: ViewModifier {
 extension PlannerItemView {
     static func create(
         item: Models.ChecklistItem,
-        externalFocusState: FocusState<UUID?>.Binding? = nil,
+        focusCoordinator: PlannerFocusCoordinator,
+        externalFocusState: Binding<UUID?>? = nil,
         onToggle: (() -> Void)? = nil,
         onTextChange: ((String) -> Void)? = nil,
         onLoseFocus: ((String) -> Void)? = nil,
@@ -858,6 +883,7 @@ extension PlannerItemView {
     ) -> PlannerItemView {
         return PlannerItemView(
             item: item,
+            focusCoordinator: focusCoordinator,
             externalFocusState: externalFocusState,
             itemCallbacks: ItemCallbacks(
                 onToggle: onToggle,
