@@ -1225,9 +1225,6 @@ struct EasyListView: View {
                 RemoveAllFocus()
             }
         }
-        .onChange(of: groupStore.lastGroupUpdateTimestamp) { oldValue, newValue in
-            reloadChecklistData()
-        }
         .alert("Item Limit Reached", isPresented: $viewModel.showingImportLimitAlert) {
             Button("OK", role: .cancel) { }
         } message: {

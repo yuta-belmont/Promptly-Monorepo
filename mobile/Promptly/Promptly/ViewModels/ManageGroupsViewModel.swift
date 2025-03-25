@@ -21,18 +21,22 @@ final class ManageGroupsViewModel: ObservableObject {
     }
     
     func loadGroups() {
-        groupStore.loadGroups()
-        self.groups = groupStore.groups
-        // Reset any pending deletion state
-        self.groupIdToRemove = nil
+        groupStore.loadGroups { [weak self] in
+            guard let self = self else { return }
+            self.groups = self.groupStore.groups
+            // Reset any pending deletion state
+            self.groupIdToRemove = nil
+        }
     }
     
     func addGroup() {
         guard !newGroupName.isEmpty else { return }
-        _ = groupStore.createGroup(title: newGroupName)
-        newGroupName = ""
-        isAddingNewGroup = false
-        self.groups = groupStore.groups
+        _ = groupStore.createGroup(title: newGroupName) { [weak self] in
+            guard let self = self else { return }
+            self.newGroupName = ""
+            self.isAddingNewGroup = false
+            self.groups = self.groupStore.groups
+        }
     }
     
     // Save any pending new group when the view is dismissed
@@ -90,17 +94,18 @@ final class ManageGroupsViewModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
             
             // Delete the group from storage
-            groupStore.deleteGroup(group)
-            groupToDelete = nil
-            
-            // Update the groups list after deletion
-            await MainActor.run {
+            groupStore.deleteGroup(group) { [weak self] in
+                guard let self = self else { return }
+                
+                self.groupToDelete = nil
+                
+                // Update the groups list after deletion
                 self.groups = self.groupStore.groups
                 self.groupIdToRemove = nil
                 
                 // If the deleted group was selected, deselect it
-                if selectedGroup?.id == group.id {
-                    selectedGroup = nil
+                if self.selectedGroup?.id == group.id {
+                    self.selectedGroup = nil
                 }
             }
         }
@@ -185,16 +190,16 @@ final class ManageGroupsViewModel: ObservableObject {
             }
             
             // Clear the group's items in the group store
-            groupStore.clearItemsFromGroup(groupId: group.id)
-            
-            // Reload the groups to ensure we have the latest data
-            loadGroups()
-            
-            // Update UI
-            await MainActor.run {
+            groupStore.clearItemsFromGroup(groupId: group.id) { [weak self] in
+                guard let self = self else { return }
+                
+                // Reload the groups to ensure we have the latest data
+                self.loadGroups()
+                
+                // Update UI
                 // Update the selected group reference
-                if let updatedGroup = groups.first(where: { $0.id == group.id }) {
-                    selectedGroup = updatedGroup
+                if let updatedGroup = self.groups.first(where: { $0.id == group.id }) {
+                    self.selectedGroup = updatedGroup
                 }
                 
                 // Clear the local items array
@@ -206,50 +211,54 @@ final class ManageGroupsViewModel: ObservableObject {
     func updateGroupName(_ newName: String) {
         guard !newName.isEmpty, let group = selectedGroup else { return }
         
-        groupStore.updateGroupTitle(group, newTitle: newName)
-        // Update the local state to reflect the change immediately
-        currentGroupTitle = newName
-        // Update the timestamp to trigger a refresh in observers
-        groupStore.lastGroupUpdateTimestamp = Date()
-        // Update local groups array
-        self.groups = groupStore.groups
+        groupStore.updateGroupTitle(group, newTitle: newName) { [weak self] in
+            guard let self = self else { return }
+            // Update the local state to reflect the change immediately
+            self.currentGroupTitle = newName
+            // Update local groups array directly from the store
+            self.groups = self.groupStore.groups
+        }
     }
     
     func updateGroupColor(red: Double, green: Double, blue: Double) {
         guard let group = selectedGroup else { return }
         
-        groupStore.updateGroupColor(group, red: red, green: green, blue: blue)
-        // Update local state
-        selectedColorRed = red
-        selectedColorGreen = green
-        selectedColorBlue = blue
-        selectedColorHasColor = true
-        
-        // Update the groups array to refresh the UI
-        self.groups = groupStore.groups
-        
-        // If the selected group exists in the updated groups array, update it
-        if let updatedGroup = groups.first(where: { $0.id == group.id }) {
-            selectedGroup = updatedGroup
+        groupStore.updateGroupColor(group, red: red, green: green, blue: blue) { [weak self] in
+            guard let self = self else { return }
+            // Update local state
+            self.selectedColorRed = red
+            self.selectedColorGreen = green
+            self.selectedColorBlue = blue
+            self.selectedColorHasColor = true
+            
+            // Update the groups array to refresh the UI
+            self.groups = self.groupStore.groups
+            
+            // If the selected group exists in the updated groups array, update it
+            if let updatedGroup = self.groups.first(where: { $0.id == group.id }) {
+                self.selectedGroup = updatedGroup
+            }
         }
     }
     
     func removeGroupColor() {
         guard let group = selectedGroup else { return }
         
-        groupStore.removeGroupColor(group)
-        // Update local state
-        selectedColorRed = 0
-        selectedColorGreen = 0
-        selectedColorBlue = 0
-        selectedColorHasColor = false
-        
-        // Update the groups array to refresh the UI
-        self.groups = groupStore.groups
-        
-        // If the selected group exists in the updated groups array, update it
-        if let updatedGroup = groups.first(where: { $0.id == group.id }) {
-            selectedGroup = updatedGroup
+        groupStore.removeGroupColor(group) { [weak self] in
+            guard let self = self else { return }
+            // Update local state
+            self.selectedColorRed = 0
+            self.selectedColorGreen = 0
+            self.selectedColorBlue = 0
+            self.selectedColorHasColor = false
+            
+            // Update the groups array to refresh the UI
+            self.groups = self.groupStore.groups
+            
+            // If the selected group exists in the updated groups array, update it
+            if let updatedGroup = self.groups.first(where: { $0.id == group.id }) {
+                self.selectedGroup = updatedGroup
+            }
         }
     }
     

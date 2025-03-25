@@ -404,19 +404,18 @@ struct DayView: View, Hashable {
                     .gesture(
                         DragGesture()
                             .onChanged { value in
-                                dragOffset = value.translation
-                                // Calculate rotation based on horizontal and vertical movement
+                                // Only track horizontal movement, ignore vertical
+                                dragOffset = CGSize(width: value.translation.width, height: 0)
+                                // Calculate rotation based only on horizontal movement
                                 let rotationFactor = Double(dragOffset.width / 40)
-                                let verticalFactor = Double(dragOffset.height / 55)
-                                rotation = Angle(degrees: rotationFactor + verticalFactor)
+                                rotation = Angle(degrees: rotationFactor)
                             }
                             .onEnded { value in
                                 focusManager.removeAllFocus() //should save off everything in the EasyListView
                                 let horizontalAmount = value.translation.width
-                                let verticalAmount = value.translation.height
                                 
-                                // Check if the swipe is primarily horizontal
-                                if abs(horizontalAmount) > 50 && abs(verticalAmount) < 100 {
+                                // Check if the swipe is far enough horizontally
+                                if abs(horizontalAmount) > 50 {
                                     let isLeftSwipe = horizontalAmount < 0
                                     
                                     // Animate the card off screen

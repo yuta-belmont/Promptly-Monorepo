@@ -13,21 +13,39 @@ final class GroupStore: ObservableObject {
     private let persistenceController = PersistenceController.shared
     
     private init() {
-        loadGroups()
+        // Schedule loading on the next main queue cycle to avoid publishing
+        // during initialization
+        DispatchQueue.main.async {
+            self.loadGroups {
+                // Initialization completed successfully
+                print("GroupStore: Initial groups loaded")
+            }
+        }
     }
     
     // MARK: - Persistence
     
-    func loadGroups() {
+    func loadGroups(completion: (() -> Void)? = nil) {
         let context = persistenceController.container.viewContext
         
         let fetchRequest: NSFetchRequest<ItemGroup> = ItemGroup.fetchRequest()
         
         do {
             let coreDataGroups = try context.fetch(fetchRequest)
-            self.groups = coreDataGroups.map { $0.toStruct() }
+            let newGroups = coreDataGroups.map { $0.toStruct() }
+            
+            // Dispatch updates to @Published properties to the main queue
+            DispatchQueue.main.async {
+                self.groups = newGroups
+                // Call the completion handler after the groups have been updated
+                completion?()
+            }
         } catch {
             print("Failed to load groups: \(error)")
+            // Still call completion even if there's an error
+            DispatchQueue.main.async {
+                completion?()
+            }
         }
     }
     
@@ -38,7 +56,7 @@ final class GroupStore: ObservableObject {
     
     // MARK: - Group Management
     
-    func createGroup(title: String, red: Double = 0, green: Double = 0, blue: Double = 0, hasColor: Bool = false) -> Models.ItemGroup {
+    func createGroup(title: String, red: Double = 0, green: Double = 0, blue: Double = 0, hasColor: Bool = false, completion: (() -> Void)? = nil) -> Models.ItemGroup {
         let context = persistenceController.container.viewContext
         
         // Create a new struct model
@@ -53,29 +71,35 @@ final class GroupStore: ObservableObject {
         
         // Create a Core Data model
         let newGroup = ItemGroup.create(from: newStructGroup, context: context)
+        let structRepresentation = newGroup.toStruct()
         
         do {
             try context.save()
             
-            // Reload groups to ensure we have the latest data
-            loadGroups()
-            
-            // Update timestamp to trigger refresh in observers
+            // Reload groups to ensure we have the latest data - but on main queue
             DispatchQueue.main.async {
-                self.lastGroupUpdateTimestamp = Date()
+                self.loadGroups {
+                    self.lastGroupUpdateTimestamp = Date()
+                    completion?()
+                }
             }
             
             // Return the struct representation
-            return newGroup.toStruct()
+            return structRepresentation
         } catch {
             print("Failed to save new group: \(error)")
+            
+            // Still call completion even if there's an error
+            DispatchQueue.main.async {
+                completion?()
+            }
             
             // Return the struct model even if saving failed
             return newStructGroup
         }
     }
     
-    func deleteGroup(_ group: Models.ItemGroup) {
+    func deleteGroup(_ group: Models.ItemGroup, completion: (() -> Void)? = nil) {
         let context = persistenceController.container.viewContext
         
         // Find the Core Data group
@@ -97,20 +121,29 @@ final class GroupStore: ObservableObject {
                 context.delete(groupToDelete)
                 try context.save()
                 
-                // Reload groups
-                loadGroups()
-                
-                // Update timestamp to trigger refresh in observers
+                // Reload groups and update timestamp on main queue
                 DispatchQueue.main.async {
-                    self.lastGroupUpdateTimestamp = Date()
+                    self.loadGroups {
+                        self.lastGroupUpdateTimestamp = Date()
+                        completion?()
+                    }
+                }
+            } else {
+                // Group not found, still call completion
+                DispatchQueue.main.async {
+                    completion?()
                 }
             }
         } catch {
             print("Failed to delete group: \(error)")
+            // Call completion even on error
+            DispatchQueue.main.async {
+                completion?()
+            }
         }
     }
     
-    func updateGroupTitle(_ group: Models.ItemGroup, newTitle: String) {
+    func updateGroupTitle(_ group: Models.ItemGroup, newTitle: String, completion: (() -> Void)? = nil) {
         let context = persistenceController.container.viewContext
         
         // Find the Core Data group
@@ -124,20 +157,29 @@ final class GroupStore: ObservableObject {
                 groupToUpdate.title = newTitle
                 try context.save()
                 
-                // Reload groups
-                loadGroups()
-                
-                // Update timestamp to trigger refresh in observers
+                // Reload groups and update timestamp on main queue
                 DispatchQueue.main.async {
-                    self.lastGroupUpdateTimestamp = Date()
+                    self.loadGroups {
+                        self.lastGroupUpdateTimestamp = Date()
+                        completion?()
+                    }
+                }
+            } else {
+                // Group not found, still call completion
+                DispatchQueue.main.async {
+                    completion?()
                 }
             }
         } catch {
             print("Failed to update group title: \(error)")
+            // Call completion even on error
+            DispatchQueue.main.async {
+                completion?()
+            }
         }
     }
     
-    func updateGroupColor(_ group: Models.ItemGroup, red: Double, green: Double, blue: Double) {
+    func updateGroupColor(_ group: Models.ItemGroup, red: Double, green: Double, blue: Double, completion: (() -> Void)? = nil) {
         let context = persistenceController.container.viewContext
         
         // Find the Core Data group
@@ -154,20 +196,29 @@ final class GroupStore: ObservableObject {
                 groupToUpdate.hasColor = true
                 try context.save()
                 
-                // Reload groups
-                loadGroups()
-                
-                // Update timestamp to trigger refresh in observers
+                // Reload groups and update timestamp on main queue
                 DispatchQueue.main.async {
-                    self.lastGroupUpdateTimestamp = Date()
+                    self.loadGroups {
+                        self.lastGroupUpdateTimestamp = Date()
+                        completion?()
+                    }
+                }
+            } else {
+                // Group not found, still call completion
+                DispatchQueue.main.async {
+                    completion?()
                 }
             }
         } catch {
             print("Failed to update group color: \(error)")
+            // Call completion even on error
+            DispatchQueue.main.async {
+                completion?()
+            }
         }
     }
     
-    func removeGroupColor(_ group: Models.ItemGroup) {
+    func removeGroupColor(_ group: Models.ItemGroup, completion: (() -> Void)? = nil) {
         let context = persistenceController.container.viewContext
         
         // Find the Core Data group
@@ -184,89 +235,128 @@ final class GroupStore: ObservableObject {
                 groupToUpdate.hasColor = false
                 try context.save()
                 
-                // Reload groups
-                loadGroups()
-                
-                // Update timestamp to trigger refresh in observers
+                // Reload groups and update timestamp on main queue
                 DispatchQueue.main.async {
-                    self.lastGroupUpdateTimestamp = Date()
+                    self.loadGroups {
+                        self.lastGroupUpdateTimestamp = Date()
+                        completion?()
+                    }
+                }
+            } else {
+                // Group not found, still call completion
+                DispatchQueue.main.async {
+                    completion?()
                 }
             }
         } catch {
             print("Failed to remove group color: \(error)")
+            // Call completion even on error
+            DispatchQueue.main.async {
+                completion?()
+            }
         }
     }
     
     // MARK: - Item-Group Relationship Management
     
-    func addItemToGroup(item: Models.ChecklistItem, groupId: UUID) {
+    func addItemToGroup(item: Models.ChecklistItem, groupId: UUID, completion: (() -> Void)? = nil) {
         let context = persistenceController.container.viewContext
         
         // Remove the item from all other groups first
-        removeItemFromAllGroups(itemId: item.id)
-        
-        // Find the Core Data group
-        let groupFetchRequest: NSFetchRequest<ItemGroup> = ItemGroup.fetchRequest()
-        groupFetchRequest.predicate = NSPredicate(format: "id == %@", groupId as CVarArg)
-        
-        // Find the Core Data item
-        let itemFetchRequest: NSFetchRequest<ChecklistItem> = ChecklistItem.fetchRequest()
-        itemFetchRequest.predicate = NSPredicate(format: "id == %@", item.id as CVarArg)
-        
-        do {
-            let groupResults = try context.fetch(groupFetchRequest)
-            let itemResults = try context.fetch(itemFetchRequest)
+        removeItemFromAllGroups(itemId: item.id) { 
+            // Continue adding item to group after it's been removed from others
+            let context = self.persistenceController.container.viewContext
             
-            if let group = groupResults.first, let cdItem = itemResults.first {
-                // Update the relationship
-                cdItem.itemGroup = group
-                try context.save()
+            // Find the Core Data group
+            let groupFetchRequest: NSFetchRequest<ItemGroup> = ItemGroup.fetchRequest()
+            groupFetchRequest.predicate = NSPredicate(format: "id == %@", groupId as CVarArg)
+            
+            // Find the Core Data item
+            let itemFetchRequest: NSFetchRequest<ChecklistItem> = ChecklistItem.fetchRequest()
+            itemFetchRequest.predicate = NSPredicate(format: "id == %@", item.id as CVarArg)
+            
+            do {
+                let groupResults = try context.fetch(groupFetchRequest)
+                let itemResults = try context.fetch(itemFetchRequest)
                 
-                // Update timestamp to trigger refresh in observers
+                if let group = groupResults.first, let cdItem = itemResults.first {
+                    // Update the relationship
+                    cdItem.itemGroup = group
+                    try context.save()
+                    
+                    // Reload groups and update timestamp on main queue
+                    DispatchQueue.main.async {
+                        self.loadGroups {
+                            self.lastGroupUpdateTimestamp = Date()
+                            completion?()
+                        }
+                    }
+                } else {
+                    // Group or item not found, still call completion
+                    DispatchQueue.main.async {
+                        completion?()
+                    }
+                }
+            } catch {
+                print("DEBUG: GroupStore - Failed to add item to group: \(error)")
+                // Call completion even on error
                 DispatchQueue.main.async {
-                    self.lastGroupUpdateTimestamp = Date()
+                    completion?()
                 }
             }
-        } catch {
-            print("DEBUG: GroupStore - Failed to add item to group: \(error)")
         }
     }
     
     // For backward compatibility
-    func addItemToGroup(itemId: UUID, date: Date, groupId: UUID) {
+    func addItemToGroup(itemId: UUID, date: Date, groupId: UUID, completion: (() -> Void)? = nil) {
         let context = persistenceController.container.viewContext
         
         // Remove the item from all other groups first
-        removeItemFromAllGroups(itemId: itemId)
-        
-        // Find the Core Data group
-        let groupFetchRequest: NSFetchRequest<ItemGroup> = ItemGroup.fetchRequest()
-        groupFetchRequest.predicate = NSPredicate(format: "id == %@", groupId as CVarArg)
-        
-        // Find the Core Data item
-        let itemFetchRequest: NSFetchRequest<ChecklistItem> = ChecklistItem.fetchRequest()
-        itemFetchRequest.predicate = NSPredicate(format: "id == %@", itemId as CVarArg)
-        
-        do {
-            let groupResults = try context.fetch(groupFetchRequest)
-            let itemResults = try context.fetch(itemFetchRequest)
+        removeItemFromAllGroups(itemId: itemId) {
+            // Continue adding item to group after it's been removed from others
+            let context = self.persistenceController.container.viewContext
             
-            if let group = groupResults.first, let cdItem = itemResults.first {
-                // Update the relationship
-                cdItem.itemGroup = group
-                try context.save()
+            // Find the Core Data group
+            let groupFetchRequest: NSFetchRequest<ItemGroup> = ItemGroup.fetchRequest()
+            groupFetchRequest.predicate = NSPredicate(format: "id == %@", groupId as CVarArg)
+            
+            // Find the Core Data item
+            let itemFetchRequest: NSFetchRequest<ChecklistItem> = ChecklistItem.fetchRequest()
+            itemFetchRequest.predicate = NSPredicate(format: "id == %@", itemId as CVarArg)
+            
+            do {
+                let groupResults = try context.fetch(groupFetchRequest)
+                let itemResults = try context.fetch(itemFetchRequest)
                 
-                // Update timestamp to trigger refresh in observers
+                if let group = groupResults.first, let cdItem = itemResults.first {
+                    // Update the relationship
+                    cdItem.itemGroup = group
+                    try context.save()
+                    
+                    // Reload groups and update timestamp on main queue
+                    DispatchQueue.main.async {
+                        self.loadGroups {
+                            self.lastGroupUpdateTimestamp = Date()
+                            completion?()
+                        }
+                    }
+                } else {
+                    // Group or item not found, still call completion
+                    DispatchQueue.main.async {
+                        completion?()
+                    }
+                }
+            } catch {
+                print("Failed to add item to group: \(error)")
+                // Call completion even on error
                 DispatchQueue.main.async {
-                    self.lastGroupUpdateTimestamp = Date()
+                    completion?()
                 }
             }
-        } catch {
-            print("Failed to add item to group: \(error)")
         }
     }
     
-    func removeItemFromGroup(itemId: UUID, groupId: UUID) {
+    func removeItemFromGroup(itemId: UUID, groupId: UUID, completion: (() -> Void)? = nil) {
         let context = persistenceController.container.viewContext
         
         // Find the Core Data item
@@ -281,17 +371,29 @@ final class GroupStore: ObservableObject {
                 cdItem.itemGroup = nil
                 try context.save()
                 
-                // Update timestamp to trigger refresh in observers
+                // Reload groups and update timestamp on main queue
                 DispatchQueue.main.async {
-                    self.lastGroupUpdateTimestamp = Date()
+                    self.loadGroups {
+                        self.lastGroupUpdateTimestamp = Date()
+                        completion?()
+                    }
+                }
+            } else {
+                // Item not found in group, still call completion
+                DispatchQueue.main.async {
+                    completion?()
                 }
             }
         } catch {
             print("Failed to remove item from group: \(error)")
+            // Call completion even on error
+            DispatchQueue.main.async {
+                completion?()
+            }
         }
     }
     
-    func removeItemFromAllGroups(itemId: UUID) {
+    func removeItemFromAllGroups(itemId: UUID, completion: (() -> Void)? = nil) {
         let context = persistenceController.container.viewContext
         
         // Find the Core Data item
@@ -306,17 +408,29 @@ final class GroupStore: ObservableObject {
                 cdItem.itemGroup = nil
                 try context.save()
                 
-                // Update timestamp to trigger refresh in observers
+                // Reload groups and update timestamp on main queue
                 DispatchQueue.main.async {
-                    self.lastGroupUpdateTimestamp = Date()
+                    self.loadGroups {
+                        self.lastGroupUpdateTimestamp = Date()
+                        completion?()
+                    }
+                }
+            } else {
+                // Item not found, still call completion
+                DispatchQueue.main.async {
+                    completion?()
                 }
             }
         } catch {
             print("Failed to remove item from all groups: \(error)")
+            // Call completion even on error
+            DispatchQueue.main.async {
+                completion?()
+            }
         }
     }
     
-    func clearItemsFromGroup(groupId: UUID) {
+    func clearItemsFromGroup(groupId: UUID, completion: (() -> Void)? = nil) {
         let context = persistenceController.container.viewContext
         
         // Find the Core Data group
@@ -337,13 +451,25 @@ final class GroupStore: ObservableObject {
                 
                 try context.save()
                 
-                // Update timestamp to trigger refresh in observers
+                // Reload groups and update timestamp on main queue
                 DispatchQueue.main.async {
-                    self.lastGroupUpdateTimestamp = Date()
+                    self.loadGroups {
+                        self.lastGroupUpdateTimestamp = Date()
+                        completion?()
+                    }
+                }
+            } else {
+                // Group not found, still call completion
+                DispatchQueue.main.async {
+                    completion?()
                 }
             }
         } catch {
             print("Failed to clear items from group: \(error)")
+            // Call completion even on error
+            DispatchQueue.main.async {
+                completion?()
+            }
         }
     }
     
@@ -382,7 +508,7 @@ final class GroupStore: ObservableObject {
     }
     
     // Helper function to update an item in a group
-    func updateItemInGroup(item: Models.ChecklistItem, groupId: UUID) {
+    func updateItemInGroup(item: Models.ChecklistItem, groupId: UUID, completion: (() -> Void)? = nil) {
         let context = persistenceController.container.viewContext
         
         // Find the Core Data group
@@ -406,13 +532,25 @@ final class GroupStore: ObservableObject {
                 
                 try context.save()
                 
-                // Update timestamp to trigger refresh in observers
+                // Reload groups and update timestamp on main queue
                 DispatchQueue.main.async {
-                    self.lastGroupUpdateTimestamp = Date()
+                    self.loadGroups {
+                        self.lastGroupUpdateTimestamp = Date()
+                        completion?()
+                    }
+                }
+            } else {
+                // Group or item not found, still call completion
+                DispatchQueue.main.async {
+                    completion?()
                 }
             }
         } catch {
             print("Failed to update item in group: \(error)")
+            // Call completion even on error
+            DispatchQueue.main.async {
+                completion?()
+            }
         }
     }
 }

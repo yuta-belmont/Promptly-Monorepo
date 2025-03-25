@@ -353,27 +353,62 @@ final class EasyListViewModel: ObservableObject {
     func updateItemGroup(_ item: Models.ChecklistItem, with groupId: UUID?) {
         // If the item already belongs to a group, remove it from that group
         if let oldGroupId = item.groupId {
-            groupStore.removeItemFromGroup(itemId: item.id, groupId: oldGroupId)
-        }
-        
-        // Create an updated item with the new group
-        var updatedItem = item
-        
-        if let newGroupId = groupId {
+            groupStore.removeItemFromGroup(itemId: item.id, groupId: oldGroupId) {
+                // Create an updated item with the new group
+                var updatedItem = item
+                
+                if let newGroupId = groupId {
+                    // Get the actual group object
+                    let newGroup = self.groupStore.getGroup(by: newGroupId)
+                    updatedItem.updateGroup(newGroup)
+                    
+                    // Add the item to the group
+                    self.groupStore.addItemToGroup(item: updatedItem, groupId: newGroupId) {
+                        // Update the item in the checklist
+                        self.checklist.updateItem(updatedItem)
+                        self.saveChecklist()
+                        
+                        // Reload the checklist to ensure we have the latest data
+                        self.reloadChecklist()
+                    }
+                } else {
+                    // Clear the group
+                    updatedItem.updateGroup(nil)
+                    
+                    // Update the item in the checklist
+                    self.checklist.updateItem(updatedItem)
+                    self.saveChecklist()
+                    
+                    // Reload the checklist to ensure we have the latest data
+                    self.reloadChecklist()
+                }
+            }
+        } else if let newGroupId = groupId {
+            // Create an updated item with the new group
+            var updatedItem = item
+            
             // Get the actual group object
             let newGroup = groupStore.getGroup(by: newGroupId)
             updatedItem.updateGroup(newGroup)
             
             // Add the item to the group
-            groupStore.addItemToGroup(item: updatedItem, groupId: newGroupId)
+            groupStore.addItemToGroup(item: updatedItem, groupId: newGroupId) {
+                // Update the item in the checklist
+                self.checklist.updateItem(updatedItem)
+                self.saveChecklist()
+                
+                // Reload the checklist to ensure we have the latest data
+                self.reloadChecklist()
+            }
         } else {
-            // Clear the group
+            // No group changes needed, just update the item
+            var updatedItem = item
             updatedItem.updateGroup(nil)
+            
+            // Update the item in the checklist
+            checklist.updateItem(updatedItem)
+            saveChecklist()
         }
-        
-        // Update the item in the checklist
-        checklist.updateItem(updatedItem)
-        saveChecklist()
     }
     
     func getGroupForItem(_ item: Models.ChecklistItem) -> Models.ItemGroup? {
