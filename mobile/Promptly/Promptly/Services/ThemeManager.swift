@@ -64,13 +64,6 @@ enum AppTheme: String, CaseIterable, Identifiable {
                     startPoint: .top,
                     endPoint: .bottom
                 ))
-                .overlay(
-                    // Gentle mist effect
-                    MistTexture()
-                        .foregroundColor(Color.white.opacity(0.6))
-                        .blur(radius: 8)
-                        .blendMode(.screen)
-                )
         case .sunshine:
             RoundedRectangle(cornerRadius: 8)
                 .fill(LinearGradient(
@@ -123,12 +116,6 @@ enum AppTheme: String, CaseIterable, Identifiable {
                             endPoint: .top
                         ))
                         .overlay(
-                            // Redder flow texture
-                            FlowTexture()
-                                .foregroundColor(Color(red: 1.0, green: 0.2, blue: 0.0).opacity(0.3))
-                                .blendMode(.overlay)
-                        )
-                        .overlay(
                             // Redder glow
                             RadialGradient(
                                 gradient: Gradient(colors: [
@@ -164,19 +151,6 @@ enum AppTheme: String, CaseIterable, Identifiable {
                                 y: CGFloat.random(in: 0...100)
                             )
                     }
-                )
-                .overlay(
-                    // Faint cosmic glow (darker blue tint)
-                    RadialGradient(
-                        gradient: Gradient(colors: [
-                            Color(red: 0.1, green: 0.15, blue: 0.35).opacity(0.2), // Darker blue glow
-                            Color.clear
-                        ]),
-                        center: .init(x: 0.5, y: 0.3),
-                        startRadius: 10,
-                        endRadius: 60
-                    )
-                    .blendMode(.screen)
                 )
                 .frame(width: 100, height: 100) // Compact summary size
         case . bubblegum:

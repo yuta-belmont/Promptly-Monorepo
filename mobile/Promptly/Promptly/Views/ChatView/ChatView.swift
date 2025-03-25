@@ -7,7 +7,7 @@ struct ChatView: View {
     @State private var lastSentMessageId: UUID?
     @State private var messageOffset: [UUID: CGFloat] = [:]
     @State private var inputFieldHeight: CGFloat = 0
-    @State private var height: CGFloat = UIScreen.main.bounds.height * 0.55
+    @State private var height: CGFloat = UIScreen.main.bounds.height * 0.45
     @State private var keyboardHeight: CGFloat = 0
     @State private var isHoveringClose: Bool = false
     @State private var isDragging = false
@@ -17,7 +17,7 @@ struct ChatView: View {
     @Binding var isExpanded: Bool
     
     private let snapThreshold: CGFloat = UIScreen.main.bounds.height * 0.20
-    private let initialHeight: CGFloat = UIScreen.main.bounds.height * 0.55
+    private let initialHeight: CGFloat = UIScreen.main.bounds.height * 0.45
 
     // Computed property for isFullyExpanded
     private var isFullyExpanded: Bool {
@@ -43,6 +43,7 @@ struct ChatView: View {
             let availableHeight = geometry.size.height
             let maxHeight = availableHeight -  20
             
+            // Main chat content without the dark background (that's now in BaseView)
             VStack(spacing: 0) {
                 Spacer()
                 
@@ -361,6 +362,7 @@ private struct ChatHeaderView: View {
     let maxHeight: CGFloat
     let initialHeight: CGFloat
     let snapThreshold: CGFloat
+    @State private var showingInfoPopover = false
     
     var body: some View {
         ZStack {
@@ -375,9 +377,36 @@ private struct ChatHeaderView: View {
             
             // Buttons container
             HStack {
-                // Left spacer for symmetry
-                Color.clear
-                    .frame(width: 44, height: 30)
+                // Info button (left side)
+                Button(action: {
+                    showingInfoPopover = true
+                }) {
+                    Image(systemName: "info")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.8))
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(.gray.opacity(0.3)))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(CloseButtonStyle())
+                .frame(width: 44, height: 30)
+                .popover(isPresented: $showingInfoPopover, arrowEdge: .top) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Alfred helps you set reminders, organize tasks, and achieve your goals.")
+                            .font(.subheadline)
+                        
+                        Text("Messages are automatically deleted after 48 hours.")
+                            .font(.subheadline)
+                            .padding(.top, 4)
+                    }
+                    .padding()
+                    .frame(width: 280)
+                    .background(Color(.systemBackground))
+                    .presentationCompactAdaptation(.none)
+                }
+                .allowsHitTesting(true)
+                .gesture(DragGesture().onChanged { _ in })
                 
                 Spacer()
                 
@@ -435,7 +464,7 @@ private struct ChatHeaderView: View {
                 .allowsHitTesting(true)
                 .gesture(DragGesture().onChanged { _ in })
             }
-            .padding(.trailing, 2)
+            .padding(.horizontal, 8)
         }
         .frame(height: 30)
         .frame(maxWidth: .infinity)

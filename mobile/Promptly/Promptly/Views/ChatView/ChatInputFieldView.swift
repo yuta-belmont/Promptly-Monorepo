@@ -29,7 +29,7 @@ struct ChatInputFieldView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            TextField("Alfred", text: $userInput, axis: .vertical)
+            TextField("Text Alfred...", text: $userInput, axis: .vertical)
                 .lineLimit(1...10)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 6)
@@ -47,6 +47,8 @@ struct ChatInputFieldView: View {
                         focusManager.requestFocus(for: .chat)
                     }
                 }
+                .padding(.leading, 6)
+                .padding(.vertical, 2)
             
             Button(action: {
                 if shouldShowMic || viewModel.isRecording {
@@ -56,15 +58,16 @@ struct ChatInputFieldView: View {
                 }
             }) {
                 Image(systemName: buttonImageName)
-                    .font(.system(size: 24))
+                    .font(.system(size: 28))
                     .foregroundColor(buttonColor)
-                    .frame(width: 24, height: 24)
+                    .frame(width: 32, height: 32)
                     .contentShape(Rectangle())
             }
             .disabled(buttonDisabled || isDisabled)
             .opacity(isDisabled ? 0.6 : 1)
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, 12)
+        .padding(.trailing, 16)
         .padding(.vertical, 8)
         .background(
             GeometryReader { geometry in

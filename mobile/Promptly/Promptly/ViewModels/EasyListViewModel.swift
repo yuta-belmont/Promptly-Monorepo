@@ -419,7 +419,7 @@ final class EasyListViewModel: ObservableObject {
                     Models.SubItem(
                         id: UUID(),  // New ID for each subitem
                         title: subItem.title,
-                        isCompleted: false  // Reset completion state like parent
+                        isCompleted: subItem.isCompleted
                     )
                 }
                 

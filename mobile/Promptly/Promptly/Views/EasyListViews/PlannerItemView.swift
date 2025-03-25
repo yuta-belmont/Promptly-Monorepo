@@ -7,27 +7,91 @@ class PlannerFocusManager: ObservableObject {
     @Published private(set) var focusedSubItemId: UUID? = nil
     @Published private(set) var isNewSubItemFocused: Bool = false
     
+    // References to the actual SwiftUI focus bindings and save callback
+    private var titleFocusBinding: FocusState<Bool>.Binding?
+    private var subItemFocusBinding: FocusState<UUID?>.Binding?
+    private var newSubItemFocusBinding: FocusState<Bool>.Binding?
+    private var saveCallback: (() -> Void)?
+    private var shouldShowTextEditorBinding: Binding<Bool>?
+    
     // A computed property to check if any element has focus
     var hasAnyFocus: Bool {
         isTitleEditing || focusedSubItemId != nil || isNewSubItemFocused
     }
     
+    // Initialize with optional bindings and callback
+    init(
+        titleFocusBinding: FocusState<Bool>.Binding? = nil,
+        subItemFocusBinding: FocusState<UUID?>.Binding? = nil,
+        newSubItemFocusBinding: FocusState<Bool>.Binding? = nil,
+        shouldShowTextEditorBinding: Binding<Bool>? = nil,
+        saveCallback: (() -> Void)? = nil
+    ) {
+        self.titleFocusBinding = titleFocusBinding
+        self.subItemFocusBinding = subItemFocusBinding
+        self.newSubItemFocusBinding = newSubItemFocusBinding
+        self.shouldShowTextEditorBinding = shouldShowTextEditorBinding
+        self.saveCallback = saveCallback
+    }
+    
     // Update focus state from view
     func updateFocusState(titleEditing: Bool, subItemId: UUID?, newSubItemFocused: Bool) {
+        print("[PlannerFocusManager] updating focus state")
         self.isTitleEditing = titleEditing
         self.focusedSubItemId = subItemId
         self.isNewSubItemFocused = newSubItemFocused
+        
+        // Update the text editor visibility
+        if let binding = shouldShowTextEditorBinding {
+            binding.wrappedValue = hasAnyFocus
+        }
     }
     
-    // Remove all focus states
+    // Update the bindings if they change
+    func updateBindings(
+        titleFocusBinding: FocusState<Bool>.Binding? = nil,
+        subItemFocusBinding: FocusState<UUID?>.Binding? = nil,
+        newSubItemFocusBinding: FocusState<Bool>.Binding? = nil,
+        shouldShowTextEditorBinding: Binding<Bool>? = nil,
+        saveCallback: (() -> Void)? = nil
+    ) {
+        self.titleFocusBinding = titleFocusBinding ?? self.titleFocusBinding
+        self.subItemFocusBinding = subItemFocusBinding ?? self.subItemFocusBinding
+        self.newSubItemFocusBinding = newSubItemFocusBinding ?? self.newSubItemFocusBinding
+        self.shouldShowTextEditorBinding = shouldShowTextEditorBinding ?? self.shouldShowTextEditorBinding
+        self.saveCallback = saveCallback ?? self.saveCallback
+    }
+    
+    // Enhanced method that actually changes the focus states
     func removeAllFocus() {
+        // Only proceed if we have focus to remove
+        if !hasAnyFocus {
+            return
+        }
         
-        if self.hasAnyFocus {
-            updateFocusState(
-                titleEditing: false,
-                subItemId: nil,
-                newSubItemFocused: false
-            )
+        print("[PlannerFocusManager] Removing all focus")
+        
+        // Update the internal tracking properties
+        updateFocusState(
+            titleEditing: false,
+            subItemId: nil,
+            newSubItemFocused: false
+        )
+        
+        // Update the actual SwiftUI focus states and save
+        DispatchQueue.main.async {
+            // Update focus states
+            self.titleFocusBinding?.wrappedValue = false
+            self.subItemFocusBinding?.wrappedValue = nil
+            self.newSubItemFocusBinding?.wrappedValue = false
+            
+            // Update text editor visibility
+            if let binding = self.shouldShowTextEditorBinding {
+                binding.wrappedValue = false
+            }
+            
+            // Save changes
+            self.saveCallback?()
         }
     }
 }
@@ -90,7 +154,6 @@ private struct MainItemRow: View {
     let focusTitle: () -> Void
     let focusNewSubItem: () -> Void
     let focusCoordinator: PlannerFocusCoordinator
-    let removeAllFocus: () -> Void
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
     var body: some View {
@@ -116,8 +179,7 @@ private struct MainItemRow: View {
                 itemCallbacks: itemCallbacks,
                 focusManager: focusManager,
                 focusCoordinator: focusCoordinator,
-                focusTitle: focusTitle,
-                removeAllFocus: removeAllFocus
+                focusTitle: focusTitle
             )
             
             // Expand/collapse button
@@ -149,7 +211,6 @@ private struct ItemTextInputArea: View {
     let focusManager: PlannerFocusManager
     let focusCoordinator: PlannerFocusCoordinator
     let focusTitle: () -> Void
-    let removeAllFocus: () -> Void
     
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -159,14 +220,14 @@ private struct ItemTextInputArea: View {
                     .onChange(of: viewModel.text) { oldValue, newValue in
                         if newValue.contains("\n") {
                             viewModel.text = newValue.replacingOccurrences(of: "\n", with: "")
-                            removeAllFocus()
+                            focusManager.removeAllFocus()
                         } else {
                             itemCallbacks.onTextChange?(newValue)
                         }
                     }
                     .onSubmit {
                         if viewModel.text.isEmpty {
-                            removeAllFocus()
+                            focusManager.removeAllFocus()
                         }
                     }
                     .submitLabel(.done)
@@ -627,8 +688,7 @@ struct PlannerItemView: View {
                 isTitleEditing: $isTitleEditing,
                 focusTitle: focusTitle,
                 focusNewSubItem: { startNewSubItem() },
-                focusCoordinator: focusCoordinator,
-                removeAllFocus: removeAllFocus
+                focusCoordinator: focusCoordinator
             )
             
             MetadataRow(viewModel: viewModel)
@@ -672,6 +732,16 @@ struct PlannerItemView: View {
         // One-way focus management
         .onAppear {
             shouldShowTextEditor = focusManager.hasAnyFocus
+            
+            // Update focus manager with bindings
+            focusManager.updateBindings(
+                titleFocusBinding: $isTitleEditing,
+                subItemFocusBinding: $focusedSubItemId,
+                newSubItemFocusBinding: $isNewSubItemFocused,
+                shouldShowTextEditorBinding: $shouldShowTextEditor,
+                saveCallback: saveEntireItem
+            )
+            
             focusCoordinator.register(focusManager, for: itemId)
         }
         .onDisappear {
@@ -688,10 +758,8 @@ struct PlannerItemView: View {
                 subItemId: focusedSubItemId,
                 newSubItemFocused: isNewSubItemFocused
             )
-            shouldShowTextEditor = focusManager.hasAnyFocus
             if !newValue && oldValue {
                 itemCallbacks.onLoseFocus?(viewModel.text)
-                saveEntireItem()
             }
         }
         .onChange(of: focusedSubItemId) { oldValue, newValue in
@@ -701,7 +769,6 @@ struct PlannerItemView: View {
                 subItemId: newValue,
                 newSubItemFocused: isNewSubItemFocused
             )
-            shouldShowTextEditor = focusManager.hasAnyFocus
         }
         .onChange(of: isNewSubItemFocused) { oldValue, newValue in
             print("[PlannerItemView \(instanceId)] isNewSubItemFocused changed from: \(oldValue) to: \(newValue)")
@@ -710,7 +777,6 @@ struct PlannerItemView: View {
                 subItemId: focusedSubItemId,
                 newSubItemFocused: newValue
             )
-            shouldShowTextEditor = focusManager.hasAnyFocus
         }
         .onChange(of: viewModel.item.isCompleted) { _, isCompleted in
             if isCompleted {
@@ -726,8 +792,10 @@ struct PlannerItemView: View {
         }
         .onChange(of: focusCoordinator.focusedItemId) { _, newId in
             print("[PlannerItemView \(instanceId)] focusCoordinator.focusedItemId changed to: \(String(describing: newId))")
-            if newId != itemId {
-                removeAllFocus()
+            print("[PlannerItemView \(instanceId)] has focus:", focusManager.hasAnyFocus)
+            if newId != itemId && focusManager.hasAnyFocus {
+                // Only call removeAllFocus if this item actually has focus
+                focusManager.removeAllFocus()
             }
         }
         // Remove the direct focus handling from global focus manager changes
@@ -751,13 +819,6 @@ struct PlannerItemView: View {
     
     private func startEditingSubItem(_ id: UUID) {
         print("[PlannerItemView \(instanceId)] startEditingSubItem() called for subItemId: \(id)")
-        // First, update the focus manager state
-        focusManager.updateFocusState(
-            titleEditing: false,
-            subItemId: id,
-            newSubItemFocused: false
-        )
-        
         // Batch the individual focus state updates in the next run loop
         DispatchQueue.main.async {
             isTitleEditing = false
@@ -768,13 +829,6 @@ struct PlannerItemView: View {
     
     private func startNewSubItem() {
         print("[PlannerItemView \(instanceId)] startNewSubItem() called")
-        //First update focus manager state
-        focusManager.updateFocusState(
-            titleEditing: false,
-            subItemId: nil,
-            newSubItemFocused: true
-        )
-        
         // Batch the focus state updates in the next run loop
         DispatchQueue.main.async {
             self.isTitleEditing = false
@@ -787,21 +841,6 @@ struct PlannerItemView: View {
         // Save the entire item with its current state
         print("[PlannerItemView \(instanceId)] saveEntireItem() called")
         viewModel.save()
-    }
-    
-    func removeAllFocus() {
-        print("[PlannerItemView \(instanceId)] Removing all focus")
-        // Update local focus states
-        isTitleEditing = false
-        focusedSubItemId = nil
-        isNewSubItemFocused = false
-        shouldShowTextEditor = false
-        
-        // Update focus manager state
-        focusManager.removeAllFocus()
-        
-        // Save any pending changes
-        saveEntireItem()
     }
 }
 

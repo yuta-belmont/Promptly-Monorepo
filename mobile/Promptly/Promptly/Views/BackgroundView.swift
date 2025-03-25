@@ -1,64 +1,24 @@
 import SwiftUI
+//BackgroundView.swift
 
-@MainActor
-final class BackgroundCache {
-    static let shared = BackgroundCache()
-    private var cache: [String: Image] = [:]
-    
-    private init() {}
-    
-    func cacheBackground(_ image: Image, for key: String) {
-        cache[key] = image
-    }
-    
-    func getCachedBackground(for key: String) -> Image? {
-        return cache[key]
-    }
-    
-    func clearCache(except currentKey: String? = nil) {
-        let keysToRemove = cache.keys.filter { $0 != currentKey }
-        keysToRemove.forEach { cache.removeValue(forKey: $0) }
-    }
-}
-
-struct CachedBackground<Content: View>: View {
-    let key: String
+// Replace the cache and CachedBackground with a simpler approach
+struct OptimizedBackground<Content: View>: View {
     let content: () -> Content
-    @State private var cachedImage: Image?
     
-    init(key: String, @ViewBuilder content: @escaping () -> Content) {
-        self.key = key
+    init(@ViewBuilder content: @escaping () -> Content) {
         self.content = content
     }
     
     var body: some View {
-        Group {
-            if let cached = BackgroundCache.shared.getCachedBackground(for: key) {
-                cached
-                    .resizable()
-                    .ignoresSafeArea()
-            } else {
-                content()
-                    .task {
-                        let renderer = ImageRenderer(content: content())
-                        renderer.scale = UIScreen.main.scale
-                        if let uiImage = renderer.uiImage {
-                            let image = Image(uiImage: uiImage)
-                            BackgroundCache.shared.cacheBackground(image, for: key)
-                            cachedImage = image
-                        }
-                    }
-            }
-        }
-        .onDisappear {
-            BackgroundCache.shared.clearCache(except: key)
-        }
+        content()
+            .drawingGroup() // Let SwiftUI handle the optimization
+            .ignoresSafeArea()
     }
 }
 
 struct Diamond: View {
     var body: some View {
-        CachedBackground(key: "diamond") {
+        OptimizedBackground {
             ZStack {
                 // Base gradient with stronger blue tint and darker edges
                 RadialGradient(
@@ -71,12 +31,9 @@ struct Diamond: View {
                     startRadius: 30,
                     endRadius: 350
                 )
-                .ignoresSafeArea()
 
-                // More defined facet patterns
-                DiamondTexture()
-                    .foregroundColor(Color.white.opacity(0.4))  // Increased opacity for visibility
-                    .blur(radius: 20)                            // Reduced blur for sharper facets
+                // More defined facet patterns - using Canvas instead of Shape
+                DiamondField()
                     .blendMode(.overlay)
 
                 // Enhanced sparkle with blue tint
@@ -95,52 +52,70 @@ struct Diamond: View {
     }
 }
 
-// Enhanced diamond texture with clearer faceted structure
-struct DiamondTexture: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let facetCount = 10  // Increased number of facets
-
-        for _ in 0..<facetCount {
-            let facetX = CGFloat.random(in: 0...rect.width)
-            let facetY = CGFloat.random(in: 0...rect.height)
-            let facetSize = CGFloat.random(in: 40...120)  // Slightly larger facets
-
-            // Create more structured diamond facets with outline
-            let points = [
-                CGPoint(x: facetX, y: facetY),                              // Top
-                CGPoint(x: facetX + facetSize * 0.6, y: facetY + facetSize), // Bottom right
-                CGPoint(x: facetX, y: facetY + facetSize * 0.7),            // Bottom center
-                CGPoint(x: facetX - facetSize * 0.6, y: facetY + facetSize)  // Bottom left
-            ]
-
-            path.move(to: points[0])
-            path.addLine(to: points[1])
-            path.addLine(to: points[2])
-            path.addLine(to: points[3])
-            path.closeSubpath()
+// Optimized diamond texture with Canvas
+struct DiamondField: View {
+    // Pre-generate diamond facet data for consistency and performance
+    private let facets: [(x: Double, y: Double, size: Double)] = {
+        var facetData: [(x: Double, y: Double, size: Double)] = []
+        for _ in 0..<10 {
+            let x = Double.random(in: 0...1)
+            let y = Double.random(in: 0...1)
+            let size = Double.random(in: 40...120)
+            facetData.append((x: x, y: y, size: size))
         }
-
-        return path
+        return facetData
+    }()
+    
+    var body: some View {
+        Canvas { context, size in
+            // Apply a single blur to the entire context
+            var blurredContext = context
+            blurredContext.addFilter(.blur(radius: 20))
+            blurredContext.opacity = 0.4
+            
+            // Draw all diamond facets in a single pass
+            for facet in facets {
+                let centerX = facet.x * size.width
+                let centerY = facet.y * size.height
+                let facetSize = facet.size
+                
+                // Create diamond facet points
+                let points = [
+                    CGPoint(x: centerX, y: centerY),                               // Top
+                    CGPoint(x: centerX + facetSize * 0.6, y: centerY + facetSize), // Bottom right
+                    CGPoint(x: centerX, y: centerY + facetSize * 0.7),             // Bottom center
+                    CGPoint(x: centerX - facetSize * 0.6, y: centerY + facetSize)  // Bottom left
+                ]
+                
+                // Create a path for the diamond facet
+                var path = Path()
+                path.move(to: points[0])
+                path.addLine(to: points[1])
+                path.addLine(to: points[2])
+                path.addLine(to: points[3])
+                path.closeSubpath()
+                
+                // Fill the path with white color
+                blurredContext.fill(path, with: .color(.white))
+            }
+        }
     }
 }
 
 struct Dark: View {
     var body: some View {
-        CachedBackground(key: "dark") {
+        OptimizedBackground {
             ZStack {
                 // Deep dark radial gradient base
                 RadialGradient(
                     gradient: Gradient(colors: [
                         Color(red: 0.05, green: 0.05, blue: 0.05), // Dark gray center
-                        //Color(red: 0.05, green: 0.05, blue: 0.05), // Darker gray middle
                         Color(red: 0.03, green: 0.03, blue: 0.03)  // Almost black edges
                     ]),
                     center: .center,
                     startRadius: 1,
                     endRadius: 400
                 )
-                .ignoresSafeArea()
             }
         }
     }
@@ -148,7 +123,7 @@ struct Dark: View {
 
 struct Mist: View {
     var body: some View {
-        CachedBackground(key: "mist") {
+        OptimizedBackground {
             ZStack {
                 // Slightly darker misty gradient background
                 LinearGradient(
@@ -160,40 +135,59 @@ struct Mist: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .ignoresSafeArea()
 
-                // Gentle mist shapes
-                MistTexture()
-                    .foregroundColor(Color.white.opacity(0.4))
-                    .blur(radius: 35)
+                // Gentle mist shapes - replace Shape with Canvas implementation
+                MistField()
                     .blendMode(.screen)
             }
         }
     }
 }
 
-// Custom mist texture
-struct MistTexture: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let mistCount = 10
-
-        for _ in 0..<mistCount {
-            let mistX = CGFloat.random(in: -rect.width * 0.2...rect.width * 1.2)
-            let mistY = CGFloat.random(in: rect.height * 0.2...rect.height)
-            let mistWidth = CGFloat.random(in: rect.width * 0.6...rect.width * 1.5)
-            let mistHeight = CGFloat.random(in: rect.height * 0.1...rect.height * 0.3)
-
-            path.addEllipse(in: CGRect(x: mistX, y: mistY, width: mistWidth, height: mistHeight))
+// Optimized mist field using Canvas instead of Shape
+struct MistField: View {
+    // Pre-generate mist data for consistency and performance
+    private let mistShapes: [(x: Double, y: Double, width: Double, height: Double)] = {
+        var shapes: [(x: Double, y: Double, width: Double, height: Double)] = []
+        for _ in 0..<10 {
+            let x = Double.random(in: -0.2...1.2) // Relative positioning
+            let y = Double.random(in: 0.2...1.0) 
+            let width = Double.random(in: 0.6...1.5)
+            let height = Double.random(in: 0.1...0.3)
+            shapes.append((x: x, y: y, width: width, height: height))
         }
-
-        return path
+        return shapes
+    }()
+    
+    var body: some View {
+        Canvas { context, size in
+            // Apply a single blur to the entire context rather than individual shapes
+            var blurredContext = context
+            blurredContext.addFilter(.blur(radius: 35))
+            blurredContext.opacity = 0.4
+            
+            // Draw all mist shapes in a single pass
+            for shape in mistShapes {
+                let rect = CGRect(
+                    x: shape.x * size.width,
+                    y: shape.y * size.height,
+                    width: shape.width * size.width,
+                    height: shape.height * size.height
+                )
+                
+                // Create an elliptical path
+                let path = Path(ellipseIn: rect)
+                
+                // Fill with white color (opacity is set at context level)
+                blurredContext.fill(path, with: .color(.white))
+            }
+        }
     }
 }
 
 struct Sunshine: View {
     var body: some View {
-        CachedBackground(key: "sunshine") {
+        OptimizedBackground {
             ZStack {
                 // Bright yellow gradient base
                 LinearGradient(
@@ -258,7 +252,7 @@ struct RaysTexture: View {
 
 struct Purple: View {
     var body: some View {
-        CachedBackground(key: "purple") {
+        OptimizedBackground {
             ZStack {
                 // Royal and opulent purple gradient base
                 LinearGradient(
@@ -287,59 +281,9 @@ struct Purple: View {
     }
 }
 
-struct PerlinNoise {
-    static func noise(x: Double, y: Double, z: Double) -> Double {
-        let n = sin(x * 12.9898 + y * 78.233 + z * 45.123) * 43758.5453123
-        return n - floor(n)
-    }
-}
-
-struct Red: View {
-    var body: some View {
-        CachedBackground(key: "red") {
-            ZStack {
-                // Red gradient base
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color(red: 0.8, green: 0.1, blue: 0.1),  // Deep red
-                        Color(red: 1.0, green: 0.2, blue: 0.2),  // Bright red
-                        Color(red: 0.9, green: 0.15, blue: 0.15) // Slightly muted red
-                    ]),
-                    startPoint: .bottomLeading,
-                    endPoint: .topTrailing
-                )
-                .ignoresSafeArea()
-
-                // Subtle red texture
-                NoiseTextureRed()
-                    .foregroundColor(Color(red: 1.0, green: 0.3, blue: 0.3).opacity(0.2)) // Light red tint
-                    .blendMode(.overlay)
-                    .blur(radius: 3)
-            }
-        }
-    }
-}
-
-// Simple noise texture for subtle grain
-struct NoiseTextureRed: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let noiseScale: CGFloat = 0.04
-        for x in stride(from: 0, to: rect.width, by: 5) {
-            for y in stride(from: 0, to: rect.height, by: 5) {
-                let noise = PerlinNoise.noise(x: Double(x) * noiseScale, y: Double(y) * noiseScale, z: 0)
-                let offset = CGFloat(noise) * 3
-                path.move(to: CGPoint(x: x, y: y))
-                path.addRect(CGRect(x: x + offset, y: y + offset, width: 2, height: 2))
-            }
-        }
-        return path
-    }
-}
-
 struct Bubblegum: View {
     var body: some View {
-        CachedBackground(key: "bubblegum") {
+        OptimizedBackground {
             ZStack {
                 // Bubblegum pink gradient base
                 LinearGradient(
@@ -351,19 +295,9 @@ struct Bubblegum: View {
                     startPoint: .bottom,
                     endPoint: .top
                 )
-                .ignoresSafeArea()
 
-                // Subtle bubble effect
-                ForEach(0..<5) { _ in
-                    Circle()
-                        .frame(width: CGFloat.random(in: 50...150), height: CGFloat.random(in: 50...150))
-                        .foregroundColor(Color.white.opacity(0.2))
-                        .blur(radius: 10)
-                        .position(
-                            x: CGFloat.random(in: 0...UIScreen.main.bounds.width),
-                            y: CGFloat.random(in: 0...UIScreen.main.bounds.height)
-                        )
-                }
+                // Bubbles rendered in Canvas
+                BubbleField()
 
                 // Glossy overlay
                 RadialGradient(
@@ -376,7 +310,48 @@ struct Bubblegum: View {
                     endRadius: 300
                 )
                 .blendMode(.overlay)
-                .ignoresSafeArea()
+            }
+        }
+    }
+}
+
+// Optimized bubble field using Canvas
+struct BubbleField: View {
+    // Pre-generate bubble data for consistency
+    private let bubbles: [(x: Double, y: Double, size: Double)] = {
+        var bubbleData: [(x: Double, y: Double, size: Double)] = []
+        for _ in 0..<5 {
+            let x = Double.random(in: 0...1)
+            let y = Double.random(in: 0...1)
+            let size = Double.random(in: 50...150)
+            bubbleData.append((x: x, y: y, size: size))
+        }
+        return bubbleData
+    }()
+    
+    var body: some View {
+        Canvas { context, size in
+            // Create a new context with blur applied
+            var blurredContext = context
+            blurredContext.addFilter(.blur(radius: 10))
+            
+            // Set opacity directly on the context
+            blurredContext.opacity = 0.2
+            
+            // Draw all bubbles in a single pass
+            for bubble in bubbles {
+                let rect = CGRect(
+                    x: bubble.x * size.width - bubble.size/2, 
+                    y: bubble.y * size.height - bubble.size/2, 
+                    width: bubble.size, 
+                    height: bubble.size
+                )
+                
+                // Create a path for the bubble
+                let path = Path(ellipseIn: rect)
+                
+                // Draw the bubble with blur applied
+                blurredContext.fill(path, with: .color(.white))
             }
         }
     }
@@ -384,7 +359,7 @@ struct Bubblegum: View {
 
 struct BlueVista: View {
     var body: some View {
-        CachedBackground(key: "bluevista") {
+        OptimizedBackground {
             ZStack {
                 // Deep blue gradient base
                 LinearGradient(
@@ -396,113 +371,61 @@ struct BlueVista: View {
                     startPoint: .bottomTrailing,
                     endPoint: .topLeading
                 )
-                .ignoresSafeArea()
-                .blur(radius: 30)
+                .blur(radius: 10) // Reduced from 30 to 10
+                
+                // Add a subtle blue overlay for depth instead of heavy blur
+                RadialGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 0.3, green: 0.6, blue: 1.0).opacity(0.3),
+                        Color.clear
+                    ]),
+                    center: .init(x: 0.3, y: 0.3),
+                    startRadius: 100,
+                    endRadius: 400
+                )
                 .blendMode(.screen)
-
-                // Subtle wave-like texture
-                WaveTexture()
-                    .foregroundColor(Color.white.opacity(0.05))
-                    .blendMode(.overlay)
-                    .blur(radius: 10)
+                
+                // Add soft vignette for depth
+                RadialGradient(
+                    gradient: Gradient(colors: [
+                        Color.clear,
+                        Color(red: 0.05, green: 0.1, blue: 0.3).opacity(0.7)
+                    ]),
+                    center: .center,
+                    startRadius: 200,
+                    endRadius: 500
+                )
+                .blendMode(.multiply)
             }
         }
-    }
-}
-
-// Custom wave texture for depth
-struct WaveTexture: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let waveHeight: CGFloat = 20
-        let waveLength: CGFloat = 40
-
-        for x in stride(from: 0, to: rect.width, by: 5) {
-            let y = rect.height * 0.5 + sin(x / waveLength) * waveHeight
-            path.move(to: CGPoint(x: x, y: rect.height))
-            path.addLine(to: CGPoint(x: x, y: y))
-        }
-        return path
     }
 }
 
 //Slate background ===============
 struct SlateBackground: View {
     var body: some View {
-        CachedBackground(key: "slate") {
+        OptimizedBackground {
             ZStack {
-                // Base gradient with slight color depth
-                LinearGradient(
+                // Replace LinearGradient with RadialGradient to create darker edges
+                RadialGradient(
                     gradient: Gradient(colors: [
-                        Color(red: 0.18, green: 0.22, blue: 0.27), // Dark slate
-                        Color(red: 0.24, green: 0.28, blue: 0.33)  // Slightly lighter slate
+                        Color(red: 0.18, green: 0.21, blue: 0.26),  // Lighter slate center
+                        Color(red: 0.15, green: 0.17, blue: 0.22),  // Medium slate
+                        Color(red: 0.12, green: 0.15, blue: 0.20)   // Darker slate edges
                     ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+                    center: .center,
+                    startRadius: 1,
+                    endRadius: 600
                 )
-                .ignoresSafeArea()
-            }
-            .blur(radius: 2)
-        }
-    }
-}
-
-// Noise texture shape
-struct NoiseTexture: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let noiseScale: CGFloat = 0.02
-        for x in stride(from: 0, to: rect.width, by: 5) {
-            for y in stride(from: 0, to: rect.height, by: 5) {
-                let noise = PerlinNoise.noise(x: Double(x) * noiseScale, y: Double(y) * noiseScale, z: 0)
-                let offset = CGFloat(noise) * 2
-                path.move(to: CGPoint(x: x, y: y))
-                path.addRect(CGRect(x: x + offset, y: y + offset, width: 2, height: 2))
             }
         }
-        return path
-    }
-}
-
-// Freckles shape
-struct Freckles: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let freckleScale: CGFloat = 0.03
-        let maxFreckles = 50
-
-        for _ in 0..<maxFreckles {
-            let x = CGFloat.random(in: 0..<rect.width)
-            let y = CGFloat.random(in: 0..<rect.height)
-            let noise = PerlinNoise.noise(x: Double(x) * freckleScale, y: Double(y) * freckleScale, z: 1)
-            
-            if noise > 0.7 {
-                let size = CGFloat.random(in: 1...3)
-                path.addEllipse(in: CGRect(x: x, y: y, width: size, height: size))
-            }
-        }
-        return path
-    }
-}
-
-// Custom freckle style
-struct FreckleStyle: ShapeStyle {
-    func resolve(in environment: EnvironmentValues) -> some ShapeStyle {
-        LinearGradient(
-            gradient: Gradient(colors: [
-                Color.blue.opacity(0.6),
-                Color.green.opacity(0.6)
-            ]),
-            startPoint: .top,
-            endPoint: .bottom
-        )
     }
 }
 
 //Sunrise background ===============
 struct SunriseBackground: View {
     var body: some View {
-        CachedBackground(key: "sunrise") {
+        OptimizedBackground {
             ZStack {
                 // Sky gradient
                 LinearGradient(
@@ -514,7 +437,6 @@ struct SunriseBackground: View {
                     startPoint: .bottom,
                     endPoint: .top
                 )
-                .ignoresSafeArea()
 
                 // Sun rising with a subtle glow
                 Circle()
@@ -536,139 +458,62 @@ struct SunriseBackground: View {
 //======================================
 struct NatureBackground: View {
     var body: some View {
-        CachedBackground(key: "nature") {
+        OptimizedBackground {
             ZStack {
-                // Deep jungle gradient background
+                // Simplified base with radial gradient for organic feel
+                RadialGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 0.5, green: 0.8, blue: 0.6),    // Light pale green in center
+                        Color(red: 0.3, green: 0.6, blue: 0.4),    // Medium jungle green
+                        Color(red: 0.1, green: 0.3, blue: 0.15)     // Deep vibrant jungle green for edges
+                    ]),
+                    center: .center,
+                    startRadius: 50,
+                    endRadius: 500
+                )
+                
+                // Subtle linear gradient overlay to add depth
                 LinearGradient(
                     gradient: Gradient(colors: [
-                        Color(red: 0.05, green: 0.15, blue: 0.1),
-                        Color(red: 0.1, green: 0.3, blue: 0.15),
-                        Color(red: 0.2, green: 0.5, blue: 0.25)
+                        Color(red: 0.4, green: 0.7, blue: 0.5).opacity(0.3),   // Lighter top
+                        Color(red: 0.1, green: 0.3, blue: 0.2).opacity(0.3)    // Darker bottom
                     ]),
-                    startPoint: .bottom,
-                    endPoint: .top
-                )
-                .blur(radius: 30)
-                .ignoresSafeArea()
-
-                // Subtle sky peek-through
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color(red: 0.2, green: 0.5, blue: 0.25).opacity(0.8),
-                        Color(red: 0.3, green: 0.6, blue: 0.5).opacity(0.3)
-                    ]),
-                    startPoint: .center,
-                    endPoint: .top
-                )
-                .blur(radius: 40)
-
-                // Layers of mist/fog
-                Color(red: 0.8, green: 0.85, blue: 0.8)
-                    .opacity(0.4)
-                    .blur(radius: 50)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
-                    .offset(y: 100)
-
-                Color(red: 0.9, green: 0.95, blue: 0.9)
-                    .opacity(0.3)
-                    .blur(radius: 60)
-                    .frame(maxHeight: .infinity, alignment: .center)
-                    .offset(y: -50)
-
-                // Faint jungle texture
-                NoiseTexture2()
-                    .foregroundColor(Color.green.opacity(0.1))
-                    .blendMode(.overlay)
-                    .blur(radius: 5)
-            }
-            .ignoresSafeArea()
-        }
-    }
-}
-
-// Reusing your NoiseTexture for subtle texture
-struct NoiseTexture2: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let noiseScale: CGFloat = 0.02
-        for x in stride(from: 0, to: rect.width, by: 10) {
-            for y in stride(from: 0, to: rect.height, by: 10) {
-                let noise = PerlinNoise.noise(x: Double(x) * noiseScale, y: Double(y) * noiseScale, z: 0)
-                let offset = CGFloat(noise) * 5
-                path.move(to: CGPoint(x: x, y: y))
-                path.addRect(CGRect(x: x + offset, y: y + offset, width: 3, height: 3))
-            }
-        }
-        return path
-    }
-}
-
-struct Paper: View {
-    var body: some View {
-        CachedBackground(key: "paper") {
-            ZStack {
-                // Darker paper gradient
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.90, green: 0.88, blue: 0.85),
-                        Color(red: 0.95, green: 0.94, blue: 0.91),
-                        Color(red: 0.98, green: 0.97, blue: 0.95)
-                    ],
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .ignoresSafeArea()
-
-                // Subtle paper texture
-                PaperNoiseTexture()
-                    .blendMode(.overlay)
-                    .opacity(0.1)
-
-                // Faint shadow for depth
-                LinearGradient(
+                .blendMode(.softLight)
+                
+                // Subtle "glow" near the top to simulate light filtering through leaves
+                RadialGradient(
                     gradient: Gradient(colors: [
-                        Color.black.opacity(0.05),
+                        Color(red: 0.8, green: 0.9, blue: 0.7).opacity(0.2),   // Light filtered through leaves
                         Color.clear
                     ]),
-                    startPoint: .top,
-                    endPoint: .bottom
+                    center: UnitPoint(x: 0.5, y: 0.2),  // Positioned near top
+                    startRadius: 50,
+                    endRadius: 350
                 )
-                .blur(radius: 10)
-                .ignoresSafeArea()
-
-                // Soft edge vignette
+                .blendMode(.screen)
+                
+                // Very soft vignette for depth
                 RadialGradient(
                     gradient: Gradient(colors: [
                         Color.clear,
-                        Color.black.opacity(0.08)
+                        Color(red: 0.05, green: 0.15, blue: 0.1).opacity(0.7)
                     ]),
                     center: .center,
-                    startRadius: 100,
-                    endRadius: 400
+                    startRadius: 250,
+                    endRadius: 500
                 )
-                .ignoresSafeArea()
+                .blendMode(.multiply)
             }
         }
     }
-}
-
-// Function to create paper noise texture
-func PaperNoiseTexture() -> some View {
-GeometryReader { geo in
-    Canvas { context, size in
-        for _ in 0..<Int(size.width * size.height / 500) {
-            let x = CGFloat.random(in: 0...size.width)
-            let y = CGFloat.random(in: 0...size.height)
-            let rect = CGRect(x: x, y: y, width: 1, height: 1)
-            context.fill(Path(rect), with: .color(Color.black.opacity(0.05)))
-        }
-    }
-}
 }
 
 struct Lava: View {
     var body: some View {
-        CachedBackground(key: "lava") {
+        OptimizedBackground {
             ZStack {
                 // Redder lava gradient base
                 LinearGradient(
@@ -680,13 +525,6 @@ struct Lava: View {
                     startPoint: .bottom,
                     endPoint: .top
                 )
-                .ignoresSafeArea()
-
-                // Redder flowing lava texture
-                FlowTexture()
-                    .foregroundColor(Color(red: 1.0, green: 0.2, blue: 0.0).opacity(0.3))
-                    .blendMode(.overlay)
-                    .blur(radius: 5)
 
                 // Radiant glow
                 RadialGradient(
@@ -699,7 +537,6 @@ struct Lava: View {
                     endRadius: 300
                 )
                 .blendMode(.screen)
-                .ignoresSafeArea()
                 
                 // Dark vignette around edges
                 RadialGradient(
@@ -711,30 +548,14 @@ struct Lava: View {
                     startRadius: 150,
                     endRadius: 400
                 )
-                .ignoresSafeArea()
             }
         }
     }
 }
 
-struct FlowTexture: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let waveHeight: CGFloat = 30
-        let waveLength: CGFloat = 60
-
-        for x in stride(from: 0, to: rect.width, by: 5) {
-            let y = rect.height * 0.8 + sin(x / waveLength) * waveHeight
-            path.move(to: CGPoint(x: x, y: rect.height))
-            path.addLine(to: CGPoint(x: x, y: y))
-        }
-        return path
-    }
-}
-
 struct StarryNight: View {
     var body: some View {
-        CachedBackground(key: "starrynight") {
+        OptimizedBackground {
             ZStack {
                 // Deep space gradient
                 LinearGradient(
@@ -746,19 +567,9 @@ struct StarryNight: View {
                     startPoint: .bottom,
                     endPoint: .top
                 )
-                .ignoresSafeArea()
 
-                // Stars
-                ForEach(0..<100) { _ in
-                    Circle()
-                        .frame(width: CGFloat.random(in: 1...4), height: CGFloat.random(in: 1...4))
-                        .foregroundColor(Color.white.opacity(CGFloat.random(in: 0.5...1.0)))
-                        .blur(radius: CGFloat.random(in: 0...0.5))
-                        .position(
-                            x: CGFloat.random(in: 0...UIScreen.main.bounds.width),
-                            y: CGFloat.random(in: 0...UIScreen.main.bounds.height)
-                        )
-                }
+                // Stars rendered in Canvas
+                StarField()
 
                 // Cosmic glow
                 RadialGradient(
@@ -771,7 +582,57 @@ struct StarryNight: View {
                     endRadius: 300
                 )
                 .blendMode(.screen)
-                .ignoresSafeArea()
+            }
+        }
+    }
+}
+
+// Optimized star field using Canvas
+struct StarField: View {
+    // Pre-generate star data for consistency
+    private let stars: [(x: Double, y: Double, size: Double, opacity: Double, blur: Double)] = {
+        var starData: [(x: Double, y: Double, size: Double, opacity: Double, blur: Double)] = []
+        for _ in 0..<100 {
+            let x = Double.random(in: 0...1)
+            let y = Double.random(in: 0...1)
+            let size = Double.random(in: 1...4)
+            let opacity = Double.random(in: 0.3...0.9)
+            let blur = Double.random(in: 0.2...1.0)
+            starData.append((x: x, y: y, size: size, opacity: opacity, blur: blur))
+        }
+        return starData
+    }()
+    
+    var body: some View {
+        Canvas { context, size in
+            // Group stars by blur radius to minimize context changes
+            let groupedStars = Dictionary(grouping: stars) { $0.blur }
+            
+            // Draw stars grouped by blur level
+            for (blurRadius, starsGroup) in groupedStars {
+                // Create a separate context with the specific blur
+                var blurredContext = context
+                if blurRadius > 0 {
+                    blurredContext.addFilter(.blur(radius: blurRadius))
+                }
+                
+                // Draw all stars with the same blur in one pass
+                for star in starsGroup {
+                    let rect = CGRect(
+                        x: star.x * size.width, 
+                        y: star.y * size.height, 
+                        width: star.size, 
+                        height: star.size
+                    )
+                    
+                    // Create a path for the star
+                    let path = Path(ellipseIn: rect)
+                    
+                    // Set the opacity and draw the star
+                    var starContext = blurredContext
+                    starContext.opacity = star.opacity
+                    starContext.fill(path, with: .color(.white))
+                }
             }
         }
     }

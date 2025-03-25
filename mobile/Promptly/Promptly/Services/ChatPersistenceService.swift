@@ -70,6 +70,43 @@ class ChatPersistenceService {
         }
     }
     
+    // MARK: - Messages Cleanup
+    
+    /// Deletes all chat messages older than 48 hours
+    func deleteMessagesOlderThan48Hours() {
+        // Calculate the cutoff date (48 hours ago)
+        let cutoffDate = Calendar.current.date(byAdding: .hour, value: -48, to: Date())!
+        
+        // Create a background context for this operation to avoid blocking the main thread
+        let context = backgroundContext()
+        
+        // Create a batch delete request for better performance
+        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "ChatMessage")
+        fetchRequest.predicate = NSPredicate(format: "timestamp < %@", cutoffDate as NSDate)
+        
+        let batchDeleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
+        
+        // Execute the request in background
+        Task {
+            do {
+                try await context.perform {
+                    // Execute the batch delete
+                    let result = try context.execute(batchDeleteRequest)
+                    
+                    // Log the number of deleted messages if available
+                    if let batchResult = result as? NSBatchDeleteResult,
+                       let objectIDs = batchResult.result as? [NSManagedObjectID] {
+                        print("Successfully deleted \(objectIDs.count) messages older than 48 hours")
+                    } else {
+                        print("Successfully deleted messages older than 48 hours")
+                    }
+                }
+            } catch {
+                print("Error deleting old messages: \(error)")
+            }
+        }
+    }
+    
     // MARK: - Pending Response Management
     
     private let pendingResponseKey = "pendingResponse"

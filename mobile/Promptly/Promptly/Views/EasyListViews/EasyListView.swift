@@ -718,6 +718,7 @@ struct ListContent: View {
                 if !emptyItems.isEmpty {
                     viewModel.deleteItems(at: IndexSet(emptyItems.map { $0.offset }))
                 }
+                focusManager.isEasyListFocused = newValue
             }
         }
         .onChange(of: focusManager.currentFocusedView) { oldValue, newValue in
@@ -1096,7 +1097,8 @@ struct EasyListView: View {
     
     private func RemoveAllFocus() {
         print("[EasyListView] RemoveAllFocus called")
-        if !focusManager.isEasyListFocused {
+        
+        if !isEditing {
             print("[EasyListView] RemoveAllFocus returned early")
             return
         }

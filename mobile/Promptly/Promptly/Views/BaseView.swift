@@ -31,6 +31,12 @@ struct BaseView: View {
                 .environmentObject(focusManager)
                 .zIndex(0)
             
+            // Darkened background for chat - using a fixed medium opacity level
+            Color.black
+                .opacity(isChatExpanded ? 0.4 : 0)
+                .edgesIgnoringSafeArea(.all)
+                .zIndex(0.5)
+                .allowsHitTesting(false)
             // Chat overlay
             VStack {
                 Spacer()
