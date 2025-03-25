@@ -10,6 +10,9 @@ final class ManageGroupsViewModel: ObservableObject {
     @Published var newGroupName = ""
     @Published var isAddingNewGroup = false
     
+    // Flag to indicate if we should remove the item from the UI
+    @Published var groupIdToRemove: UUID? = nil
+    
     private let groupStore = GroupStore.shared
     private let persistence = ChecklistPersistence.shared
     
@@ -20,6 +23,8 @@ final class ManageGroupsViewModel: ObservableObject {
     func loadGroups() {
         groupStore.loadGroups()
         self.groups = groupStore.groups
+        // Reset any pending deletion state
+        self.groupIdToRemove = nil
     }
     
     func addGroup() {
@@ -37,6 +42,13 @@ final class ManageGroupsViewModel: ObservableObject {
         }
     }
     
+    // Updated method to confirm deletion with a group directly
+    func confirmDeleteGroup(_ group: Models.ItemGroup) {
+        groupToDelete = group
+        showingDeleteGroupAlert = true
+    }
+    
+    // Keep the original method for backward compatibility
     func confirmDeleteGroup(at index: Int) {
         if index < groups.count {
             groupToDelete = groups[index]
@@ -44,8 +56,17 @@ final class ManageGroupsViewModel: ObservableObject {
         }
     }
     
+    // Cancel the delete operation
+    func cancelDelete() {
+        groupToDelete = nil
+        groupIdToRemove = nil
+    }
+    
     func deleteGroupKeepItems() {
         guard let group = groupToDelete else { return }
+        
+        // Set the group ID to remove - this will trigger the animation in the view
+        self.groupIdToRemove = group.id
         
         Task {
             // For each item in the group, update it to remove the group association
@@ -65,13 +86,19 @@ final class ManageGroupsViewModel: ObservableObject {
                 }
             }
             
-            // Delete the group
+            // Wait a brief moment to allow animation to complete
+            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
+            
+            // Delete the group from storage
             groupStore.deleteGroup(group)
             groupToDelete = nil
-            self.groups = groupStore.groups
             
-            // If the deleted group was selected, deselect it
+            // Update the groups list after deletion
             await MainActor.run {
+                self.groups = self.groupStore.groups
+                self.groupIdToRemove = nil
+                
+                // If the deleted group was selected, deselect it
                 if selectedGroup?.id == group.id {
                     selectedGroup = nil
                 }
@@ -97,11 +124,21 @@ final class ManageGroupsViewModel: ObservableObject {
     
     func selectGroup(_ group: Models.ItemGroup) {
         selectedGroup = group
-        currentGroupTitle = group.title
-        selectedColorRed = group.colorRed
-        selectedColorGreen = group.colorGreen
-        selectedColorBlue = group.colorBlue
-        selectedColorHasColor = group.hasColor
+        // Get the latest group data from the store to ensure we have the most up-to-date title
+        if let updatedGroup = groupStore.getGroup(by: group.id) {
+            currentGroupTitle = updatedGroup.title
+            selectedColorRed = updatedGroup.colorRed
+            selectedColorGreen = updatedGroup.colorGreen
+            selectedColorBlue = updatedGroup.colorBlue
+            selectedColorHasColor = updatedGroup.hasColor
+        } else {
+            // Fall back to the provided group if not found in the store
+            currentGroupTitle = group.title
+            selectedColorRed = group.colorRed
+            selectedColorGreen = group.colorGreen
+            selectedColorBlue = group.colorBlue
+            selectedColorHasColor = group.hasColor
+        }
         loadItems()
     }
     

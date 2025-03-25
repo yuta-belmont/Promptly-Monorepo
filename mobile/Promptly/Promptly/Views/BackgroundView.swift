@@ -437,19 +437,6 @@ struct SunriseBackground: View {
                     startPoint: .bottom,
                     endPoint: .top
                 )
-
-                // Sun rising with a subtle glow
-                Circle()
-                    .frame(width: 100, height: 100)
-                    .foregroundColor(Color(red: 1.0, green: 0.9, blue: 0.6))
-                    .blur(radius: 20)
-                    .offset(y: 50)
-                    .overlay(
-                        Circle()
-                            .frame(width: 60, height: 60)
-                            .foregroundColor(.white.opacity(0.1))
-                            .offset(y: 50)
-                    )
             }
         }
     }

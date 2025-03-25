@@ -29,7 +29,7 @@ struct ChatInputFieldView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            TextField("Text Alfred...", text: $userInput, axis: .vertical)
+            TextField("Message Alfred...", text: $userInput, axis: .vertical)
                 .lineLimit(1...10)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 6)

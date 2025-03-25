@@ -58,21 +58,35 @@ struct ManageGroupsView: View {
                 // List content
                 List {
                     ForEach(viewModel.groups) { group in
-                        GroupRow(group: group)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                viewModel.selectGroup(group)
-                            }
-                            .listRowBackground(Color.clear)
-                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                            .listRowSeparator(.hidden)
-                            .id("\(group.id)-\(refreshCounter)") // Force refresh when counter changes
-                    }
-                    .onDelete { indexSet in
-                        if let index = indexSet.first {
-                            viewModel.confirmDeleteGroup(at: index)
+                        // Only show the group if it's not pending deletion
+                        if viewModel.groupIdToRemove != group.id {
+                            GroupRow(group: group, viewModel: viewModel)
+                                .contentShape(Rectangle())
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                .listRowSeparator(.hidden)
+                                .id("\(group.id)-\(refreshCounter)") // Force refresh when counter changes
+                                .swipeActions(edge: .trailing) {
+                                    Button {
+                                        viewModel.confirmDeleteGroup(group)
+                                    }
+                                    label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                    .tint(.red)
+                                }
+                        } else {
+                            // This is a placeholder that will get removed with animation
+                            // when groupIdToRemove is set
+                            EmptyView()
+                                .id("\(group.id)-tobedeleted")
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(EdgeInsets())
+                                .listRowSeparator(.hidden)
+                                .frame(height: 0)
                         }
                     }
+                    .animation(.easeInOut, value: viewModel.groupIdToRemove)
                     
                     // New Group Row
                     HStack {
@@ -123,14 +137,23 @@ struct ManageGroupsView: View {
             
             // Group details overlay
             if viewModel.selectedGroup != nil {
-                GroupDetailsView(viewModel: viewModel, isPresented: Binding(
-                    get: { viewModel.selectedGroup != nil },
-                    set: { if !$0 { 
+                GroupDetailsView(
+                    viewModel: viewModel, 
+                    isPresented: Binding(
+                        get: { viewModel.selectedGroup != nil },
+                        set: { if !$0 { 
+                            viewModel.selectedGroup = nil
+                            // Force refresh when returning from details view
+                            refreshCounter += 1
+                        }}
+                    ),
+                    closeAllViews: {
+                        // This will close both the details view and the manage groups view
                         viewModel.selectedGroup = nil
-                        // Force refresh when returning from details view
-                        refreshCounter += 1
-                    }}
-                ))
+                        viewModel.saveNewGroupIfNeeded()
+                        isPresented = false
+                    }
+                )
             }
         }
         .onAppear {
@@ -143,9 +166,11 @@ struct ManageGroupsView: View {
         }
         .alert("Delete Group", isPresented: $viewModel.showingDeleteGroupAlert) {
             Button("Cancel", role: .cancel) { 
-                viewModel.groupToDelete = nil
+                viewModel.cancelDelete()
             }
             Button("Delete", role: .destructive) {
+                // The animation and deletion will be handled by the viewModel
+                // via the groupIdToRemove property
                 viewModel.deleteGroupKeepItems()
             }
         } message: {
@@ -160,48 +185,145 @@ struct ManageGroupsView: View {
     }
 }
 
-// Helper Views
-struct GroupRow: View {
+// Create a modular menu component
+struct GroupOptionsMenu: View {
+    @ObservedObject var viewModel: ManageGroupsViewModel
     let group: Models.ItemGroup
     @ObservedObject private var groupStore = GroupStore.shared
     
     var body: some View {
+        Menu {
+            Button(action: {
+                // If this group isn't already selected, select it first
+                if viewModel.selectedGroup?.id != group.id {
+                    viewModel.selectGroup(group)
+                    
+                    // Give time for selection to complete and update currentGroupTitle
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        // Now use the currentGroupTitle which will be updated with the selected group
+                        viewModel.editingGroupName = viewModel.currentGroupTitle
+                        viewModel.showingEditNameAlert = true
+                    }
+                } else {
+                    // Group is already selected, use the currentGroupTitle directly
+                    viewModel.editingGroupName = viewModel.currentGroupTitle
+                    viewModel.showingEditNameAlert = true
+                }
+            }) {
+                Label("Edit Group Name", systemImage: "pencil")
+            }
+            
+            Button(action: {
+                // If this group isn't already selected, select it first
+                if viewModel.selectedGroup?.id != group.id {
+                    viewModel.selectGroup(group)
+                    
+                    // Give time for selection to complete and update currentGroupTitle
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        viewModel.showingColorPicker = true
+                    }
+                } else {
+                    // Group is already selected, show color picker directly
+                    viewModel.showingColorPicker = true
+                }
+            }) {
+                Label("Set Group Color", systemImage: "paintpalette")
+            }
+            
+            Button(role: .destructive, action: {
+                // If this group isn't already selected, select it first
+                if viewModel.selectedGroup?.id != group.id {
+                    viewModel.selectGroup(group)
+                    
+                    // Give time for selection to complete and load items
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        viewModel.showingDeleteAllAlert = true
+                    }
+                } else {
+                    // Group is already selected, show delete alert directly
+                    viewModel.showingDeleteAllAlert = true
+                }
+            }) {
+                Label("Delete All Items", systemImage: "trash")
+            }
+            
+            Button(role: .destructive, action: {
+                // This works the same way regardless of whether the group is selected
+                viewModel.confirmDeleteGroup(group)
+            }) {
+                Label("Delete Group (Keep Items)", systemImage: "folder.badge.minus")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .foregroundColor(.white)
+                .font(.system(size: 18))
+                .frame(width: 44, height: 36)
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+// Helper Views
+struct GroupRow: View {
+    let group: Models.ItemGroup
+    @ObservedObject private var viewModel: ManageGroupsViewModel
+    @ObservedObject private var groupStore = GroupStore.shared
+    
+    init(group: Models.ItemGroup, viewModel: ManageGroupsViewModel) {
+        self.group = group
+        self.viewModel = viewModel
+    }
+    
+    var body: some View {
+        // Get the current group from the store to ensure we have the latest data
+        let currentGroup = groupStore.groups.first(where: { $0.id == group.id }) ?? group
+        
         HStack(spacing: 12) {
-            // Get the current group from the store to ensure we have the latest data
-            let currentGroup = groupStore.groups.first(where: { $0.id == group.id }) ?? group
-            
-            // Color indicator
-            if currentGroup.hasColor {
-                Circle()
-                    .fill(Color(red: currentGroup.colorRed, green: currentGroup.colorGreen, blue: currentGroup.colorBlue))
-                    .frame(width: 16, height: 16)
-                    .shadow(color: Color.black.opacity(0.1), radius: 1, x: 0, y: 1)
-            } else {
-                Circle()
-                    .strokeBorder(Color.gray.opacity(0.5), lineWidth: 1.5)
-                    .frame(width: 16, height: 16)
+            // Main content with navigation
+            Button(action: {
+                viewModel.selectGroup(currentGroup)
+            }) {
+                HStack {
+                    // Color indicator
+                    if currentGroup.hasColor {
+                        Circle()
+                            .fill(Color(red: currentGroup.colorRed, green: currentGroup.colorGreen, blue: currentGroup.colorBlue))
+                            .frame(width: 16, height: 16)
+                            .shadow(color: Color.black.opacity(0.1), radius: 1, x: 0, y: 1)
+                    } else {
+                        Circle()
+                            .strokeBorder(Color.gray.opacity(0.5), lineWidth: 1.5)
+                            .frame(width: 16, height: 16)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        // Get the current title from the group store to ensure it's up-to-date
+                        let currentTitle = currentGroup.title
+                        
+                        Text(currentTitle)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white)
+                        
+                        // Item count
+                        let itemCount = currentGroup.getAllItems().count
+                        Text("\(itemCount) \(itemCount == 1 ? "item" : "items")")
+                            .font(.system(size: 12))
+                            .foregroundColor(.gray)
+                    }
+                    
+                    Spacer()
+                    
+                    // Chevron to indicate navigation
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.gray)
+                        .font(.system(size: 14))
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(PlainButtonStyle())
             
-            VStack(alignment: .leading, spacing: 4) {
-                // Get the current title from the group store to ensure it's up-to-date
-                let currentTitle = currentGroup.title
-                
-                Text(currentTitle)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.white)
-                
-                // Item count
-                let itemCount = currentGroup.getAllItems().count
-                Text("\(itemCount) \(itemCount == 1 ? "item" : "items")")
-                    .font(.system(size: 12))
-                    .foregroundColor(.gray)
-            }
-            
-            Spacer()
-            
-            Image(systemName: "chevron.right")
-                .foregroundColor(.gray)
-                .font(.system(size: 14))
+            // Menu - completely separate from navigation area
+            GroupOptionsMenu(viewModel: viewModel, group: currentGroup)
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
@@ -212,7 +334,7 @@ struct GroupRow: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
+                .strokeBorder(.white.opacity(0.1), lineWidth: 0.5)
         )
     }
 }
@@ -224,6 +346,7 @@ struct GroupDetailsView: View {
     @State private var colorUpdateCounter: Int = 0 // Add a counter to force view updates
     @State private var dragOffset: CGFloat = 0 // Track drag gesture offset
     @State private var rotation = Angle.zero // Track rotation for swipe animation
+    let closeAllViews: () -> Void
     
     var body: some View {
         ZStack {
@@ -264,46 +387,18 @@ struct GroupDetailsView: View {
                     
                     Spacer()
                     
-                    Menu {
-                        Button(action: {
-                            viewModel.editingGroupName = viewModel.currentGroupTitle
-                            viewModel.showingEditNameAlert = true
-                        }) {
-                            Label("Edit Group Name", systemImage: "pencil")
-                        }
-                        
-                        Button(action: {
-                            viewModel.showingColorPicker = true
-                        }) {
-                            Label("Set Group Color", systemImage: "paintpalette")
-                        }
-                        Button(role: .destructive, action: {
-                            viewModel.showingDeleteAllAlert = true
-                        }) {
-                            Label("Delete All Items", systemImage: "trash")
-                        }
-                        
-                        Button(role: .destructive, action: {
-                            // Set the groupToDelete to the currently selected group before showing the alert
-                            if let selectedGroup = viewModel.selectedGroup {
-                                viewModel.groupToDelete = selectedGroup
-                                viewModel.showingDeleteGroupAlert = true
-                            }
-                        }) {
-                            Label("Delete Group (Keep Items)", systemImage: "folder.badge.minus")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .foregroundColor(.white)
-                            .font(.system(size: 18))
+                    // Use the modular menu component
+                    if let selectedGroup = viewModel.selectedGroup {
+                        GroupOptionsMenu(viewModel: viewModel, group: selectedGroup)
                     }
-                    .contentShape(Rectangle())
-                    .simultaneousGesture(TapGesture().onEnded {
-                        // Prevent tap from propagating to background
-                    })
+                    
+                    // Add "Done" button to completely close the ManageGroupsView
+                    Button("Done") {
+                        closeAllViews()
+                    }
                 }
                 .padding()
-                .padding(.top, 8)
+                .padding(.top, 0)
                 .id("header-\(colorUpdateCounter)") // Force refresh when color changes
                 
                 // Items in group
@@ -419,20 +514,48 @@ struct GroupDetailsView: View {
         }
         .alert("Delete Group", isPresented: $viewModel.showingDeleteGroupAlert) {
             Button("Cancel", role: .cancel) { 
-                viewModel.groupToDelete = nil
+                viewModel.cancelDelete()
             }
             Button("Delete", role: .destructive) {
+                // This will properly animate the deletion in the parent view
+                // and dismiss this detail view if the current group is deleted
                 viewModel.deleteGroupKeepItems()
+                
+                // Dismiss the details view with animation if the deleted group is the selected one
+                if let selectedGroup = viewModel.selectedGroup, 
+                   let groupToDelete = viewModel.groupToDelete,
+                   selectedGroup.id == groupToDelete.id {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                        dragOffset = UIScreen.main.bounds.width * 1.5
+                        rotation = Angle(degrees: 10)
+                    }
+                    
+                    // Dismiss after animation
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        isPresented = false
+                        // Reset for next time
+                        dragOffset = 0
+                        rotation = .zero
+                    }
+                }
             }
         } message: {
             Text("Are you sure you want to delete this group? The items will remain but will no longer be grouped.")
         }
         .alert("Edit Group Name", isPresented: $viewModel.showingEditNameAlert) {
             TextField("Group Name", text: $viewModel.editingGroupName)
-            Button("Cancel", role: .cancel) { }
-            Button("Save") {
-                viewModel.updateGroupName(viewModel.editingGroupName)
+                .autocapitalization(.words)
+                .disableAutocorrection(true)
+            Button("Cancel", role: .cancel) { 
+                // Reset the editing name
+                viewModel.editingGroupName = viewModel.currentGroupTitle
             }
+            Button("Save") {
+                if !viewModel.editingGroupName.isEmpty {
+                    viewModel.updateGroupName(viewModel.editingGroupName)
+                }
+            }
+            .disabled(viewModel.editingGroupName.isEmpty)
         } message: {
             Text("Enter a new name for this group")
         }

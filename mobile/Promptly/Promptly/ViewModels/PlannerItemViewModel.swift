@@ -36,6 +36,32 @@ final class PlannerItemViewModel: ObservableObject {
                 self?.updateItemTitle(newValue)
             }
             .store(in: &cancellables)
+            
+        // Observe group store updates to refresh group references
+        groupStore.$lastGroupUpdateTimestamp
+            .dropFirst() // Skip the initial value
+            .sink { [weak self] _ in
+                self?.refreshGroupReference()
+            }
+            .store(in: &cancellables)
+    }
+    
+    // Refresh the item's group reference when group data changes
+    private func refreshGroupReference() {
+        // Only update if this item has a group
+        if let group = item.group, let updatedGroup = groupStore.getGroup(by: group.id) {
+            var updatedItem = item
+            updatedItem.updateGroup(updatedGroup)
+            // Update the item without saving to persistence since the actual group data
+            // hasn't changed, just our reference to it
+            self.item = updatedItem
+        } else if let groupId = item.groupId, let latestGroup = groupStore.getGroup(by: groupId) {
+            // For backward compatibility - refresh from groupId
+            var updatedItem = item
+            updatedItem.updateGroup(latestGroup)
+            // Update the item without saving
+            self.item = updatedItem
+        }
     }
     
     // MARK: - Item Management

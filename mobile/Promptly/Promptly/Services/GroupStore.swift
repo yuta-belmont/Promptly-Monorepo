@@ -61,7 +61,9 @@ final class GroupStore: ObservableObject {
             loadGroups()
             
             // Update timestamp to trigger refresh in observers
-            lastGroupUpdateTimestamp = Date()
+            DispatchQueue.main.async {
+                self.lastGroupUpdateTimestamp = Date()
+            }
             
             // Return the struct representation
             return newGroup.toStruct()
@@ -99,7 +101,9 @@ final class GroupStore: ObservableObject {
                 loadGroups()
                 
                 // Update timestamp to trigger refresh in observers
-                lastGroupUpdateTimestamp = Date()
+                DispatchQueue.main.async {
+                    self.lastGroupUpdateTimestamp = Date()
+                }
             }
         } catch {
             print("Failed to delete group: \(error)")
@@ -124,7 +128,9 @@ final class GroupStore: ObservableObject {
                 loadGroups()
                 
                 // Update timestamp to trigger refresh in observers
-                lastGroupUpdateTimestamp = Date()
+                DispatchQueue.main.async {
+                    self.lastGroupUpdateTimestamp = Date()
+                }
             }
         } catch {
             print("Failed to update group title: \(error)")
@@ -152,7 +158,9 @@ final class GroupStore: ObservableObject {
                 loadGroups()
                 
                 // Update timestamp to trigger refresh in observers
-                lastGroupUpdateTimestamp = Date()
+                DispatchQueue.main.async {
+                    self.lastGroupUpdateTimestamp = Date()
+                }
             }
         } catch {
             print("Failed to update group color: \(error)")
@@ -180,7 +188,9 @@ final class GroupStore: ObservableObject {
                 loadGroups()
                 
                 // Update timestamp to trigger refresh in observers
-                lastGroupUpdateTimestamp = Date()
+                DispatchQueue.main.async {
+                    self.lastGroupUpdateTimestamp = Date()
+                }
             }
         } catch {
             print("Failed to remove group color: \(error)")
@@ -213,7 +223,9 @@ final class GroupStore: ObservableObject {
                 try context.save()
                 
                 // Update timestamp to trigger refresh in observers
-                lastGroupUpdateTimestamp = Date()
+                DispatchQueue.main.async {
+                    self.lastGroupUpdateTimestamp = Date()
+                }
             }
         } catch {
             print("DEBUG: GroupStore - Failed to add item to group: \(error)")
@@ -245,7 +257,9 @@ final class GroupStore: ObservableObject {
                 try context.save()
                 
                 // Update timestamp to trigger refresh in observers
-                lastGroupUpdateTimestamp = Date()
+                DispatchQueue.main.async {
+                    self.lastGroupUpdateTimestamp = Date()
+                }
             }
         } catch {
             print("Failed to add item to group: \(error)")
@@ -268,7 +282,9 @@ final class GroupStore: ObservableObject {
                 try context.save()
                 
                 // Update timestamp to trigger refresh in observers
-                lastGroupUpdateTimestamp = Date()
+                DispatchQueue.main.async {
+                    self.lastGroupUpdateTimestamp = Date()
+                }
             }
         } catch {
             print("Failed to remove item from group: \(error)")
@@ -291,7 +307,9 @@ final class GroupStore: ObservableObject {
                 try context.save()
                 
                 // Update timestamp to trigger refresh in observers
-                lastGroupUpdateTimestamp = Date()
+                DispatchQueue.main.async {
+                    self.lastGroupUpdateTimestamp = Date()
+                }
             }
         } catch {
             print("Failed to remove item from all groups: \(error)")
@@ -320,7 +338,9 @@ final class GroupStore: ObservableObject {
                 try context.save()
                 
                 // Update timestamp to trigger refresh in observers
-                lastGroupUpdateTimestamp = Date()
+                DispatchQueue.main.async {
+                    self.lastGroupUpdateTimestamp = Date()
+                }
             }
         } catch {
             print("Failed to clear items from group: \(error)")
@@ -387,7 +407,9 @@ final class GroupStore: ObservableObject {
                 try context.save()
                 
                 // Update timestamp to trigger refresh in observers
-                lastGroupUpdateTimestamp = Date()
+                DispatchQueue.main.async {
+                    self.lastGroupUpdateTimestamp = Date()
+                }
             }
         } catch {
             print("Failed to update item in group: \(error)")

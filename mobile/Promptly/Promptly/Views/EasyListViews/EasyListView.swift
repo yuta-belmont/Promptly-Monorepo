@@ -1233,5 +1233,16 @@ struct EasyListView: View {
         } message: {
             Text("You've reached the maximum limit of 99 items per day. Delete some items to add more.")
         }
+        // Listen for checklist updates using Combine
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("NewChecklistAvailable"))) { notification in
+            guard let newChecklistDate = notification.object as? Date else { return }
+            
+            // Check if the notification is for our current date
+            let calendar = Calendar.current
+            if calendar.isDate(newChecklistDate, inSameDayAs: viewModel.date) {
+                print("[EasyListView] Received notification for new checklist on current date: \(newChecklistDate)")
+                viewModel.reloadChecklist()
+            }
+        }
     }
 }
