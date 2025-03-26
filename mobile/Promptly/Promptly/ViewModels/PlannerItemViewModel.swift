@@ -154,9 +154,12 @@ final class PlannerItemViewModel: ObservableObject {
         }
         
         // Make a single update to the published property to minimize UI redraws
-        self.item = updatedItem
-        // Clear the new subitem text after adding
-        self.newSubItemText = ""
+        // Defer updates to avoid view update cycle issues
+        DispatchQueue.main.async {
+            self.item = updatedItem
+            // Clear the new subitem text after adding
+            self.newSubItemText = ""
+        }
         saveItem()
     }
     

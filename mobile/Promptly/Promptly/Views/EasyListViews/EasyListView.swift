@@ -525,9 +525,7 @@ struct NewItemRow: View {
 
 struct ListContent: View {
     @ObservedObject var viewModel: EasyListViewModel
-    @Binding var editingItemId: UUID?
     @State private var newItemText: String = ""
-    @FocusState var focusedItemId: UUID?
     @FocusState var isNewItemFocused: Bool
     @Binding var isEditing: Bool
     @EnvironmentObject private var focusManager: FocusManager
@@ -551,37 +549,9 @@ struct ListContent: View {
         if text.isEmpty {
             deleteItem(item)
             // Clean up focus state when an item is deleted
-            if focusedItemId == item.id {
+            if focusCoordinator.focusedItemId == item.id {
                 DispatchQueue.main.async {
                     removeAllFocus()
-                }
-            }
-        }
-    }
-    
-    private func handleItemStartEdit(_ item: Models.ChecklistItem) {
-        startEditing(item)
-    }
-    
-    private func handleItemTextChange(_ item: Models.ChecklistItem, newText: String) {
-        viewModel.updateItem(item, with: newText)
-    }
-    
-    private func handleItemReturn(_ item: Models.ChecklistItem, proxy: ScrollViewProxy) {
-        if let currentIndex = viewModel.items.firstIndex(where: { $0.id == item.id }) {
-            if currentIndex < viewModel.items.count - 1 {
-                let nextItem = viewModel.items[currentIndex + 1]
-                startEditing(nextItem)
-                withAnimation {
-                    proxy.scrollTo(nextItem.id, anchor: .center)
-                }
-            } else {
-                editingItemId = nil
-                if !viewModel.isItemLimitReached {
-                    isNewItemFocused = true
-                    withAnimation {
-                        proxy.scrollTo("newItemRow", anchor: .center)
-                    }
                 }
             }
         }
@@ -647,7 +617,7 @@ struct ListContent: View {
                 .scrollContentBackground(.hidden)
                 // Constrain the List to exactly match the available height
                 .frame(height: availableHeight)
-                .onChange(of: focusedItemId) { oldValue, newValue in
+                .onChange(of: focusCoordinator.focusedItemId) { _, newValue in
                     // Scroll to the item if needed
                     if let id = newValue {
                         withAnimation {
@@ -655,19 +625,17 @@ struct ListContent: View {
                         }
                         focusManager.requestFocus(for: .easyList)
                     }
-                    
-                    // Update the editingItemId to match
-                    if editingItemId != newValue {
-                        editingItemId = newValue
-                    }
-                    
                     // If focus is lost, ensure proper cleanup
+                    // Update the editing state
+                    //delay it for focus removal to prevent rapid removal and addition of isEditing
                     if newValue == nil {
                         focusCoordinator.removeAllFocus()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            updateEditingState()
+                        }
+                    } else {
+                        updateEditingState()
                     }
-                    
-                    // Update the editing state
-                    updateEditingState()
                 }
                 .onChange(of: isNewItemFocused) { oldValue, newValue in
                     // Handle scrolling when focusing new item
@@ -685,7 +653,15 @@ struct ListContent: View {
                     }
                     
                     // Update editing state
-                    updateEditingState()
+                    // delay it for focus removal to prevent rapid removal and addition of isEditing
+                    if newValue == false {
+                        focusCoordinator.removeAllFocus()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            updateEditingState()
+                        }
+                    } else {
+                        updateEditingState()
+                    }
                 }
             }
             
@@ -698,27 +674,12 @@ struct ListContent: View {
         }
         // Constrain the entire ZStack to the available height
         .frame(height: availableHeight)
-        .onChange(of: focusCoordinator.focusedItemId) { _, newId in
-            // Only update if different to avoid cycles
-            if focusedItemId != newId {
-                focusedItemId = newId
-            }
-            
-            // We still need to update editingItemId directly from the coordinator
-            // This ensures external focus changes are properly reflected
-            editingItemId = newId
-            
-            // Update editing state to reflect the new focus
-            updateEditingState()
-        }
         .onChange(of: isEditing) { oldValue, newValue in
             if !newValue {
                 let emptyItems = viewModel.items.enumerated().filter { $0.element.title.isEmpty }
-                /* Not deleting empty titles right now
                 if !emptyItems.isEmpty {
                     viewModel.deleteItems(at: IndexSet(emptyItems.map { $0.offset }))
                 }
-                 */
                 focusManager.isEasyListFocused = newValue
             }
         }
@@ -726,6 +687,7 @@ struct ListContent: View {
             if newValue != .easyList {
                 finishEditing()
             }
+            
         }
         .manageFocus(for: .easyList)
     }
@@ -739,26 +701,20 @@ struct ListContent: View {
     }
     
     private func updateEditingState() {
-        let newIsEditing = focusedItemId != nil || isNewItemFocused || editingItemId != nil
+        let newIsEditing = focusCoordinator.focusedItemId != nil || isNewItemFocused
         isEditing = newIsEditing
-    }
-    
-    private func startEditing(_ item: Models.ChecklistItem) {
-        editingItemId = item.id
     }
     
     private func saveEdit(for item: Models.ChecklistItem, text: String) {
         viewModel.updateItem(item, with: text)
-        editingItemId = nil
     }
     
     private func deleteItem(_ item: Models.ChecklistItem) {
         if let index = viewModel.items.firstIndex(where: { $0.id == item.id }) {
             // Check if this is the currently focused item
-            let isFocusedItem = focusedItemId == item.id
+            let isFocusedItem = focusCoordinator.focusedItemId == item.id
             
             viewModel.deleteItems(at: IndexSet([index]))
-            editingItemId = nil
             
             // If we deleted the focused item, clean up all focus state
             if isFocusedItem {
@@ -774,7 +730,6 @@ struct ListContent: View {
         PlannerItemView.create(
             item: item,
             focusCoordinator: focusCoordinator,
-            externalFocusState: $editingItemId,
             onToggle: {
                 viewModel.toggleItem(item)
             },
@@ -1077,9 +1032,7 @@ struct ImportPopoverView: View {
 
 struct EasyListView: View {
     @StateObject private var viewModel: EasyListViewModel
-    @State private var editingItemId: UUID?
     @State private var isEditing: Bool = false
-    @FocusState private var focusedItemId: UUID?
     @FocusState private var isNewItemFocused: Bool
     @FocusState private var isNotesFocused: Bool
     @EnvironmentObject private var focusManager: FocusManager
@@ -1099,7 +1052,6 @@ struct EasyListView: View {
         // Then remove global focus which will prevent re-entry into EasyList
         focusManager.removeAllFocus()
         // Finally clear local focus states
-        focusedItemId = nil
         isNewItemFocused = false
         isNotesFocused = false
         isEditing = false
@@ -1156,8 +1108,6 @@ struct EasyListView: View {
                         ZStack {
                             ListContent(
                                 viewModel: viewModel,
-                                editingItemId: $editingItemId,
-                                focusedItemId: _focusedItemId,
                                 isNewItemFocused: _isNewItemFocused,
                                 isEditing: $isEditing,
                                 focusCoordinator: focusCoordinator,

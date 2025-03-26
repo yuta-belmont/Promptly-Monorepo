@@ -249,13 +249,9 @@ private struct ItemTextInputArea: View {
                 TextEditor(text: $viewModel.text)
                     .focused(isTitleEditing)
                     .onChange(of: viewModel.text) { oldValue, newValue in
-                        if oldValue.count > 1 && newValue == "\n" {
+                        if newValue.contains("\n") {
                             // If text was selected and replaced with newline, restore the text
                             viewModel.text = oldValue
-                            focusManager.removeAllFocus()
-                        } else if newValue.contains("\n") {
-                            // Remove any newlines
-                            viewModel.text = newValue.replacingOccurrences(of: "\n", with: "")
                             focusManager.removeAllFocus()
                         } else if newValue != oldValue {
                             // Only call callback if there's an actual change
@@ -631,7 +627,10 @@ struct NewSubItemView: View {
         if !viewModel.newSubItemText.isEmpty {
             let textToAdd = viewModel.newSubItemText
             viewModel.addSubItem(textToAdd)
-            viewModel.newSubItemText = ""
+            // Defer property updates to avoid view update cycle issues
+            DispatchQueue.main.async {
+                viewModel.newSubItemText = ""
+            }
             onSubmit()
         } else {
             isNewSubItemFocused = false

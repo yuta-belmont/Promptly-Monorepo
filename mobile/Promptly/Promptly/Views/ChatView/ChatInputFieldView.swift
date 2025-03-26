@@ -52,7 +52,9 @@ struct ChatInputFieldView: View {
             
             Button(action: {
                 if shouldShowMic || viewModel.isRecording {
-                    viewModel.toggleRecording()
+                    viewModel.toggleRecording(directUpdateHandler: { transcription in
+                        userInput = transcription
+                    })
                 } else if hasText {
                     onSend()
                 }
@@ -85,11 +87,10 @@ struct ChatInputFieldView: View {
         )
         .onAppear {
             if !viewModel.isSpeechSetup {
-                viewModel.setupSpeechRecognition()
+                viewModel.setupSpeechRecognition(directUpdateHandler: { transcription in
+                    userInput = transcription
+                })
             }
-        }
-        .onChange(of: viewModel.userInput) { oldValue, newValue in
-            userInput = newValue
         }
         .onChange(of: viewModel.isRecording) { oldValue, newValue in
             if newValue {

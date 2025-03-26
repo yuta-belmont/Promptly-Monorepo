@@ -157,25 +157,30 @@ struct ChatView: View {
                             ChatInputFieldView(
                                 userInput: $viewModel.userInput,
                                 onSend: {
-                                    DispatchQueue.main.async {
-                                        let messageId = UUID()
-                                        lastSentMessageId = messageId
-                                        
-                                        // Calculate the distance from bottom of screen to where message will appear
-                                        let distanceFromBottom = geometry.size.height - inputFieldHeight
-                                        messageOffset[messageId] = distanceFromBottom
-                                        
-                                        // First send the message (triggers clearing the input)
-                                        viewModel.sendMessage(withId: messageId)
-                                        
-                                        let animationDuration = 0.5
-                                        
-                                        // Bubble up animation
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                            // Animate the message bubble to its final position
-                                            withAnimation(.spring(response: animationDuration, dampingFraction: 0.9)) {
-                                                messageOffset[messageId] = 0
-                                            }
+                                    // SYNCHRONOUSLY capture the current input value
+                                    let inputText = viewModel.userInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    guard !inputText.isEmpty else { return }
+                                    
+                                    // Generate message ID
+                                    let messageId = UUID()
+                                    lastSentMessageId = messageId
+                                    
+                                    // SYNCHRONOUSLY clear the input field before any async operations
+                                    viewModel.userInput = ""
+                                    
+                                    // Calculate the distance from bottom of screen to where message will appear
+                                    let distanceFromBottom = geometry.size.height - inputFieldHeight
+                                    messageOffset[messageId] = distanceFromBottom
+                                    
+                                    // Now send the message with the captured text
+                                    viewModel.sendMessageWithText(inputText, withId: messageId)
+                                    
+                                    // Animation happens after clearing input and starting the send process
+                                    let animationDuration = 0.5
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                        // Animate the message bubble to its final position
+                                        withAnimation(.spring(response: animationDuration, dampingFraction: 0.9)) {
+                                            messageOffset[messageId] = 0
                                         }
                                     }
                                 },

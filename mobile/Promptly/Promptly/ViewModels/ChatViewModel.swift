@@ -269,27 +269,22 @@ final class ChatViewModel: ObservableObject {
         isPendingResponse = false
     }
     
-    func sendMessage(withId id: UUID? = nil) {
+    // Add this new method to send messages with explicit text
+    func sendMessageWithText(_ text: String, withId id: UUID? = nil) {
         // Check if user is authenticated and not a guest
         guard authManager.isAuthenticated && !authManager.isGuestUser else {
             // User is not authenticated or is a guest, don't send the message
             return
         }
         
-        let trimmedInput = userInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedInput.isEmpty else { return }
-
-        // Clear input immediately, ensuring it happens on the main thread
-        DispatchQueue.main.async {
-            self.userInput = ""
-        }
-
+        // No need to clear userInput here - it's already cleared in the view
+        
         let messageId = id ?? UUID()
         let userMsg = ChatMessage.create(
             in: context,
             id: messageId,
-            role: MessageRoles.user, // Updated to use string constant
-            content: trimmedInput
+            role: MessageRoles.user,
+            content: text
         )
         
         // Add user message through central point
@@ -358,9 +353,6 @@ final class ChatViewModel: ObservableObject {
                             // Update the message content to just the message part
                             responseMsg.content = messageContent
                         }
-                        
-                        // Note: We don't need to check for task IDs here as the ChatService
-                        // will handle setting up listeners for checklist tasks
                     }
                     
                     // Add response through central point
@@ -392,6 +384,18 @@ final class ChatViewModel: ObservableObject {
             isLoading = false
             isPendingResponse = false
         }
+    }
+    
+    // Keep the original method for backward compatibility
+    func sendMessage(withId id: UUID? = nil) {
+        let trimmedInput = userInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedInput.isEmpty else { return }
+
+        // Clear input synchronously - no async needed here
+        userInput = ""
+
+        // Use the new method with the captured text
+        sendMessageWithText(trimmedInput, withId: id)
     }
     
     private func saveChatHistory() {
