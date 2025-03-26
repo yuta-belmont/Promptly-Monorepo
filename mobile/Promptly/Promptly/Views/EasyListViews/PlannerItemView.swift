@@ -36,7 +36,6 @@ class PlannerFocusManager: ObservableObject {
     
     // Update focus state from view
     func updateFocusState(titleEditing: Bool, subItemId: UUID?, newSubItemFocused: Bool) {
-        print("[PlannerFocusManager] updating focus state")
         self.isTitleEditing = titleEditing
         self.focusedSubItemId = subItemId
         self.isNewSubItemFocused = newSubItemFocused
@@ -68,8 +67,6 @@ class PlannerFocusManager: ObservableObject {
         if !hasAnyFocus {
             return
         }
-        
-        print("[PlannerFocusManager] Removing all focus")
         
         // Update the internal tracking properties
         updateFocusState(
@@ -212,16 +209,56 @@ private struct ItemTextInputArea: View {
     let focusCoordinator: PlannerFocusCoordinator
     let focusTitle: () -> Void
     
+    // Track when we're preparing to edit (pre-rendering state)
+    @State private var isPreparingToEdit: Bool = false
+    
+    // Memoized properties to reduce recalculations
+    private var displayText: String {
+        viewModel.text.isEmpty ? "Enter task here..." : viewModel.text
+    }
+    
+    private var textOpacity: Double {
+        viewModel.item.isCompleted ? 0.7 : 1.0
+    }
+    
+    private var textColor: Color {
+        viewModel.text.isEmpty ? .gray : .white
+    }
+    
+    private var showEditor: Bool {
+        shouldShowTextEditor || viewModel.areSubItemsExpanded
+    }
+    
     var body: some View {
         ZStack(alignment: .topLeading) {
-            if shouldShowTextEditor || viewModel.areSubItemsExpanded {
+            // Always keep the Text view in the hierarchy
+            Text(displayText)
+                .foregroundColor(textColor)
+                .lineLimit(viewModel.item.isCompleted ? 1 : 2)
+                .truncationMode(.tail)
+                .strikethrough(viewModel.item.isCompleted, color: .gray)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 8)
+                .padding(.leading, 5)
+                .padding(.trailing, -6)
+                // Only hide Text when editor is actually visible
+                .opacity(showEditor ? 0 : textOpacity)
+            
+            // Only create TextEditor when about to edit or editing
+            if showEditor || isPreparingToEdit {
                 TextEditor(text: $viewModel.text)
                     .focused(isTitleEditing)
                     .onChange(of: viewModel.text) { oldValue, newValue in
-                        if newValue.contains("\n") {
+                        if oldValue.count > 1 && newValue == "\n" {
+                            // If text was selected and replaced with newline, restore the text
+                            viewModel.text = oldValue
+                            focusManager.removeAllFocus()
+                        } else if newValue.contains("\n") {
+                            // Remove any newlines
                             viewModel.text = newValue.replacingOccurrences(of: "\n", with: "")
                             focusManager.removeAllFocus()
-                        } else {
+                        } else if newValue != oldValue {
+                            // Only call callback if there's an actual change
                             itemCallbacks.onTextChange?(newValue)
                         }
                     }
@@ -236,26 +273,44 @@ private struct ItemTextInputArea: View {
                     .background(Color.clear)
                     .padding(.vertical, -1)
                     .padding(.trailing, -4)
-                    .opacity(viewModel.item.isCompleted ? 0.7 : 1.0)
-            } else {
-                Text(viewModel.text.isEmpty ? "Enter task here..." : viewModel.text)
-                    .foregroundColor(viewModel.text.isEmpty ? .gray : .white)
-                    .lineLimit(viewModel.item.isCompleted ? 1 : 2)
-                    .truncationMode(.tail)
-                    .strikethrough(viewModel.item.isCompleted, color: .gray)
-                    .opacity(viewModel.item.isCompleted ? 0.7 : 1.0)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 8)
-                    .padding(.leading, 5)
-                    .padding(.trailing, -6)
+                    .opacity(showEditor ? textOpacity : 0)
             }
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            shouldShowTextEditor = true
-            focusTitle()
+            // Pre-render the TextEditor before showing it
+            if !showEditor && !isPreparingToEdit {
+                isPreparingToEdit = true
+                
+                // Allow TextEditor to render one frame before focusing
+                DispatchQueue.main.async {
+                    shouldShowTextEditor = true
+                    focusTitle()
+                }
+            }
         }
-        .padding(.vertical, 0)
+        // Clean up preparation state when editing ends
+        .onChange(of: showEditor) { _, newValue in
+            if !newValue {
+                // Add a small delay before removing the TextEditor
+                // This ensures smooth transitions if user taps again quickly
+                isPreparingToEdit = false
+            } else {
+                // Make sure preparation state is true when editor is showing
+                isPreparingToEdit = true
+            }
+        }
+        // Monitor text changes to update the Text view immediately
+        .onChange(of: viewModel.text) { _, _ in
+            // This forces Text view to update when text changes
+            // The displayText computed property will refresh with the new value
+        }
+        // Ensure we clean up if this view disappears
+        .onDisappear {
+            if !showEditor {
+                isPreparingToEdit = false
+            }
+        }
     }
 }
 
@@ -269,7 +324,14 @@ private struct ExpandCollapseButton: View {
     var body: some View {
         Button(action: {
             feedbackGenerator.impactOccurred()
+            
+            // If showing the + button (empty subitems and not expanded)
             let isAddingFirstSubItem = viewModel.item.subItems.isEmpty && !viewModel.areSubItemsExpanded
+            
+            // Check if we've reached the limit before trying to add first subitem
+            if isAddingFirstSubItem && viewModel.hasReachedSubItemLimit() {
+                return
+            }
             
             // 1. Update data state
             viewModel.areSubItemsExpanded.toggle()
@@ -408,7 +470,6 @@ private struct SubItemRowView: View {
     let onStartNewSubItem: () -> Void
     @State private var localText: String
     @State private var lastTapTime: Date? = nil
-    @State private var forceRefresh: Bool = false
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
 
     init(viewModel: PlannerItemViewModel, 
@@ -449,7 +510,6 @@ private struct SubItemRowView: View {
             Button(action: {
                 feedbackGenerator.impactOccurred()
                 viewModel.toggleSubItem(subItem.id)
-                forceRefresh.toggle()
             }) {
                 Image(systemName: subItem.isCompleted ? "checkmark.circle.fill" : "circle")
                     .foregroundColor(subItem.isCompleted ? .green : .gray)
@@ -478,7 +538,6 @@ private struct SubItemRowView: View {
                     viewModel.updateSubItemText(subItem.id, newText: newText)
                 }
             )
-            .id(forceRefresh)
             .focused($focusedSubItemId, equals: subItem.id)
             .simultaneousGesture(
                 TapGesture().onEnded {
@@ -608,11 +667,21 @@ private struct SubItemsSection: View {
                         onStartNewSubItem: onStartNewSubItem
                     )
                     
-                    NewSubItemView(
-                        viewModel: viewModel,
-                        onSubmit: onStartNewSubItem,
-                        isNewSubItemFocused: $isNewSubItemFocused
-                    )
+                    // Only show the add subitem field if we haven't reached the limit
+                    if !viewModel.hasReachedSubItemLimit() {
+                        NewSubItemView(
+                            viewModel: viewModel,
+                            onSubmit: onStartNewSubItem,
+                            isNewSubItemFocused: $isNewSubItemFocused
+                        )
+                    } else {
+                        // When at the limit, show a subtle hint
+                        Text("Maximum of 50 subitems reached")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .padding(.leading, 44)
+                            .padding(.top, 4)
+                    }
                 }
                 .padding(.leading, 4)
                 .padding(.trailing, 0)
@@ -628,7 +697,7 @@ private struct SubItemsSection: View {
            currentIndex < viewModel.item.subItems.count - 1 {
             onStartEditSubItem(viewModel.item.subItems[currentIndex + 1].id)
         }
-        else {
+        else if !viewModel.hasReachedSubItemLimit() {
             isNewSubItemFocused = true
             onStartNewSubItem()
         }
@@ -636,7 +705,7 @@ private struct SubItemsSection: View {
 }
 
 // Update PlannerItemView to include metadataCallbacks in MainItemRow
-struct PlannerItemView: View {
+struct PlannerItemView: View, Equatable {
     @StateObject private var viewModel: PlannerItemViewModel
     @StateObject private var focusManager = PlannerFocusManager()
     @EnvironmentObject private var appFocusManager: FocusManager
@@ -658,6 +727,16 @@ struct PlannerItemView: View {
     
     // Add instance identifier
     private let instanceId: String
+    
+    // MARK: - Equatable Implementation
+    static func == (lhs: PlannerItemView, rhs: PlannerItemView) -> Bool {
+        // Compare only the input properties and non-StateObject properties
+        // Avoid accessing @StateObject properties directly
+        return lhs.itemId == rhs.itemId &&
+               // Item identity is sufficient - avoid comparing viewModel.item
+               lhs.isGlowing == rhs.isGlowing
+        // Don't compare viewModel properties as they're StateObjects
+    }
     
     init(
         item: Models.ChecklistItem,
@@ -748,11 +827,9 @@ struct PlannerItemView: View {
             focusCoordinator.unregister(itemId: itemId)
         }
         .onChange(of: focusManager.hasAnyFocus) { _, isEditing in
-            print("[PlannerItemView \(instanceId)] hasAnyFocus changed to: \(isEditing)")
             focusCoordinator.updateFocus(for: itemId, hasAnyFocus: isEditing)
         }
         .onChange(of: isTitleEditing) { oldValue, newValue in
-            print("[PlannerItemView \(instanceId)] isTitleEditing changed from: \(oldValue) to: \(newValue)")
             focusManager.updateFocusState(
                 titleEditing: newValue,
                 subItemId: focusedSubItemId,
@@ -763,7 +840,6 @@ struct PlannerItemView: View {
             }
         }
         .onChange(of: focusedSubItemId) { oldValue, newValue in
-            print("[PlannerItemView \(instanceId)] focusedSubItemId changed from: \(String(describing: oldValue)) to: \(String(describing: newValue))")
             focusManager.updateFocusState(
                 titleEditing: isTitleEditing,
                 subItemId: newValue,
@@ -771,7 +847,6 @@ struct PlannerItemView: View {
             )
         }
         .onChange(of: isNewSubItemFocused) { oldValue, newValue in
-            print("[PlannerItemView \(instanceId)] isNewSubItemFocused changed from: \(oldValue) to: \(newValue)")
             focusManager.updateFocusState(
                 titleEditing: isTitleEditing,
                 subItemId: focusedSubItemId,
@@ -791,23 +866,15 @@ struct PlannerItemView: View {
             }
         }
         .onChange(of: focusCoordinator.focusedItemId) { _, newId in
-            print("[PlannerItemView \(instanceId)] focusCoordinator.focusedItemId changed to: \(String(describing: newId))")
-            print("[PlannerItemView \(instanceId)] has focus:", focusManager.hasAnyFocus)
             if newId != itemId && focusManager.hasAnyFocus {
                 // Only call removeAllFocus if this item actually has focus
                 focusManager.removeAllFocus()
             }
         }
-        // Remove the direct focus handling from global focus manager changes
-        // Let the coordinator handle it through EasyListView's RemoveAllFocus
-        .onChange(of: appFocusManager.currentFocusedView) { oldValue, newValue in
-            print("[PlannerItemView \(instanceId)] appFocusManager.currentFocusedView changed from: \(String(describing: oldValue)) to: \(String(describing: newValue))")
-        }
     }
     
     // Focus methods that directly set @FocusState
     func focusTitle() {
-        print("[PlannerItemView \(instanceId)] focusTitle() called for itemId: \(itemId)")
         shouldShowTextEditor = true  // First ensure TextEditor is present
         // Use DispatchQueue to ensure TextEditor is rendered before setting focus
         DispatchQueue.main.async {
@@ -818,7 +885,6 @@ struct PlannerItemView: View {
     }
     
     private func startEditingSubItem(_ id: UUID) {
-        print("[PlannerItemView \(instanceId)] startEditingSubItem() called for subItemId: \(id)")
         // Batch the individual focus state updates in the next run loop
         DispatchQueue.main.async {
             isTitleEditing = false
@@ -828,7 +894,6 @@ struct PlannerItemView: View {
     }
     
     private func startNewSubItem() {
-        print("[PlannerItemView \(instanceId)] startNewSubItem() called")
         // Batch the focus state updates in the next run loop
         DispatchQueue.main.async {
             self.isTitleEditing = false
@@ -839,7 +904,6 @@ struct PlannerItemView: View {
     
     private func saveEntireItem() {
         // Save the entire item with its current state
-        print("[PlannerItemView \(instanceId)] saveEntireItem() called")
         viewModel.save()
     }
 }

@@ -7,12 +7,10 @@ class PlannerFocusCoordinator: ObservableObject {
     private var isProgrammaticUpdate = false
     
     func register(_ manager: PlannerFocusManager, for itemId: UUID) {
-        print("[PlannerFocusCoordinator] Registering manager for item: \(itemId)")
         managers[itemId] = manager
     }
     
     func unregister(itemId: UUID) {
-        print("[PlannerFocusCoordinator] Unregistering manager for item: \(itemId)")
         managers[itemId] = nil
         if focusedItemId == itemId {
             focusedItemId = nil
@@ -31,13 +29,11 @@ class PlannerFocusCoordinator: ObservableObject {
     }
     
     func removeAllFocus() {
-        print("[PlannerFocusCoordinator] Removing all focus")
         isProgrammaticUpdate = true
         defer { isProgrammaticUpdate = false }
         
         // Clear focus from current item if any
         if let currentId = focusedItemId, let currentManager = managers[currentId] {
-            print("[PlannerFocusCoordinator] Removing focus for item: \(currentId)")
             currentManager.removeAllFocus()
         }
         focusedItemId = nil

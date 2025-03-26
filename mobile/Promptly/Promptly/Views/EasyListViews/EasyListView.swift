@@ -547,6 +547,7 @@ struct ListContent: View {
     }
     
     private func handleItemLoseFocus(_ item: Models.ChecklistItem, text: String) {
+        //return() //with subitems no point deleting an item right now its too much hassel for accidentally clearing the field
         if text.isEmpty {
             deleteItem(item)
             // Clean up focus state when an item is deleted
@@ -647,32 +648,44 @@ struct ListContent: View {
                 // Constrain the List to exactly match the available height
                 .frame(height: availableHeight)
                 .onChange(of: focusedItemId) { oldValue, newValue in
-                    print("[ListContent] focusedItemId changed from \(String(describing: oldValue)) to \(String(describing: newValue))")
+                    // Scroll to the item if needed
                     if let id = newValue {
                         withAnimation {
                             proxy.scrollTo(id, anchor: .center)
                         }
-                        print("[ListContent] Requesting focus for EasyList")
                         focusManager.requestFocus(for: .easyList)
                     }
+                    
+                    // Update the editingItemId to match
+                    if editingItemId != newValue {
+                        editingItemId = newValue
+                    }
+                    
+                    // If focus is lost, ensure proper cleanup
                     if newValue == nil {
-                        print("[ListContent] Setting editingItemId to nil due to focusedItemId being nil")
-                        editingItemId = nil
-                        // Use the coordinator to properly remove focus from all items
                         focusCoordinator.removeAllFocus()
                     }
+                    
+                    // Update the editing state
                     updateEditingState()
-                    print("[ListContent] isEditing is now: \(isEditing)")
                 }
                 .onChange(of: isNewItemFocused) { oldValue, newValue in
-                    print("[ListContent] isNewItemFocused changed from \(oldValue) to \(newValue)")
+                    // Handle scrolling when focusing new item
                     if newValue && !viewModel.isItemLimitReached {
                         withAnimation {
                             proxy.scrollTo("newItemRow", anchor: .center)
                         }
-                        print("[ListContent] Requesting focus for EasyList")
                         focusManager.requestFocus(for: .easyList)
                     }
+                    
+                    // Handle saving when losing focus
+                    if !newValue && oldValue && !newItemText.isEmpty {
+                        viewModel.addItem(newItemText)
+                        newItemText = ""
+                    }
+                    
+                    // Update editing state
+                    updateEditingState()
                 }
             }
             
@@ -685,39 +698,27 @@ struct ListContent: View {
         }
         // Constrain the entire ZStack to the available height
         .frame(height: availableHeight)
-        .onChange(of: editingItemId) { oldValue, newValue in
-            print("[ListContent] editingItemId changed from \(String(describing: oldValue)) to \(String(describing: newValue))")
-            if let id = newValue {
-                print("[ListContent] Setting focusedItemId to \(id)")
-                focusedItemId = id
+        .onChange(of: focusCoordinator.focusedItemId) { _, newId in
+            // Only update if different to avoid cycles
+            if focusedItemId != newId {
+                focusedItemId = newId
             }
+            
+            // We still need to update editingItemId directly from the coordinator
+            // This ensures external focus changes are properly reflected
+            editingItemId = newId
+            
+            // Update editing state to reflect the new focus
             updateEditingState()
-            print("[ListContent] isEditing updated to: \(isEditing)")
-        }
-        .onChange(of: focusedItemId) { oldValue, newValue in
-            print("[ListContent] focusedItemId changed (outer) from \(String(describing: oldValue)) to \(String(describing: newValue))")
-            if newValue == nil {
-                print("[ListContent] Setting editingItemId to nil due to focusedItemId being nil (outer)")
-                editingItemId = nil
-            }
-            updateEditingState()
-            print("[ListContent] isEditing updated to: \(isEditing) (outer)")
-        }
-        .onChange(of: isNewItemFocused) { oldValue, newValue in
-            print("[ListContent] isNewItemFocused changed (outer) from \(oldValue) to \(newValue)")
-            if !newValue && !newItemText.isEmpty {
-                viewModel.addItem(newItemText)
-                newItemText = ""
-            }
-            updateEditingState()
-            print("[ListContent] isEditing updated to: \(isEditing) (outer)")
         }
         .onChange(of: isEditing) { oldValue, newValue in
             if !newValue {
                 let emptyItems = viewModel.items.enumerated().filter { $0.element.title.isEmpty }
+                /* Not deleting empty titles right now
                 if !emptyItems.isEmpty {
                     viewModel.deleteItems(at: IndexSet(emptyItems.map { $0.offset }))
                 }
+                 */
                 focusManager.isEasyListFocused = newValue
             }
         }
@@ -725,11 +726,6 @@ struct ListContent: View {
             if newValue != .easyList {
                 finishEditing()
             }
-        }
-        .onChange(of: focusCoordinator.focusedItemId) { _, newId in
-            print("[ListContent] focusCoordinator.focusedItemId changed to: \(String(describing: newId))")
-            editingItemId = newId
-            updateEditingState()
         }
         .manageFocus(for: .easyList)
     }
@@ -744,12 +740,10 @@ struct ListContent: View {
     
     private func updateEditingState() {
         let newIsEditing = focusedItemId != nil || isNewItemFocused || editingItemId != nil
-        print("[ListContent] updateEditingState: focusedItemId=\(String(describing: focusedItemId)), isNewItemFocused=\(isNewItemFocused), editingItemId=\(String(describing: editingItemId))")
         isEditing = newIsEditing
     }
     
     private func startEditing(_ item: Models.ChecklistItem) {
-        print("[ListContent] startEditing called for item: \(item.id)")
         editingItemId = item.id
     }
     
@@ -791,6 +785,7 @@ struct ListContent: View {
                 // Only save non-empty items when losing focus
                 if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     viewModel.updateItem(item, with: text)
+                    
                 } else {
                     handleItemLoseFocus(item, text: "")
                 }
@@ -1096,10 +1091,7 @@ struct EasyListView: View {
     }
     
     private func RemoveAllFocus() {
-        print("[EasyListView] RemoveAllFocus called")
-        
         if !isEditing {
-            print("[EasyListView] RemoveAllFocus returned early")
             return
         }
         // First remove coordinator focus which will trigger PlannerItemView focus removal
@@ -1237,7 +1229,6 @@ struct EasyListView: View {
             // Check if the notification is for our current date
             let calendar = Calendar.current
             if calendar.isDate(newChecklistDate, inSameDayAs: viewModel.date) {
-                print("[EasyListView] Received notification for new checklist on current date: \(newChecklistDate)")
                 viewModel.reloadChecklist()
             }
         }

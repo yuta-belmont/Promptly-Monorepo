@@ -16,6 +16,12 @@ struct ChatView: View {
     @Binding var isKeyboardActive: Bool
     @Binding var isExpanded: Bool
     
+    // Animation state for floating text
+    @State private var animatingText: String = ""
+    @State private var animatingTextOpacity: Double = 0
+    @State private var animatingTextPosition: CGPoint = .zero
+    @State private var animatingTextSize: CGFloat = 16
+    
     private let snapThreshold: CGFloat = UIScreen.main.bounds.height * 0.20
     private let initialHeight: CGFloat = UIScreen.main.bounds.height * 0.45
 
@@ -44,196 +50,196 @@ struct ChatView: View {
             let maxHeight = availableHeight -  20
             
             // Main chat content without the dark background (that's now in BaseView)
-            VStack(spacing: 0) {
-                Spacer()
-                
+            ZStack {
                 VStack(spacing: 0) {
-                    ChatHeaderView(
-                        isFullyExpanded: Binding(
-                            get: { viewModel.isFullyExpanded },
-                            set: { viewModel.isFullyExpanded = $0 }
-                        ),
-                        isExpanded: $isExpanded,
-                        height: $height,
-                        isDragging: $isDragging,
-                        viewModel: viewModel,
-                        maxHeight: maxHeight,
-                        initialHeight: initialHeight,
-                        snapThreshold: snapThreshold
-                    )
+                    Spacer()
                     
-                    // Main content
                     VStack(spacing: 0) {
-                        ScrollViewReader { proxy in
-                            // Scrollable content
-                            ScrollView {
-                                VStack(spacing: 0) {
-                                    ForEach(viewModel.messages) { msg in
-                                        ChatBubbleView(message: msg)
-                                            .id(msg.id)
-                                            .offset(y: messageOffset[msg.id] ?? 0)
-                                    }
-                                    
-                                    if viewModel.messages.isEmpty {
-                                        VStack(spacing: 16) {
-                                            Text("No messages yet")
-                                                .foregroundColor(.white.opacity(0.6))
-                                                .padding(.top, 40)
+                        ChatHeaderView(
+                            isFullyExpanded: Binding(
+                                get: { viewModel.isFullyExpanded },
+                                set: { viewModel.isFullyExpanded = $0 }
+                            ),
+                            isExpanded: $isExpanded,
+                            height: $height,
+                            isDragging: $isDragging,
+                            viewModel: viewModel,
+                            maxHeight: maxHeight,
+                            initialHeight: initialHeight,
+                            snapThreshold: snapThreshold
+                        )
+                        
+                        // Main content
+                        VStack(spacing: 0) {
+                            ScrollViewReader { proxy in
+                                // Scrollable content
+                                ScrollView {
+                                    VStack(spacing: 0) {
+                                        ForEach(viewModel.messages) { msg in
+                                            ChatBubbleView(message: msg)
+                                                .id(msg.id)
+                                                .offset(y: messageOffset[msg.id] ?? 0)
                                         }
-                                        .frame(maxWidth: .infinity)
-                                    }
-                                    
-                                    if viewModel.isLoading && !viewModel.isAnimatingSend {
-                                        HStack {
-                                            VStack(alignment: .leading) {
-                                                TypingIndicatorView()
+                                        
+                                        if viewModel.messages.isEmpty {
+                                            VStack(spacing: 16) {
+                                                Text("No messages yet")
+                                                    .foregroundColor(.white.opacity(0.6))
+                                                    .padding(.top, 40)
                                             }
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .padding(.horizontal)
-                                            .padding(.vertical, 4)
-                                            
-                                            Spacer(minLength: 50)
+                                            .frame(maxWidth: .infinity)
                                         }
-                                    }
-                                    
-                                    Color.clear
-                                        .frame(height: 10)
-                                        .id("bottom")
-                                }
-                            }
-                            .onAppear {
-                                // Scroll to bottom when view appears if there are messages
-                                if !viewModel.messages.isEmpty {
-                                    proxy.scrollTo("bottom", anchor: .bottom)
-                                }
-                            }
-                            .onChange(of: viewModel.messages.count) { oldValue, newValue in
-                                proxy.scrollTo("bottom", anchor: .bottom)
-                            }
-                            .onChange(of: focusManager.currentFocusedView) { oldValue, newValue in
-                                if newValue == .chat {
-                                    isKeyboardActive = true
-                                    // Wait for keyboard animation to complete (typically 0.25s)
-                                    let animationDuration = 0.25
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration) {
-                                        if let geometry = currentGeometry {
-                                            let availableHeight = geometry.size.height - 20
-                                            withAnimation(.easeOut(duration: 0.1)) {
-                                                if height > availableHeight {
-                                                    height = availableHeight
+                                        
+                                        if viewModel.isLoading && !viewModel.isAnimatingSend {
+                                            HStack {
+                                                VStack(alignment: .leading) {
+                                                    TypingIndicatorView()
                                                 }
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .padding(.horizontal)
+                                                .padding(.vertical, 4)
+                                                
+                                                Spacer(minLength: 50)
                                             }
                                         }
-                                        // Scroll to bottom after height adjustment
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                            withAnimation {
-                                                proxy.scrollTo("bottom", anchor: .bottom)
-                                            }
-                                        }
-                                    }
-                                } else if oldValue == .chat {
-                                    withAnimation(.easeOut(duration: 0.25)) {
-                                        isKeyboardActive = false
-                                        height = initialHeight // Reset to initial height when losing focus
+                                        
+                                        Color.clear
+                                            .frame(height: 10)
+                                            .id("bottom")
                                     }
                                 }
-                            }
-                            .onChange(of: viewModel.isLoading) { oldValue, newValue in
-                                if newValue && !viewModel.isAnimatingSend {
-                                    withAnimation {
+                                .onAppear {
+                                    // Scroll to bottom when view appears if there are messages
+                                    if !viewModel.messages.isEmpty {
                                         proxy.scrollTo("bottom", anchor: .bottom)
                                     }
                                 }
-                            }
-                        }
-                        
-                        ChatInputFieldView(
-                            userInput: $viewModel.userInput,
-                            onSend: {
-                                DispatchQueue.main.async {
-                                    let messageId = UUID()
-                                    lastSentMessageId = messageId
-                                    
-                                    // Calculate the distance from bottom of screen to where message will appear
-                                    let distanceFromBottom = geometry.size.height - inputFieldHeight
-                                    messageOffset[messageId] = distanceFromBottom
-                                    
-                                    viewModel.sendMessage(withId: messageId)
-                                    
-                                    // Animate the message to its final position
-                                    withAnimation(.spring(response: 0.9, dampingFraction: 0.7)) {
-                                        messageOffset[messageId] = 0
-                                    }
-                                    
-                                    // Clean up after animation
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                        messageOffset.removeValue(forKey: messageId)
-                                        if lastSentMessageId == messageId {
-                                            lastSentMessageId = nil
+                                .onChange(of: viewModel.messages.count) { oldValue, newValue in
+                                    proxy.scrollTo("bottom", anchor: .bottom)
+                                }
+                                .onChange(of: focusManager.currentFocusedView) { oldValue, newValue in
+                                    if newValue == .chat {
+                                        isKeyboardActive = true
+                                        // Wait for keyboard animation to complete (typically 0.25s)
+                                        let animationDuration = 0.25
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration) {
+                                            if let geometry = currentGeometry {
+                                                let availableHeight = geometry.size.height - 20
+                                                withAnimation(.easeOut(duration: 0.1)) {
+                                                    if height > availableHeight {
+                                                        height = availableHeight
+                                                    }
+                                                }
+                                            }
+                                            // Scroll to bottom after height adjustment
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                                withAnimation {
+                                                    proxy.scrollTo("bottom", anchor: .bottom)
+                                                }
+                                            }
+                                        }
+                                    } else if oldValue == .chat {
+                                        withAnimation(.easeOut(duration: 0.25)) {
+                                            isKeyboardActive = false
+                                            height = initialHeight // Reset to initial height when losing focus
                                         }
                                     }
                                 }
-                            },
-                            isSendDisabled: viewModel.userInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                            isDragging: isDragging,
-                            isDisabled: false
-                        )
-                        .background(GlassBackground(opacity: 0.1))
-                        .opacity(1.0)
-                        .animation(.easeInOut(duration: 0.2), value: viewModel.isPendingResponse)
-                        .background(
-                            GeometryReader { inputGeometry in
-                                Color.clear.onAppear {
-                                    inputFieldHeight = inputGeometry.size.height
-                                }
-                                .onChange(of: inputGeometry.size.height) { oldValue, newValue in
-                                    inputFieldHeight = newValue
-                                }
-                            }
-                        )
-                        .contentShape(Rectangle().inset(by: -20))
-                        .gesture(
-                            DragGesture()
-                                .onChanged { value in
-                                    if value.translation.height > 20 {
-                                        RemoveAllFocus()
+                                .onChange(of: viewModel.isLoading) { oldValue, newValue in
+                                    if newValue && !viewModel.isAnimatingSend {
+                                        withAnimation {
+                                            proxy.scrollTo("bottom", anchor: .bottom)
+                                        }
                                     }
                                 }
-                        )
+                            }
+                            
+                            ChatInputFieldView(
+                                userInput: $viewModel.userInput,
+                                onSend: {
+                                    DispatchQueue.main.async {
+                                        let messageId = UUID()
+                                        lastSentMessageId = messageId
+                                        
+                                        // Calculate the distance from bottom of screen to where message will appear
+                                        let distanceFromBottom = geometry.size.height - inputFieldHeight
+                                        messageOffset[messageId] = distanceFromBottom
+                                        
+                                        // First send the message (triggers clearing the input)
+                                        viewModel.sendMessage(withId: messageId)
+                                        
+                                        let animationDuration = 0.5
+                                        
+                                        // Bubble up animation
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                            // Animate the message bubble to its final position
+                                            withAnimation(.spring(response: animationDuration, dampingFraction: 0.9)) {
+                                                messageOffset[messageId] = 0
+                                            }
+                                        }
+                                    }
+                                },
+                                isSendDisabled: viewModel.userInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                                isDragging: isDragging,
+                                isDisabled: false
+                            )
+                            .background(GlassBackground(opacity: 0.1))
+                            .opacity(1.0)
+                            .animation(.easeInOut(duration: 0.2), value: viewModel.isPendingResponse)
+                            .background(
+                                GeometryReader { inputGeometry in
+                                    Color.clear.onAppear {
+                                        inputFieldHeight = inputGeometry.size.height
+                                    }
+                                    .onChange(of: inputGeometry.size.height) { oldValue, newValue in
+                                        inputFieldHeight = newValue
+                                    }
+                                }
+                            )
+                            .contentShape(Rectangle().inset(by: -20))
+                            .gesture(
+                                DragGesture()
+                                    .onChanged { value in
+                                        if value.translation.height > 20 {
+                                            RemoveAllFocus()
+                                        }
+                                    }
+                            )
+                        }
                     }
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(16)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.white.opacity(0.25), lineWidth: 0.5)
+                    )
+                    .frame(height: isKeyboardActive ? 
+                        min(height, availableHeight) :
+                        height
+                    )
+                    .frame(maxWidth: .infinity)
                 }
-                .background(.ultraThinMaterial)
-                .cornerRadius(16)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(0.25), lineWidth: 0.5)
-                )
-                .frame(height: isKeyboardActive ? 
-                    min(height, availableHeight) :
-                    height
-                )
-                .frame(maxWidth: .infinity)
-            }
-            .padding(.horizontal, 0)
-            .onAppear {
-                currentGeometry = geometry
-                setupKeyboardNotifications()
-                resetChatState()
-            }
-            .onChange(of: geometry.size) { oldValue, newValue in
-                currentGeometry = geometry
-            }
-            .onChange(of: geometry.safeAreaInsets) { oldValue, newValue in
-                currentGeometry = geometry
-            }
-            .onChange(of: isExpanded) { _, newValue in
-                if newValue {
+                .padding(.horizontal, 0)
+                .onAppear {
+                    currentGeometry = geometry
+                    setupKeyboardNotifications()
                     resetChatState()
                 }
-            }
-            .manageFocus(for: .chat)
-            .onDisappear {
-                removeKeyboardNotifications()
+                .onChange(of: geometry.size) { oldValue, newValue in
+                    currentGeometry = geometry
+                }
+                .onChange(of: geometry.safeAreaInsets) { oldValue, newValue in
+                    currentGeometry = geometry
+                }
+                .onChange(of: isExpanded) { _, newValue in
+                    if newValue {
+                        resetChatState()
+                    }
+                }
+                .manageFocus(for: .chat)
+                .onDisappear {
+                    removeKeyboardNotifications()
+                }
             }
         }
     }

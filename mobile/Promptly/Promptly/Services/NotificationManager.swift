@@ -82,7 +82,7 @@ class NotificationManager: NSObject {
         
         // Create the notification content
         let content = UNMutableNotificationContent()
-        content.title = "Alfred: \(item.title)"
+        content.title = "\(item.title)"
         
         // Format the current time for the notification body
         let timeFormatter = DateFormatter()

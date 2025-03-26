@@ -23,12 +23,13 @@ final class EasyListViewModel: ObservableObject {
         self.date = date
         self.checklist = persistence.loadChecklist(for: date) ?? Models.Checklist(date: date)
         self.isShowingNotes = UserDefaults.standard.bool(forKey: "isShowingNotes")
-        
+
         // Clean up any empty items on load
         let emptyIndices = checklist.items.enumerated().filter { $0.element.title.isEmpty }.map { $0.offset }
         if !emptyIndices.isEmpty {
             deleteItems(at: IndexSet(emptyIndices))
         }
+
     }
     
     // MARK: - Date Formatting
@@ -503,5 +504,8 @@ final class EasyListViewModel: ObservableObject {
         // Reload the checklist from persistence
         let reloadedChecklist = persistence.loadChecklist(for: date) ?? Models.Checklist(date: date)
         self.checklist = reloadedChecklist
+        
+        // Process notifications for the loaded checklist
+        notificationManager.processNotificationsForChecklist(reloadedChecklist)
     }
 } 

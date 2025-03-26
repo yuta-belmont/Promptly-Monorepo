@@ -15,6 +15,9 @@ final class PlannerItemViewModel: ObservableObject {
     @Published var areSubItemsExpanded: Bool = false
     @Published var newSubItemText: String = ""
     
+    // MARK: - Constants
+    private let maxSubItems = 50
+    
     // MARK: - Private Properties
     private let persistence = ChecklistPersistence.shared
     private let notificationManager = NotificationManager.shared
@@ -124,6 +127,11 @@ final class PlannerItemViewModel: ObservableObject {
     
     /// Adds a new subitem to the item
     func addSubItem(_ title: String) {
+        // Check if we've reached the maximum number of subitems
+        if item.subItems.count >= maxSubItems {
+            return
+        }
+        
         // Create a new empty subitem if no title is provided
         let subItemTitle = title.isEmpty ? "" : title
         
@@ -150,8 +158,6 @@ final class PlannerItemViewModel: ObservableObject {
         // Clear the new subitem text after adding
         self.newSubItemText = ""
         saveItem()
-        
-        // No need to animate expansion here - handled by the view
     }
     
     /// Toggles completion state of a subitem
@@ -230,6 +236,11 @@ final class PlannerItemViewModel: ObservableObject {
     }
     
     // MARK: - Helper Methods
+    
+    /// Returns true if the maximum number of subitems has been reached
+    func hasReachedSubItemLimit() -> Bool {
+        return item.subItems.count >= maxSubItems
+    }
     
     /// Updates the item and saves changes
     private func updateItem(_ updatedItem: Models.ChecklistItem) {

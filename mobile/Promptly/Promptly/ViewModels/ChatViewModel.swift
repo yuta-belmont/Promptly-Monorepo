@@ -279,8 +279,10 @@ final class ChatViewModel: ObservableObject {
         let trimmedInput = userInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedInput.isEmpty else { return }
 
-        // Clear input immediately
-        userInput = ""
+        // Clear input immediately, ensuring it happens on the main thread
+        DispatchQueue.main.async {
+            self.userInput = ""
+        }
 
         let messageId = id ?? UUID()
         let userMsg = ChatMessage.create(
