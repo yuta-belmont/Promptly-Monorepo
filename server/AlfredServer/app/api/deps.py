@@ -9,7 +9,8 @@ from jose import jwt
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app import models, schemas
+from app.models.user import User
+from app import schemas
 from app.core import security
 from app.core.config import settings
 from app.db.session import get_db
@@ -19,7 +20,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login
 
 def get_current_user(
     db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)
-) -> models.User:
+) -> User:
     # Log token validation attempt (only first 10 chars for security)
     token_prefix = token[:10] + "..." if len(token) > 10 else token
     print(f"[AUTH LOG] Token validation attempt: {token_prefix} at {time.time()}")
@@ -53,7 +54,7 @@ def get_current_user(
             detail="Could not validate credentials",
         )
         
-    user = db.query(models.User).filter(models.User.id == token_data.sub).first()
+    user = db.query(User).filter(User.id == token_data.sub).first()
     if not user:
         print(f"[AUTH LOG] User not found for token subject: {token_data.sub}")
         raise HTTPException(status_code=404, detail="User not found")
@@ -64,8 +65,8 @@ def get_current_user(
 
 
 def get_current_active_user(
-    current_user: models.User = Depends(get_current_user),
-) -> models.User:
+    current_user: User = Depends(get_current_user),
+) -> User:
     if not current_user.is_active:
         print(f"[AUTH LOG] Inactive user attempted access: {current_user.id}")
         raise HTTPException(status_code=400, detail="Inactive user")
@@ -73,8 +74,8 @@ def get_current_active_user(
 
 
 def get_current_active_superuser(
-    current_user: models.User = Depends(get_current_user),
-) -> models.User:
+    current_user: User = Depends(get_current_user),
+) -> User:
     if not current_user.is_superuser:
         print(f"[AUTH LOG] Non-superuser attempted privileged access: {current_user.id}")
         raise HTTPException(

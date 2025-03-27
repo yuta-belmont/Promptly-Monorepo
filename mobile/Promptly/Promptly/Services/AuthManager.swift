@@ -147,14 +147,16 @@ class AuthManager: ObservableObject {
         // Set guest mode in UserDefaults
         UserDefaults.standard.set(true, forKey: guestModeKey)
         
-        // Sign in to Firebase anonymously
-        Task {
-            do {
-                try await Auth.auth().signInAnonymously()
-            } catch {
-                print("Error signing in to Firebase anonymously: \(error.localizedDescription)")
-                // Continue anyway since we're in guest mode
+        // Remove Firebase anonymous authentication for guest users
+        // Guest users shouldn't need Firestore access
+        // If there's an existing Firebase auth, sign out
+        do {
+            if Auth.auth().currentUser != nil {
+                try Auth.auth().signOut()
+                print("Signed out of Firebase for guest mode")
             }
+        } catch {
+            print("Error signing out from Firebase: \(error.localizedDescription)")
         }
         
         // Update state
@@ -162,6 +164,34 @@ class AuthManager: ObservableObject {
             self.isAuthenticated = true
             self.userEmail = nil
             self.isGuestUser = true
+        }
+    }
+    
+    /// Check if the user has Firebase Authentication
+    func hasFirebaseAuth() -> Bool {
+        return Auth.auth().currentUser != nil
+    }
+    
+    /// Ensure Firebase Authentication is set up
+    /// This can be called when needed to ensure Firebase Auth is available
+    func ensureFirebaseAuth() async -> Bool {
+        // Only attempt Firebase auth if not in guest mode
+        if isGuestUser {
+            return false
+        }
+        
+        // If already authenticated with Firebase, return true
+        if Auth.auth().currentUser != nil {
+            return true
+        }
+        
+        // Otherwise try to sign in anonymously
+        do {
+            try await Auth.auth().signInAnonymously()
+            return true
+        } catch {
+            print("Error signing in to Firebase anonymously: \(error.localizedDescription)")
+            return false
         }
     }
     

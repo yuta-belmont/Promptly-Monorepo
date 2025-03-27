@@ -43,12 +43,12 @@ def is_worker_running(pid=None):
         return False
 
 def start_workers():
-    """Start the worker processes."""
+    """Start the unified worker process."""
     if is_worker_running():
-        print("Workers are already running.")
+        print("Worker is already running.")
         return
     
-    print("Starting workers...")
+    print("Starting unified worker...")
     # Start the worker process in the background
     subprocess.Popen(
         ["python3", "server/AlfredServer/run_workers.py"],
@@ -64,9 +64,9 @@ def start_workers():
             break
     
     if is_worker_running():
-        print(f"Workers started with PID {get_worker_pid()}")
+        print(f"Unified worker started with PID {get_worker_pid()}")
     else:
-        print("Failed to start workers. Check the logs.")
+        print("Failed to start unified worker. Check the logs.")
 
 def stop_workers():
     """Stop the worker processes."""

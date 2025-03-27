@@ -7,7 +7,8 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from jose import jwt
 
-from app import crud, models, schemas
+from app import crud, schemas
+from app.models.user import User
 from app.api import deps
 from app.core import security
 from app.core.config import settings
@@ -81,7 +82,7 @@ def register_user(
 
 @router.get("/me", response_model=schemas.User)
 def read_users_me(
-    current_user: models.User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     Get current user

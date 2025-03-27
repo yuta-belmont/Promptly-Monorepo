@@ -84,7 +84,8 @@ class FirebaseService:
                           chat_id: str,
                           message_id: str,
                           message_content: str,
-                          message_history: List[Dict[str, Any]]) -> str:
+                          message_history: List[Dict[str, Any]],
+                          client_time: Optional[str] = None) -> str:
         """
         Add a checklist generation task to Firestore.
         
@@ -94,6 +95,7 @@ class FirebaseService:
             message_id: The ID of the message
             message_content: The content of the user's message
             message_history: The history of messages in the chat
+            client_time: The current time on the client device (optional)
             
         Returns:
             The ID of the created task
@@ -113,6 +115,11 @@ class FirebaseService:
                 'created_at': firestore.SERVER_TIMESTAMP,
                 'updated_at': firestore.SERVER_TIMESTAMP
             }
+            
+            # Include client time if provided
+            if client_time:
+                task_data['client_time'] = client_time
+                
             task_ref.set(task_data)
             
             logger.info(f"Added checklist task {task_ref.id} for user {user_id}, chat {chat_id}")
@@ -121,6 +128,69 @@ class FirebaseService:
         except Exception as e:
             logger.error(f"Error adding checklist task: {e}")
             print(f"[FIREBASE] Error adding checklist task: {e}")
+            raise
+    
+    def add_message_task(self,
+                       user_id: str,
+                       message_content: str,
+                       message_history: List[Dict[str, Any]],
+                       user_full_name: Optional[str] = None,
+                       client_time: Optional[str] = None,
+                       chat_id: Optional[str] = None,
+                       message_id: Optional[str] = None) -> str:
+        """
+        Add a message processing task to Firestore.
+        
+        Args:
+            user_id: The ID of the user
+            message_content: The content of the user's message
+            message_history: The history of messages in the chat
+            user_full_name: The full name of the user (optional)
+            client_time: The current time on the client device (optional)
+            chat_id: The ID of the chat (optional in stateless mode)
+            message_id: The ID of the message (optional in stateless mode)
+            
+        Returns:
+            The ID of the created task
+        """
+        try:
+            # Create a reference to the message tasks collection
+            task_ref = self.db.collection('message_tasks').document()
+            
+            # Set the task data
+            task_data = {
+                'status': 'pending',
+                'user_id': user_id,
+                'message_content': message_content,
+                'message_history': message_history,
+                'user_full_name': user_full_name,
+                'created_at': firestore.SERVER_TIMESTAMP,
+                'updated_at': firestore.SERVER_TIMESTAMP
+            }
+            
+            # Add optional fields if provided
+            if chat_id:
+                task_data['chat_id'] = chat_id
+            
+            if message_id:
+                task_data['message_id'] = message_id
+            
+            # Include client time if provided
+            if client_time:
+                task_data['client_time'] = client_time
+                
+            task_ref.set(task_data)
+            
+            log_msg = f"Added message task {task_ref.id} for user {user_id}"
+            if chat_id:
+                log_msg += f", chat {chat_id}"
+            logger.info(log_msg)
+            
+            return task_ref.id
+            
+        except Exception as e:
+            logger.error(f"Error adding message task: {e}")
+            print(f"[FIREBASE] Error adding message task: {e}")
             raise
     
     def update_task_status(self, collection: str, task_id: str, status: str, data: Optional[Dict[str, Any]] = None) -> None:
@@ -252,15 +322,15 @@ class FirebaseService:
             print(f"[FIREBASE] Error updating checklist task: {e}")
             # Don't raise the exception, as this is a non-critical operation
     
-    def store_checklist(self, user_id: str, chat_id: str, message_id: str, checklist_content: Dict[str, Any]) -> None:
+    def store_checklist(self, user_id: str, checklist_content: Dict[str, Any], chat_id: Optional[str] = None, message_id: Optional[str] = None) -> None:
         """
         Store the generated checklist data in Firestore.
         
         Args:
             user_id: The ID of the user
-            chat_id: The ID of the chat
-            message_id: The ID of the message
             checklist_content: The generated checklist content
+            chat_id: The ID of the chat (optional in stateless mode)
+            message_id: The ID of the message (optional in stateless mode)
         """
         try:
             # Create a reference to the task document
@@ -269,18 +339,23 @@ class FirebaseService:
             # Set the task data
             task_data = {
                 'user_id': user_id,
-                'chat_id': chat_id,
-                'message_id': message_id,
                 'generated_content': json.dumps(checklist_content),
                 'created_at': firestore.SERVER_TIMESTAMP,
                 'updated_at': firestore.SERVER_TIMESTAMP,
                 'status': 'completed'
             }
             
+            # Add optional fields if provided
+            if chat_id:
+                task_data['chat_id'] = chat_id
+            
+            if message_id:
+                task_data['message_id'] = message_id
+            
             # Set the document
             task_ref.set(task_data)
             
-            logger.info(f"Stored checklist data for user {user_id}, chat {chat_id}")
+            logger.info(f"Stored checklist data for user {user_id}")
             
         except Exception as e:
             logger.error(f"Error storing checklist data: {e}")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Script to run the checklist worker.
-This script starts the checklist worker process.
+Script to run the background workers.
+This script starts the unified worker process for handling both message and checklist tasks.
 """
 
 import os
@@ -19,7 +19,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # Import the set_env module to set environment variables
 import set_env
 
-from app.workers.checklist_worker import ChecklistWorker
+from app.workers.unified_worker import UnifiedWorker
 
 # Set up logging
 logging.basicConfig(
@@ -42,16 +42,14 @@ POLL_FREQUENCY = 1.0  # 1 second between polling Firebase when no tasks are foun
 # Counter to track which worker is being started
 worker_count = 0
 
-async def run_checklist_worker(worker_id=0):
+async def run_unified_worker(worker_id=0):
     """
-    Run the checklist worker.
+    Run the unified worker that handles both message and checklist tasks.
     
     Args:
         worker_id: ID of this worker instance, used for jitter calculation
     """
-    worker = ChecklistWorker()
-    
-    # No jitter needed for a single worker
+    worker = UnifiedWorker()
     
     # Modify the loop to check for shutdown flag
     while not shutdown_flag:
@@ -69,7 +67,7 @@ async def run_checklist_worker(worker_id=0):
             
             # Check shutdown flag
             if shutdown_flag:
-                logger.info(f"Checklist worker {worker_id} received shutdown signal")
+                logger.info(f"Unified worker {worker_id} received shutdown signal")
                 break
                 
             # Sleep for any remaining time to maintain our polling frequency
@@ -78,20 +76,20 @@ async def run_checklist_worker(worker_id=0):
                 await asyncio.sleep(remaining_sleep)
             
         except Exception as e:
-            logger.error(f"Error in checklist worker {worker_id}: {e}")
+            logger.error(f"Error in unified worker {worker_id}: {e}")
             if not shutdown_flag:
                 await asyncio.sleep(POLL_FREQUENCY)  # Wait before retrying
     
-    logger.info(f"Checklist worker {worker_id} shutting down gracefully")
+    logger.info(f"Unified worker {worker_id} shutting down gracefully")
 
-def start_checklist_worker(worker_id=0):
+def start_unified_worker(worker_id=0):
     """
-    Start the checklist worker in a separate process.
+    Start the unified worker in a separate process.
     
     Args:
-        worker_id: ID of this worker instance, passed to run_checklist_worker
+        worker_id: ID of this worker instance, passed to run_unified_worker
     """
-    asyncio.run(run_checklist_worker(worker_id))
+    asyncio.run(run_unified_worker(worker_id))
 
 def signal_handler(sig, frame):
     """Handle termination signals to gracefully shut down workers."""
@@ -125,14 +123,12 @@ def main():
         f.write(str(pid))
     logger.info(f"Worker manager started with PID {pid}")
     
-    # Start a single worker (ID 0) which polls every 1 second
-    logger.info("Starting single checklist worker process (polls every 1 second)")
-    checklist_process = multiprocessing.Process(target=start_checklist_worker, args=(worker_count,))
-    checklist_process.start()
-    worker_processes.append(checklist_process)
+    # Start unified worker
+    logger.info("Starting unified worker process")
+    unified_process = multiprocessing.Process(target=start_unified_worker, args=(worker_count,))
+    unified_process.start()
+    worker_processes.append(unified_process)
     worker_count += 1
-    
-    # We no longer start a second worker
     
     try:
         # Keep the main process running to handle signals
@@ -142,9 +138,9 @@ def main():
             # Check if workers are still alive and restart them if needed
             for i, process in enumerate(worker_processes[:]):
                 if not process.is_alive() and not shutdown_flag:
+                    logger.warning(f"Unified worker died unexpectedly, restarting...")
                     worker_id = i  # Use the original index as the worker_id
-                    logger.warning(f"Checklist worker {worker_id} died unexpectedly, restarting...")
-                    new_process = multiprocessing.Process(target=start_checklist_worker, args=(worker_id,))
+                    new_process = multiprocessing.Process(target=start_unified_worker, args=(worker_id,))
                     new_process.start()
                     
                     # Replace the dead process in our list

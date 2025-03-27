@@ -104,7 +104,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
 struct RootView: View {
     @Namespace private var animation
-    @State private var showingDayView = false
+    @State private var showingDayView = true
     @State private var selectedDate = Date()
     @State private var navigationPath = NavigationPath()
     @State private var showLoadingScreen = false // Set to true to enable loading screen
@@ -160,13 +160,6 @@ struct RootView: View {
                         
                         // Process notifications for the next 7 days
                         notificationManager.processNotificationsForDateRange(startDate: today, days: 7)
-                        
-                        // Show day view after a 0.4 second delay for a more polished transition
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-                                showingDayView = true
-                            }
-                        }
                         
                         // If loading screen is enabled, show it briefly then fade out
                         if showLoadingScreen {

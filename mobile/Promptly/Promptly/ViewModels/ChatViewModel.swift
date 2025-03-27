@@ -15,6 +15,7 @@ final class ChatViewModel: ObservableObject {
     
     private let chatService = ChatService()
     private let persistenceService = ChatPersistenceService.shared
+    private let firestoreService = FirestoreService.shared
     private var chatHistory: ChatHistory!
     private var context: NSManagedObjectContext
     private let authManager = AuthManager.shared
@@ -40,6 +41,9 @@ final class ChatViewModel: ObservableObject {
     init() {
         self.context = ChatPersistenceService.shared.viewContext
         
+        // Set this view model on the chat service for callbacks
+        chatService.setChatViewModel(self)
+        
         // Create or load chat history
         Task {
             await initializeChatHistory()
@@ -53,6 +57,12 @@ final class ChatViewModel: ObservableObject {
         
         // Set up callback for real-time message updates
         setupMessageUpdateCallback()
+        
+        // Set up callback for listener status changes
+        setupListenerStatusCallback()
+        
+        // Initially check if listeners are active (in case we're resuming a session)
+        updateLoadingIndicator()
         
         // Check for loading state and handle recovery
         if let loadingState = persistenceService.loadLoadingState() {
@@ -241,7 +251,14 @@ final class ChatViewModel: ObservableObject {
     
     private func resumeMessageProcessing(messageId: UUID) async {
         do {
-            let (responseMsg, _) = try await chatService.sendMessage(messages: messages)
+            // Prepare context from recent messages
+            let contextMessages = prepareRecentMessagesForContext(minutes: 7)
+            
+            // Use the updated sendMessage method with additional context
+            let (responseMsg, _) = try await chatService.sendMessage(
+                messages: messages,
+                additionalContext: contextMessages
+            )
             
             if let responseMsg = responseMsg {
                 await addMessageAndNotify(responseMsg)
@@ -269,7 +286,35 @@ final class ChatViewModel: ObservableObject {
         isPendingResponse = false
     }
     
-    // Add this new method to send messages with explicit text
+    // Add this new method to prepare recent messages for context
+    private func prepareRecentMessagesForContext(minutes: Int = 10) -> [[String: Any]] {
+        // Get current time and calculate cutoff time
+        let now = Date()
+        let cutoffTime = now.addingTimeInterval(-60.0 * Double(minutes))
+        
+        // Get recent messages - assume timestamp is not optional in ChatMessage model
+        var recentMessages = messages.filter { message in
+            // Direct comparison with timestamp
+            return message.timestamp >= cutoffTime
+        }
+        
+        // Limit to a maximum of 50 messages to ensure we don't waste bandwidth
+        // This aligns with the server's expectation (mobile client limits to 50 max)
+        if recentMessages.count > 50 {
+            // Keep only the 50 most recent messages
+            recentMessages = Array(recentMessages.suffix(50))
+        }
+        
+        // Convert to dictionaries for the API - only include role and content
+        return recentMessages.map { message in
+            return [
+                "role": message.role,
+                "content": message.content
+            ]
+        }
+    }
+    
+    // Update the sendMessageWithText method to use the mobile-centric approach
     func sendMessageWithText(_ text: String, withId id: UUID? = nil) {
         // Check if user is authenticated and not a guest
         guard authManager.isAuthenticated && !authManager.isGuestUser else {
@@ -311,7 +356,8 @@ final class ChatViewModel: ObservableObject {
             // Set the loading state
             isCurrentlyLoading = true
             
-            // Update loading states
+            // Show loading indicator temporarily until a listener is set up
+            // Once a listener is active, updateLoadingIndicator will maintain the state
             isLoading = true
             isPendingResponse = true
             
@@ -337,7 +383,15 @@ final class ChatViewModel: ObservableObject {
             persistenceService.saveLoadingState(messageId: messageId)
             
             do {
-                let (responseMsg, _) = try await chatService.sendMessage(messages: messages)
+                // Prepare context from recent messages (mobile-centric approach)
+                let contextMessages = prepareRecentMessagesForContext(minutes: 7)
+                
+                // Send the message with context using the existing method
+                // This avoids the sendMessageWithContext error
+                let (responseMsg, _) = try await chatService.sendMessage(
+                    messages: messages, 
+                    additionalContext: contextMessages
+                )
 
                 if let responseMsg = responseMsg {
                     // Check if the response content is structured JSON
@@ -380,22 +434,10 @@ final class ChatViewModel: ObservableObject {
             pendingResponses.removeValue(forKey: messageId)
             isCurrentlyLoading = false
             
-            // Update loading states
-            isLoading = false
-            isPendingResponse = false
+            // Update loading indicator based on current listener state
+            // (will turn off if no listeners, stay on if listeners are active)
+            updateLoadingIndicator()
         }
-    }
-    
-    // Keep the original method for backward compatibility
-    func sendMessage(withId id: UUID? = nil) {
-        let trimmedInput = userInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedInput.isEmpty else { return }
-
-        // Clear input synchronously - no async needed here
-        userInput = ""
-
-        // Use the new method with the captured text
-        sendMessageWithText(trimmedInput, withId: id)
     }
     
     private func saveChatHistory() {
@@ -440,52 +482,55 @@ final class ChatViewModel: ObservableObject {
     
     // Set up callback for real-time message updates from Firebase
     private func setupMessageUpdateCallback() {
-        chatService.onMessageUpdate = { [weak self] content in
+        chatService.onMessageUpdate = { [weak self] jsonString in
             guard let self = self else { return }
             
-            Task {
-                // Parse the content to check if it's structured JSON
-                var messageContent = content
+            if let data = jsonString.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 
-                if let data = content.data(using: .utf8),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    
-                    // Extract the message content if it exists
-                    if let message = json["message"] as? String {
-                        messageContent = message
-                    }
-                }
-                
-                // Find the placeholder message and update it
-                if self.isCurrentlyLoading {
-                    if let history = await self.persistenceService.loadMainChatHistory(),
-                       let lastMessage = history.messages.last,
-                       lastMessage.role == MessageRoles.assistant {
-                        
-                        // Update the message content
-                        lastMessage.content = messageContent
-                        self.persistenceService.saveChatHistory(history)
-                        
-                        // Update the UI
-                        await self.loadMessages()
-                        
-                        // Clear loading state
-                        self.isLoading = false
-                        self.isCurrentlyLoading = false
-                        self.isPendingResponse = false
-                        self.persistenceService.clearLoadingState()
-                        
-                        // Notify that a message was updated
-                        NotificationCenter.default.post(
-                            name: Notification.Name("ChatMessageUpdated"),
-                            object: nil,
-                            userInfo: [
-                                "role": MessageRoles.assistant
-                            ]
-                        )
-                    }
+                if let message = json["message"] as? String {
+                    // We received an actual message from Firestore
+                    // Update loading indicator to reflect current listener state
+                    self.updateLoadingIndicator()
                 }
             }
+        }
+    }
+    
+    // Set up callback for FirestoreService listener status changes
+    private func setupListenerStatusCallback() {
+        firestoreService.onListenerStatusChanged = { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.updateLoadingIndicator()
+            }
+        }
+    }
+    
+    // New method to update loading indicator based on listener state
+    func updateLoadingIndicator() {
+        let hasActiveListeners = firestoreService.hasActiveListeners()
+        
+        // Only update UI state if it changed
+        if self.isPendingResponse != hasActiveListeners {
+            self.isPendingResponse = hasActiveListeners
+            self.isLoading = hasActiveListeners
+        }
+    }
+    
+    // Update loading indicator methods to work with the new approach
+    func showLoadingIndicator() {
+        // Only show if it's not already showing
+        if !isLoading {
+            self.isLoading = true
+            self.isPendingResponse = true
+        }
+    }
+    
+    func hideLoadingIndicator() {
+        // Only hide if there are no active listeners
+        if !firestoreService.hasActiveListeners() {
+            self.isLoading = false
+            self.isPendingResponse = false
         }
     }
 }

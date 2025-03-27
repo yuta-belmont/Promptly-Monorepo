@@ -2,6 +2,8 @@ import Foundation
 import Firebase
 import FirebaseFirestore
 
+typealias FirestoreTaskCallback = (String, [String: Any]?) -> Void
+
 class FirestoreService {
     // Singleton instance
     static let shared = FirestoreService()
@@ -12,15 +14,131 @@ class FirestoreService {
     // Active listeners
     private var messageListeners: [String: ListenerRegistration] = [:]
     
+    // Track current active task IDs
+    private var activeMessageTaskId: String?
+    private var activeChecklistTaskId: String?
+    
+    // Callback for when listener status changes
+    var onListenerStatusChanged: (() -> Void)?
+    
     private init() {}
     
-    // MARK: - Message Task Listeners
+    // MARK: - Task Listeners
     
-    /// Listen for updates to a specific checklist task
+    /// Returns true if any listener is active (either message or checklist)
+    func hasActiveListeners() -> Bool {
+        return activeMessageTaskId != nil || activeChecklistTaskId != nil
+    }
+    
+    /// Checks if a listener for a message task is already active
+    /// - Parameter taskId: The task ID to check
+    /// - Returns: Whether a listener for this task is already active
+    func isMessageTaskActive(_ taskId: String) -> Bool {
+        return activeMessageTaskId == taskId
+    }
+    
+    /// Checks if a listener for a checklist task is already active
+    /// - Parameter taskId: The task ID to check
+    /// - Returns: Whether a listener for this task is already active
+    func isChecklistTaskActive(_ taskId: String) -> Bool {
+        return activeChecklistTaskId == taskId
+    }
+    
+    /// Returns the active message task ID if one exists
+    /// - Returns: The active message task ID or nil
+    func getActiveMessageTaskId() -> String? {
+        return activeMessageTaskId
+    }
+    
+    /// Returns the active checklist task ID if one exists
+    /// - Returns: The active checklist task ID or nil
+    func getActiveChecklistTaskId() -> String? {
+        return activeChecklistTaskId
+    }
+    
+    /// Listen for updates to a message task
     /// - Parameters:
     ///   - taskId: The task ID
     ///   - onUpdate: Callback when the task is updated
-    func listenForChecklistTask(taskId: String, onUpdate: @escaping (String, [String: Any]?) -> Void) {
+    /// - Returns: True if a new listener was set up, false if one was already active
+    func listenForMessageTask(taskId: String, onUpdate: @escaping FirestoreTaskCallback) -> Bool {
+        // Check if we're already listening to this task
+        if isMessageTaskActive(taskId) {
+            return false
+        }
+        
+        // Check if we have a listener registered but it's not marked as active
+        if messageListeners["message_task_\(taskId)"] != nil {
+            removeMessageListener(for: "message_task_\(taskId)")
+        }
+        
+        print("MESSAGE DEBUG: Setting up listener for message task: \(taskId)")
+        
+        let listener = db.collection("message_tasks").document(taskId)
+            .addSnapshotListener { snapshot, error in
+                if let error = error {
+                    print("MESSAGE DEBUG: Error listening for message task: \(error)")
+                    return
+                }
+                
+                guard let snapshot = snapshot else {
+                    print("MESSAGE DEBUG: Snapshot is nil for task: \(taskId)")
+                    return
+                }
+                
+                if !snapshot.exists {
+                    print("MESSAGE DEBUG: Message task document doesn't exist: \(taskId)")
+                    return
+                }
+                
+                let data = snapshot.data()
+                let status = data?["status"] as? String ?? "unknown"
+                
+                // If the task is completed or failed, automatically clean up the listener after callback
+                if status == "completed" || status == "failed" {
+                    // Call the callback first
+                    onUpdate(status, data)
+                    
+                    // Then remove the listener
+                    self.removeMessageListener(for: "message_task_\(taskId)")
+                    print("MESSAGE DEBUG: Auto-removed listener after task completion/failure")
+                } else {
+                    // For other statuses, just call the callback
+                    onUpdate(status, data)
+                }
+            }
+        
+        // Store the listener with a unique key
+        messageListeners["message_task_\(taskId)"] = listener
+        
+        // Track the active message task ID
+        activeMessageTaskId = taskId
+        
+        // Notify that listener status changed
+        onListenerStatusChanged?()
+        
+        return true
+    }
+    
+    /// Listen for updates to a checklist task
+    /// - Parameters:
+    ///   - taskId: The task ID
+    ///   - onUpdate: Callback when the task is updated
+    /// - Returns: True if a new listener was set up, false if one was already active
+    func listenForChecklistTask(taskId: String, onUpdate: @escaping FirestoreTaskCallback) -> Bool {
+        // Check if we're already listening to this task
+        if isChecklistTaskActive(taskId) {
+            print("CHECKLIST DEBUG: Already listening for checklist task: \(taskId)")
+            return false
+        }
+        
+        // Check if we have a listener registered but it's not marked as active
+        if messageListeners["checklist_task_\(taskId)"] != nil {
+            print("CHECKLIST DEBUG: Removing stale listener for checklist task: \(taskId)")
+            removeMessageListener(for: "checklist_task_\(taskId)")
+        }
+        
+        print("CHECKLIST DEBUG: Setting up listener for checklist task: \(taskId)")
         
         let listener = db.collection("checklist_tasks").document(taskId)
             .addSnapshotListener { snapshot, error in
@@ -42,26 +160,69 @@ class FirestoreService {
                 let data = snapshot.data()
                 let status = data?["status"] as? String ?? "unknown"
                 
-                onUpdate(status, data)
+                // If the task is completed or failed, automatically clean up the listener after callback
+                if status == "completed" || status == "failed" {
+                    // Call the callback first
+                    onUpdate(status, data)
+                    
+                    // Then remove the listener
+                    self.removeMessageListener(for: "checklist_task_\(taskId)")
+                    print("CHECKLIST DEBUG: Auto-removed listener after task completion/failure")
+                } else {
+                    // For other statuses, just call the callback
+                    onUpdate(status, data)
+                }
             }
         
         // Store the listener with a unique key
-        messageListeners["checklist_task_\(taskId)"] = listener    }
+        messageListeners["checklist_task_\(taskId)"] = listener
+        
+        // Track the active checklist task ID
+        activeChecklistTaskId = taskId
+        
+        // Notify that listener status changed
+        onListenerStatusChanged?()
+        
+        return true
+    }
     
     /// Remove a message listener
     /// - Parameter key: The listener key
-    func removeMessageListener(for key: String) {
+    /// - Returns: True if a listener was removed, false otherwise
+    @discardableResult
+    func removeMessageListener(for key: String) -> Bool {
         if let listener = messageListeners[key] {
             listener.remove()
             messageListeners.removeValue(forKey: key)
+            
+            // Clear active task IDs if they match
+            if key.hasPrefix("message_task_") && activeMessageTaskId == key.replacingOccurrences(of: "message_task_", with: "") {
+                activeMessageTaskId = nil
+            } else if key.hasPrefix("checklist_task_") && activeChecklistTaskId == key.replacingOccurrences(of: "checklist_task_", with: "") {
+                activeChecklistTaskId = nil
+            }
+            
+            // Notify that listener status changed
+            onListenerStatusChanged?()
+            
+            return true
         }
+        return false
     }
     
     /// Remove all message listeners
     func removeAllMessageListeners() {
         for (key, listener) in messageListeners {
             listener.remove()
-            messageListeners.removeValue(forKey: key)
+            print("Removed listener for key: \(key)")
         }
+        messageListeners.removeAll()
+        
+        // Reset active task IDs
+        activeMessageTaskId = nil
+        activeChecklistTaskId = nil
+        
+        // Notify that listener status changed
+        onListenerStatusChanged?()
     }
 } 
