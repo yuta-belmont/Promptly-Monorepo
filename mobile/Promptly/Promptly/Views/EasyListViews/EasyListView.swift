@@ -1,10 +1,41 @@
 import SwiftUI
+import UIKit
+
+// Add debug helper function at the top
+/*
+private func debugLog(_ source: String, _ action: String) {
+    let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+    print("\(timestamp) [EasyListView]: \(source) - \(action)")
+}
+ */
 
 // Add preference key at the top of the file
 struct IsEditingPreferenceKey: PreferenceKey {
     static var defaultValue: Bool = false
     static func reduce(value: inout Bool, nextValue: () -> Bool) {
         value = nextValue()
+    }
+}
+
+// MARK: - 3D Flip Effect Modifier
+struct FlipEffect: ViewModifier {
+    var isFlipped: Bool
+    var axis: (x: CGFloat, y: CGFloat, z: CGFloat) = (0, 1, 0) // Default to horizontal flip (Y axis)
+    
+    func body(content: Content) -> some View {
+        content
+            // Apply 3D rotation based on flip state
+            .rotation3DEffect(
+                .degrees(isFlipped ? 180 : 0),
+                axis: axis,
+                perspective: 0.3 // Add perspective directly in the rotation3DEffect
+            )
+    }
+}
+
+extension View {
+    func flipEffect(isFlipped: Bool, axis: (x: CGFloat, y: CGFloat, z: CGFloat) = (0, 1, 0)) -> some View {
+        modifier(FlipEffect(isFlipped: isFlipped, axis: axis))
     }
 }
 
@@ -132,8 +163,7 @@ struct DeleteConfirmationView: View {
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .presentationCompactAdaptation(.none)
-        .onDisappear {
-            // Reset timer and confirmation state when popover closes
+        .onDisappear {            // Reset timer and confirmation state when popover closes
             deleteTimer?.invalidate()
             deleteTimer = nil
             isConfirmationActive = false
@@ -259,226 +289,6 @@ struct EasyListHeader: View {
     }
 }
 
-// MARK: - Time Picker View
-struct TimePickerView: View {
-    @Binding var selectedTime: Date
-    let onBack: () -> Void
-    
-    var body: some View {
-        HStack {
-            Button(action: onBack) {
-                Image(systemName: "chevron.left")
-                    .foregroundColor(.white)
-            }
-            .padding(.trailing, 8)
-            
-            DatePicker("", selection: $selectedTime, displayedComponents: .hourAndMinute)
-                .datePickerStyle(.wheel)
-                .labelsHidden()
-                .colorScheme(.dark)
-        }
-        .padding(.horizontal)
-    }
-}
-
-// MARK: - Checklist Item Row Component
-
-struct ChecklistItemRow: View {
-    let item: Models.ChecklistItem
-    let isEditing: Bool
-    let onToggle: () -> Void
-    let onSubmit: (String) -> Void
-    let onLoseFocus: (String) -> Void
-    let onStartEdit: () -> Void
-    let onTextChange: (String) -> Void
-    let onNotificationChange: ((Date?) -> Void)?
-    let onGroupChange: ((UUID?) -> Void)?
-    @State private var text: String
-    @State private var showingPopover = false
-    @State private var isDeleting = false
-    @State private var opacity: Double = 1.0
-    @State private var isGroupSectionExpanded: Bool = false //we need this binding to prevent bug behavior in the group dropdown (closing)
-    @ObservedObject private var groupStore = GroupStore.shared
-    
-    init(item: Models.ChecklistItem, isEditing: Bool, onToggle: @escaping () -> Void, onSubmit: @escaping (String) -> Void, onLoseFocus: @escaping (String) -> Void, onStartEdit: @escaping () -> Void, onTextChange: @escaping (String) -> Void, onNotificationChange: ((Date?) -> Void)? = nil, onGroupChange: ((UUID?) -> Void)? = nil) {
-        self.item = item
-        self.isEditing = isEditing
-        self.onToggle = onToggle
-        self.onSubmit = onSubmit
-        self.onLoseFocus = onLoseFocus
-        self.onStartEdit = onStartEdit
-        self.onTextChange = onTextChange
-        self.onNotificationChange = onNotificationChange
-        self.onGroupChange = onGroupChange
-        _text = State(initialValue: item.title)
-    }
-    
-    // Get the group color for the item
-    private var groupColor: Color? {
-        // Use the direct group reference if available
-        if let group = item.group, group.hasColor {
-            return Color(red: group.colorRed, green: group.colorGreen, blue: group.colorBlue)
-        }
-        
-        // Fallback to looking up by ID for backward compatibility
-        guard let groupId = item.groupId,
-              let group = groupStore.getGroup(by: groupId) else {
-            return nil
-        }
-        
-        // Use the direct color properties and hasColor flag
-        if group.hasColor {
-            return Color(red: group.colorRed, green: group.colorGreen, blue: group.colorBlue)
-        } else {
-            return nil
-        }
-    }
-    
-    var body: some View {
-        HStack(alignment: .center) {
-            Button(action: onToggle) {
-                Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(item.isCompleted ? .green : .gray)
-                    .font(.system(size: 22))
-            }
-            .buttonStyle(.plain)
-            .alignmentGuide(.firstTextBaseline) { d in
-                d[VerticalAlignment.center]
-            }
-            
-            VStack(alignment: .leading, spacing: 0) {
-                CustomTextField(text: $text, onReturn: {
-                    onSubmit(text)
-                }, onTextChange: { newText in
-                    onTextChange(newText)
-                })
-                .foregroundColor(.white)
-                .strikethrough(item.isCompleted, color: .gray)
-                .dynamicTypeSize(.xSmall...DynamicTypeSize.large)
-                .simultaneousGesture(
-                    TapGesture().onEnded {
-                        if !isEditing {
-                            onStartEdit()
-                        }
-                    }
-                )
-                .frame(width: UIScreen.main.bounds.width * 0.81, alignment: isEditing ? .topTrailing : .topLeading)
-                .clipped(antialiased: true)
-                
-                // Subtitles row (notification and group)
-                if (item.notification != nil && !item.isCompleted) || item.groupId != nil {
-                    HStack(spacing: 8) {
-                        // Group subtitle (show even if completed)
-                        if let group = item.group {
-                            Text(group.title)
-                                .font(.footnote)
-                                .foregroundColor(.white.opacity(0.5))
-                                .lineLimit(1)
-                        } else if let groupId = item.groupId, let group = groupStore.getGroup(by: groupId) {
-                            // Fallback for backward compatibility
-                            Text(group.title)
-                                .font(.footnote)
-                                .foregroundColor(.white.opacity(0.5))
-                                .lineLimit(1)
-                        }
-                        // Notification subtitle (only show if not completed)
-                        if item.notification != nil && !item.isCompleted {
-                            HStack(spacing: 2) {
-                                Image(systemName: "bell.fill")
-                                    .font(.footnote)
-                                
-                                let isPastDue = item.notification! < Date()
-                                Text(formatNotificationTime(item.notification!))
-                                    .font(.footnote)
-                                    .foregroundColor(isPastDue ? .red.opacity(0.5) : .white.opacity(0.5))
-                            }
-                            .foregroundColor(item.notification! < Date() ? .red.opacity(0.5) : .white.opacity(0.5))
-                        }
-                    }
-                }
-            }
-            
-            // Three dots button with popover
-            Button(action: {
-                isGroupSectionExpanded = false
-                showingPopover = true
-            }) {
-                Image(systemName: "ellipsis")
-                    .rotationEffect(.degrees(90))
-                    .foregroundColor(.white.opacity(0.6))
-                    .font(.system(size: 16))
-                    .frame(width: 32, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .popover(isPresented: self.$showingPopover,
-                     attachmentAnchor: .point(.center),
-                     arrowEdge: .trailing) {
-                PopoverContentView(
-                    item: item,
-                    isGroupSectionExpanded: $isGroupSectionExpanded,
-                    onNotificationChange: { newNotification in
-                        // Directly save notification changes
-                        if let onNotificationChange = onNotificationChange {
-                            onNotificationChange(newNotification)
-                        }
-                    },
-                    onGroupChange: { newGroupId in
-                        // Directly save group changes
-                        if let onGroupChange = onGroupChange {
-                            onGroupChange(newGroupId)
-                        }
-                    },
-                    onDelete: { 
-                        isDeleting = true
-                        
-                        // Start animation immediately before dismissing popover
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            opacity = 0.1
-                        }
-                        // Close the popover immediately when delete is confirmed
-                        
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                            onLoseFocus("")
-                            showingPopover = false //this slows things down, so keep it in here so it executes AFTER
-                        }
-                    }
-                )
-                .presentationCompactAdaptation(.none)
-            }
-            .onDisappear {
-                isGroupSectionExpanded = false  // Contract group section when popover closes
-            }
-            .padding(.leading, -8)
-        }
-        .listRowBackground(
-            ZStack {
-                if isDeleting {
-                    Color.red.opacity(0.95 * opacity)
-                } else if let color = groupColor {
-                    // Apply a slight tint based on the group color only if the group has a color set
-                    color.opacity(0.25)
-                } else {
-                    Color.clear
-                }
-            }
-        )
-        .listRowInsets(EdgeInsets())
-        .listRowSeparator(.hidden)
-        .foregroundColor(.white)
-        .padding(.vertical, 4)
-        .padding(.leading, 8)
-        .opacity(opacity) // Apply opacity for fade animation
-    }
-    
-    // Helper function to format notification time
-    private func formatNotificationTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
-}
-
 // MARK: - New Item Row Component
 
 struct NewItemRow: View {
@@ -512,12 +322,16 @@ struct NewItemRow: View {
             .clipped(antialiased: true)
             .padding(.leading, 4)
             .zIndex(1)
+            // Make sure the text field has higher priority for keyboard focus
+            .accessibilityAddTraits(.isKeyboardKey)
         }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
         .listRowSeparator(.hidden)
         .padding(.vertical, 4)
         .padding(.leading, 16)
+        // Add a minimum height to ensure it's always fully visible
+        .frame(minHeight: 44)
     }
 }
 
@@ -529,7 +343,6 @@ struct ListContent: View {
     @FocusState var isNewItemFocused: Bool
     @Binding var isEditing: Bool
     @EnvironmentObject private var focusManager: FocusManager
-    let focusCoordinator: PlannerFocusCoordinator
     let headerTitle: String
     let availableHeight: CGFloat
     let removeAllFocus: () -> Void
@@ -537,36 +350,32 @@ struct ListContent: View {
     // Haptic feedback generator for item toggling
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
-    // MARK: - Item Action Handlers
-    private func handleItemToggle(_ item: Models.ChecklistItem) {
-        // Trigger haptic feedback when toggling item completion
-        feedbackGenerator.impactOccurred()
-        viewModel.toggleItem(item)
-    }
-    
-    private func handleItemLoseFocus(_ item: Models.ChecklistItem, text: String) {
-        //return() //with subitems no point deleting an item right now its too much hassel for accidentally clearing the field
-        if text.isEmpty {
-            deleteItem(item)
-            // Clean up focus state when an item is deleted
-            if focusCoordinator.focusedItemId == item.id {
-                DispatchQueue.main.async {
-                    removeAllFocus()
+    // Consolidated scroll helper function
+    private func scrollToNewItem(_ proxy: ScrollViewProxy) {
+
+         // Delay the first scroll by 0.1 seconds, then animate for 0.1 seconds
+         DispatchQueue.main.asyncAfter(deadline: .now()) {
+             withAnimation(.easeInOut(duration: 0.1)) {
+                 proxy.scrollTo("newItemRow", anchor: .center)
+             }
+             /*
+            // Catch if we haven't scrolled to the correct spot yet:
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    proxy.scrollTo("newItemRow", anchor: .bottom)
                 }
             }
+              */
         }
     }
     
-    private func handleNewItemSubmit(_ proxy: ScrollViewProxy) {
+    private func handleNewItemSubmit(proxy: ScrollViewProxy) {
         if !newItemText.isEmpty {
             viewModel.addItem(newItemText)
             newItemText = ""
             if !viewModel.isItemLimitReached {
                 isNewItemFocused = true
-                // Add scroll animation when submitting new item
-                withAnimation {
-                    proxy.scrollTo("newItemRow", anchor: .center)
-                }
+                scrollToNewItem(proxy)
             }
         }
     }
@@ -575,20 +384,13 @@ struct ListContent: View {
         viewModel.moveItems(from: from, to: to)
     }
     
-    private func handleNotificationChange(_ item: Models.ChecklistItem, newTime: Date?) {
-        viewModel.updateItemNotification(item, with: newTime)
-    }
-    
-    private func handleGroupChange(_ item: Models.ChecklistItem, groupId: UUID?) {
-        viewModel.updateItemGroup(item, with: groupId)
-    }
-    
     var body: some View {
         ZStack(alignment: .bottom) {
             ScrollViewReader { proxy in
                 List {
-                    ForEach(viewModel.items) { item in
+                    ForEach(viewModel.items, id: \.id) { item in
                         makePlannerItemView(for: item)
+                            .id("item-\(item.id.uuidString)-\(item.isCompleted)-\(item.title.hashValue)")
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets())
@@ -598,14 +400,16 @@ struct ListContent: View {
                     .onMove { from, to in
                         handleMoveItems(from: from, to: to)
                     }
+                    .id("items-\(viewModel.date.timeIntervalSince1970)-\(viewModel.items.count)")
                     
                     if !viewModel.isItemLimitReached {
                         NewItemRow(
                             text: $newItemText,
                             isFocused: $isNewItemFocused,
-                            onSubmit: { handleNewItemSubmit(proxy) }
+                            onSubmit: { handleNewItemSubmit(proxy: proxy) }
                         )
                         .id("newItemRow")
+                        .listRowSeparator(.hidden)
                     }
                     
                     Color.clear.frame(height: 44)
@@ -617,33 +421,15 @@ struct ListContent: View {
                 .scrollContentBackground(.hidden)
                 // Constrain the List to exactly match the available height
                 .frame(height: availableHeight)
-                .onChange(of: focusCoordinator.focusedItemId) { _, newValue in
-                    // Scroll to the item if needed
-                    if let id = newValue {
-                        withAnimation {
-                            proxy.scrollTo(id, anchor: .center)
-                        }
-                        focusManager.requestFocus(for: .easyList)
-                    }
-                    // If focus is lost, ensure proper cleanup
-                    // Update the editing state
-                    //delay it for focus removal to prevent rapid removal and addition of isEditing
-                    if newValue == nil {
-                        focusCoordinator.removeAllFocus()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            updateEditingState()
-                        }
-                    } else {
-                        updateEditingState()
-                    }
-                }
+                // Use animation with structurally significant values only
+                .animation(.easeInOut(duration: 0.2), value: viewModel.items.count)
+                .environment(\.defaultMinListRowHeight, 0) // Minimize row height calculations
                 .onChange(of: isNewItemFocused) { oldValue, newValue in
-                    // Handle scrolling when focusing new item
+                    // Only handle focus management and scrolling on initial focus:
                     if newValue && !viewModel.isItemLimitReached {
-                        withAnimation {
-                            proxy.scrollTo("newItemRow", anchor: .center)
-                        }
+                        scrollToNewItem(proxy)
                         focusManager.requestFocus(for: .easyList)
+                        
                     }
                     
                     // Handle saving when losing focus
@@ -653,14 +439,12 @@ struct ListContent: View {
                     }
                     
                     // Update editing state
-                    // delay it for focus removal to prevent rapid removal and addition of isEditing
-                    if newValue == false {
-                        focusCoordinator.removeAllFocus()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            updateEditingState()
-                        }
-                    } else {
-                        updateEditingState()
+                    updateEditingState()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+                    // Only scroll when the keyboard has completely finished appearing
+                    if isNewItemFocused {
+                        scrollToNewItem(proxy)
                     }
                 }
             }
@@ -687,7 +471,6 @@ struct ListContent: View {
             if newValue != .easyList {
                 finishEditing()
             }
-            
         }
         .manageFocus(for: .easyList)
     }
@@ -701,81 +484,56 @@ struct ListContent: View {
     }
     
     private func updateEditingState() {
-        let newIsEditing = focusCoordinator.focusedItemId != nil || isNewItemFocused
-        isEditing = newIsEditing
-    }
-    
-    private func saveEdit(for item: Models.ChecklistItem, text: String) {
-        viewModel.updateItem(item, with: text)
+        isEditing = isNewItemFocused
     }
     
     private func deleteItem(_ item: Models.ChecklistItem) {
         if let index = viewModel.items.firstIndex(where: { $0.id == item.id }) {
-            // Check if this is the currently focused item
-            let isFocusedItem = focusCoordinator.focusedItemId == item.id
-            
             viewModel.deleteItems(at: IndexSet([index]))
-            
-            // If we deleted the focused item, clean up all focus state
-            if isFocusedItem {
-                DispatchQueue.main.async {
-                    removeAllFocus()
-                }
-            }
         }
     }
     
     // Helper function to create PlannerItemView with all necessary callbacks
     private func makePlannerItemView(for item: Models.ChecklistItem) -> some View {
-        PlannerItemView.create(
-            item: item,
-            focusCoordinator: focusCoordinator,
-            onToggle: {
-                viewModel.toggleItem(item)
+        let displayData = viewModel.getDisplayData(for: item)
+        
+        return PlannerItemView.create(
+            displayData: displayData,
+            onToggleItem: { itemId in
+                // Directly update the item in the EasyListViewModel by ID
+                viewModel.toggleItemCompletion(itemId: itemId)
+                // No need to post notification - view handles its own state
             },
-            onTextChange: { newText in
-                viewModel.updateItem(item, with: newText)
+            onToggleSubItem: { mainItemId, subItemId, isCompleted in
+                // Update the sub-item in the EasyListViewModel
+                viewModel.toggleSubItemCompletion(mainItemId, subItemId: subItemId, isCompleted: isCompleted)
+                // No need to post notification - view handles its own state
             },
             onLoseFocus: { text in
-                // Only save non-empty items when losing focus
-                if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    viewModel.updateItem(item, with: text)
-                    
-                } else {
-                    handleItemLoseFocus(item, text: "")
+                // Only used for deletion through the menu
+                if text.isEmpty {
+                    deleteItem(item)
                 }
             },
-            onAddSubItem: { text in
-                // Create a new updated item with the subitem
-                var updatedItem = item
-                let newSubItem = Models.SubItem(
-                    id: UUID(),
-                    title: text,
-                    isCompleted: false
-                )
-                updatedItem.subItems.append(newSubItem)
-                viewModel.updateItem(updatedItem, with: updatedItem.title)
-            },
-            onSubItemToggle: { subItemId in
-                // Handle subitem toggle
-                var updatedItem = item
-                updatedItem.toggleSubItem(withId: subItemId)
-                viewModel.updateItem(updatedItem, with: updatedItem.title)
-            },
-            onSubItemTextChange: { subItemId, newText in
-                // Handle subitem text change
-                var updatedItem = item
-                updatedItem.updateSubItem(withId: subItemId, newTitle: newText)
-                viewModel.updateItem(updatedItem, with: updatedItem.title)
-            },
             onNotificationChange: { date in
-                viewModel.updateItemNotification(item, with: date)
+                viewModel.updateItemNotification(itemId: item.id, with: date)
+                // No need to post notification - view handles its own state
             },
             onGroupChange: { groupId in
-                viewModel.updateItemGroup(item, with: groupId)
+                viewModel.updateItemGroup(itemId: item.id, with: groupId)
+                // No need to post notification - view handles its own state
+            },
+            onItemTap: { itemId in
+                // Pass the item up to DayView by posting a notification
+                if let item = viewModel.getItem(id: itemId) {
+                    NotificationCenter.default.post(
+                        name: Notification.Name("ShowItemDetails"),
+                        object: item
+                    )
+                }
             }
         )
-        .id(item.id)
+        // Individual ID is now set on the row above
     }
 }
 
@@ -901,6 +659,7 @@ struct ImportPopoverView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .id("import-all-previous")
                     
                     Divider()
                         .background(Color.white.opacity(0.2))
@@ -923,10 +682,12 @@ struct ImportPopoverView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .id("import-incomplete-previous")
                 }
                 .background(Color.black.opacity(0.3))
                 .cornerRadius(8)
                 .padding(.horizontal, 4)
+                .id("previous-day-options")
             }
             
             Divider()
@@ -964,9 +725,7 @@ struct ImportPopoverView: View {
                     
                     // Replace the DatePicker with the wrapper view
                     CalendarPickerView(selectedDate: $selectedDate)
-                        .onChange(of: selectedDate) { oldValue, newValue in
-                            selectedDate = newValue
-                        }
+                    // No need for onChange handler - the binding handles updates
                     
                     if let selectedDate = selectedDate {
                         Divider()
@@ -990,6 +749,7 @@ struct ImportPopoverView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .id("import-all-calendar")
                         
                         Divider()
                             .background(Color.white.opacity(0.2))
@@ -1012,11 +772,13 @@ struct ImportPopoverView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .id("import-incomplete-calendar")
                     }
                 }
                 .background(Color.black.opacity(0.3))
                 .cornerRadius(8)
                 .padding(.horizontal, 4)
+                .id("calendar-options-\(selectedDate?.timeIntervalSince1970 ?? 0)")
             }
         }
         .background(.ultraThinMaterial)
@@ -1031,39 +793,16 @@ struct ImportPopoverView: View {
 // MARK: - Main EasyList View
 
 struct EasyListView: View {
-    @StateObject private var viewModel: EasyListViewModel
+    @EnvironmentObject private var viewModel: EasyListViewModel
     @State private var isEditing: Bool = false
     @FocusState private var isNewItemFocused: Bool
     @FocusState private var isNotesFocused: Bool
     @EnvironmentObject private var focusManager: FocusManager
     @ObservedObject private var groupStore = GroupStore.shared
-    @StateObject private var focusCoordinator = PlannerFocusCoordinator()
+    @State private var keyboardHeight: CGFloat = 0
     
-    init(date: Date = Date()) {
-        _viewModel = StateObject(wrappedValue: EasyListViewModel(date: date))
-    }
-    
-    private func RemoveAllFocus() {
-        if !isEditing {
-            return
-        }
-        // First remove coordinator focus which will trigger PlannerItemView focus removal
-        focusCoordinator.removeAllFocus()
-        // Then remove global focus which will prevent re-entry into EasyList
-        focusManager.removeAllFocus()
-        // Finally clear local focus states
-        isNewItemFocused = false
-        isNotesFocused = false
-        isEditing = false
-    }
-    
-    // Helper method to reload the checklist
-    private func reloadChecklistData() {
-        Task {
-            await MainActor.run {
-                viewModel.reloadChecklist()
-            }
-        }
+    init() {
+        // No need to create a view model here anymore
     }
     
     var body: some View {
@@ -1072,10 +811,20 @@ struct EasyListView: View {
                 title: viewModel.headerTitle,
                 isEditing: isEditing,
                 showingNotes: viewModel.isShowingNotes,
-                onDone: RemoveAllFocus,
+                onDone: {
+                    // Remove focus
+                    isEditing = false
+                    isNewItemFocused = false
+                    isNotesFocused = false
+                },
                 onNotesToggle: {
-                    RemoveAllFocus()
-                    withAnimation(.easeInOut(duration: 0.5)) {
+                    // Remove focus
+                    isEditing = false
+                    isNewItemFocused = false
+                    isNotesFocused = false
+                    
+                    // Toggle notes view with flip animation
+                    withAnimation(.easeInOut(duration: 0.4)) {
                         viewModel.toggleNotesView()
                     }
                 },
@@ -1102,34 +851,37 @@ struct EasyListView: View {
                         .fill(.ultraThinMaterial.opacity(0.5))
                         .cornerRadius(16, corners: [.bottomLeft, .bottomRight])
                     
-                    // Content container with rotation effects
+                    // Content container with flip effect
                     ZStack {
-                        // List content with rotation
+                        // List content with flip effect
                         ZStack {
                             ListContent(
                                 viewModel: viewModel,
                                 isNewItemFocused: _isNewItemFocused,
                                 isEditing: $isEditing,
-                                focusCoordinator: focusCoordinator,
                                 headerTitle: viewModel.headerTitle,
-                                availableHeight: geometry.size.height,
-                                removeAllFocus: RemoveAllFocus
+                                availableHeight: geometry.size.height - (keyboardHeight > 0 ? min(keyboardHeight * 0.05, 10) : 0),
+                                removeAllFocus: {
+                                    // Remove focus
+                                    isEditing = false
+                                    isNewItemFocused = false
+                                    isNotesFocused = false
+                                }
                             )
                             // Apply clip shape to ensure content doesn't visually extend beyond boundaries
                             .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .contentShape(RoundedRectangle(cornerRadius: 16)) // Add for better hit testing
                         }
-                        .rotation3DEffect(
-                            .degrees(viewModel.isShowingNotes ? 180 : 0),
-                            axis: (x: 0.0, y: 1.0, z: 0.0)
-                        )
+                        // Apply 3D flip effect and hide when flipped (back of card)
                         .opacity(viewModel.isShowingNotes ? 0 : 1)
+                        .flipEffect(isFlipped: viewModel.isShowingNotes)
                         
-                        // Notes content with rotation
+                        // Notes content with flip effect
                         ZStack {
                             NotesView(
                                 notes: Binding(
                                     get: { viewModel.checklist.notes },
-                                    set: { viewModel.updateNotes($0) }
+                                    set: { _ in /* This is now handled by the onSave callback */ }
                                 ),
                                 isFocused: _isNotesFocused,
                                 isEditing: $isEditing,
@@ -1138,12 +890,11 @@ struct EasyListView: View {
                             )
                             // Apply the same clip shape to notes view for consistency
                             .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .contentShape(RoundedRectangle(cornerRadius: 16)) // Add for better hit testing
                         }
-                        .rotation3DEffect(
-                            .degrees(viewModel.isShowingNotes ? 0 : -180),
-                            axis: (x: 0.0, y: 1.0, z: 0.0)
-                        )
+                        // Apply 3D flip effect in opposite direction (negative Y axis)
                         .opacity(viewModel.isShowingNotes ? 1 : 0)
+                        .flipEffect(isFlipped: !viewModel.isShowingNotes, axis: (0, -1, 0))
                     }
                     // Constrain the content to the available space
                     .frame(width: geometry.size.width, height: geometry.size.height)
@@ -1164,13 +915,31 @@ struct EasyListView: View {
         }
         .onChange(of: focusManager.currentFocusedView) { oldValue, newValue in
             if newValue != .easyList {
-                RemoveAllFocus()
+                isEditing = false
+                isNewItemFocused = false
+                isNotesFocused = false
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
+            if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                keyboardHeight = keyboardFrame.height
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardHeight = 0
         }
         .alert("Item Limit Reached", isPresented: $viewModel.showingImportLimitAlert) {
             Button("OK", role: .cancel) { }
         } message: {
             Text("You've reached the maximum limit of 99 items per day. Delete some items to add more.")
+        }
+        // Save when view disappears
+        .onDisappear {
+            viewModel.saveChecklist()
+        }
+        // Save when app backgrounds
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            viewModel.saveChecklist()
         }
         // Listen for checklist updates using Combine
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("NewChecklistAvailable"))) { notification in

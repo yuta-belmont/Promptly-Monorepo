@@ -2,7 +2,13 @@ import SwiftUI
 import UIKit
 
 struct PopoverContentView: View {
-    let item: Models.ChecklistItem
+    // Item properties needed for display
+    let itemId: UUID
+    let itemDate: Date
+    let itemNotification: Date?
+    // Change from constant to state for UI updates
+    @State private var currentGroupId: UUID?
+    
     @Binding var isGroupSectionExpanded: Bool
     let onNotificationChange: ((Date?) -> Void)?
     let onGroupChange: ((UUID?) -> Void)?
@@ -17,14 +23,47 @@ struct PopoverContentView: View {
     @State private var deleteTimer: Timer?
     @Environment(\.dismiss) private var dismiss
     
-    init(item: Models.ChecklistItem, isGroupSectionExpanded: Binding<Bool>, onNotificationChange: ((Date?) -> Void)?, onGroupChange: ((UUID?) -> Void)? = nil, onDelete: @escaping () -> Void) {
-        self.item = item
+    init(
+        itemId: UUID,
+        itemDate: Date,
+        itemNotification: Date?,
+        itemGroupId: UUID?,
+        isGroupSectionExpanded: Binding<Bool>,
+        onNotificationChange: ((Date?) -> Void)?,
+        onGroupChange: ((UUID?) -> Void)? = nil,
+        onDelete: @escaping () -> Void
+    ) {
+        self.itemId = itemId
+        self.itemDate = itemDate
+        self.itemNotification = itemNotification
+        // Initialize the state variable with the initial value
+        self._currentGroupId = State(initialValue: itemGroupId)
         self._isGroupSectionExpanded = isGroupSectionExpanded
         self.onNotificationChange = onNotificationChange
         self.onGroupChange = onGroupChange
         self.onDelete = onDelete
-        _isNotificationEnabled = State(initialValue: item.notification != nil)
-        _selectedTime = State(initialValue: item.notification ?? Date())
+        _isNotificationEnabled = State(initialValue: itemNotification != nil)
+        _selectedTime = State(initialValue: itemNotification ?? Date())
+    }
+    
+    // Convenience initializer to create from PlannerItemDisplayData
+    init(
+        displayData: PlannerItemDisplayData,
+        isGroupSectionExpanded: Binding<Bool>,
+        onNotificationChange: ((Date?) -> Void)?,
+        onGroupChange: ((UUID?) -> Void)? = nil,
+        onDelete: @escaping () -> Void
+    ) {
+        self.init(
+            itemId: displayData.id,
+            itemDate: displayData.date,
+            itemNotification: displayData.notification,
+            itemGroupId: displayData.groupId,
+            isGroupSectionExpanded: isGroupSectionExpanded,
+            onNotificationChange: onNotificationChange,
+            onGroupChange: onGroupChange,
+            onDelete: onDelete
+        )
     }
     
     var body: some View {
@@ -42,15 +81,19 @@ struct PopoverContentView: View {
                             // Toggle turned ON - set notification with current time
                             let calendar = Calendar.current
                             let timeComponents = calendar.dateComponents([.hour, .minute], from: selectedTime)
-                            var dateComponents = calendar.dateComponents([.year, .month, .day], from: item.date)
+                            var dateComponents = calendar.dateComponents([.year, .month, .day], from: itemDate)
                             dateComponents.hour = timeComponents.hour
                             dateComponents.minute = timeComponents.minute
                             
                             if let combinedDate = calendar.date(from: dateComponents) {
+                                // This will update both the parent's local state and call the callback
+                                // to inform EasyListViewModel of the change
                                 onNotificationChange?(combinedDate)
                             }
                         } else {
                             // Toggle turned OFF - remove notification
+                            // This will update both the parent's local state and call the callback
+                            // to inform EasyListViewModel of the change
                             onNotificationChange?(nil)
                         }
                     }
@@ -73,11 +116,13 @@ struct PopoverContentView: View {
                             // Combine the selected time with the checklist date
                             let calendar = Calendar.current
                             let timeComponents = calendar.dateComponents([.hour, .minute], from: newTime)
-                            var dateComponents = calendar.dateComponents([.year, .month, .day], from: item.date)
+                            var dateComponents = calendar.dateComponents([.year, .month, .day], from: itemDate)
                             dateComponents.hour = timeComponents.hour
                             dateComponents.minute = timeComponents.minute
                             
                             if let combinedDate = calendar.date(from: dateComponents) {
+                                // This will update both the parent's local state and call the callback
+                                // to inform EasyListViewModel of the change
                                 onNotificationChange?(combinedDate)
                             }
                         }
@@ -118,18 +163,24 @@ struct PopoverContentView: View {
                             ForEach(groupStore.groups) { group in
                                 Button(action: {
                                     // If already in this group, remove from group (toggle behavior)
-                                    if item.groupId == group.id {
+                                    if currentGroupId == group.id {
                                         feedbackGenerator.impactOccurred()
+                                        // Update local state first
+                                        currentGroupId = nil
+                                        // Then notify parent
                                         onGroupChange?(nil)
                                     } else {
                                         feedbackGenerator.impactOccurred()
+                                        // Update local state first
+                                        currentGroupId = group.id
+                                        // Then notify parent
                                         onGroupChange?(group.id)
                                     }
                                      
                                 }) {
                                     HStack {
                                         // Check if this is the current group
-                                        let isCurrentGroup = item.group?.id == group.id || item.groupId == group.id
+                                        let isCurrentGroup = currentGroupId == group.id
                                         
                                         Image(systemName: isCurrentGroup ? "checkmark.circle.fill" : "circle")
                                             .foregroundColor(isCurrentGroup ? .green : .gray)

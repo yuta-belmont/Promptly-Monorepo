@@ -38,6 +38,7 @@ public class ChecklistItem: NSManagedObject {
             }
         }
         
+        // Create the struct with the reference collection - the initializer handles wrapping subItems
         return Models.ChecklistItem(
             id: id ?? UUID(),
             title: title ?? "",

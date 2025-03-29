@@ -5,6 +5,7 @@ extension Notification.Name {
     static let minimizeChecklist = Notification.Name("minimizeChecklist")
     static let expandChecklist = Notification.Name("expandChecklist")
     static let fullExpandChecklist = Notification.Name("fullExpandChecklist")
+    static let showItemDetails = Notification.Name("ShowItemDetails")
 }
 
 // Add at the top with other preference keys
@@ -52,6 +53,13 @@ struct DayView: View, Hashable {
     @Binding var showMenu: Bool
     @Environment(\.dismiss) private var dismiss
     
+    // Create a StateObject for the EasyListViewModel
+    @StateObject private var easyListViewModel: EasyListViewModel
+    
+    // State for ItemDetailsView
+    @State private var showingItemDetails = false
+    @State private var selectedItem: Models.ChecklistItem?
+    
     let date: Date
     var animationID: Namespace.ID? = nil
     var onBack: (() -> Void)? = nil
@@ -89,6 +97,8 @@ struct DayView: View, Hashable {
         self._showMenu = showMenu
         self.animationID = animationID
         self.onBack = onBack
+        // Initialize the EasyListViewModel with the current date
+        self._easyListViewModel = StateObject(wrappedValue: EasyListViewModel(date: date))
     }
     
     private var formattedDate: String {
@@ -105,11 +115,79 @@ struct DayView: View, Hashable {
     private let selectionFeedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
     private func updateToNewDate(_ newDate: Date) {
+        let oldDateString = DateFormatter.localizedString(from: currentDate, dateStyle: .medium, timeStyle: .short)
+        let newDateString = DateFormatter.localizedString(from: newDate, dateStyle: .medium, timeStyle: .short)
+        
+        let startTime = CFAbsoluteTimeGetCurrent()
+        
+        // Do this first to minimize time between UI updates
+        easyListViewModel.updateToDate(newDate)
+        
+        // Update UI state after data is ready
         currentDate = newDate
         
         // If week view is expanded, update the week dates to show the week containing the new date
         if isDateHeaderExpanded {
-            updateWeekDates(for: newDate)
+            // Use async to avoid layout issues during transitions
+            DispatchQueue.main.async {
+                self.updateWeekDates(for: newDate)
+            }
+        }
+        
+        let duration = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+    }
+    
+    // Optimized swipe handling - reduce animation complexity
+    private func handleSwipe(horizontalAmount: CGFloat, in geometry: GeometryProxy) {
+        focusManager.removeAllFocus() //should save off everything in the EasyListView
+        
+        // Check if the swipe is far enough horizontally
+        if abs(horizontalAmount) > 50 {
+            let isLeftSwipe = horizontalAmount < 0
+            let nextDay = Calendar.current.date(
+                byAdding: .day, 
+                value: isLeftSwipe ? 1 : -1, 
+                to: currentDate
+            ) ?? currentDate
+            
+            // Start updating the data model immediately
+            let animationDuration: Double = 0.15
+            
+            // Animate the card off screen with simpler animation
+            withAnimation(.easeOut(duration: animationDuration)) {
+                dragOffset = CGSize(
+                    width: isLeftSwipe ? -geometry.size.width * 1.5 : geometry.size.width * 1.5,
+                    height: 0
+                )
+                // Use smaller rotation for better performance
+                rotation = Angle(degrees: isLeftSwipe ? -5 : 5)
+            }
+            
+            // Update the date while animation is happening
+            DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration / 2) {
+                updateToNewDate(nextDay)
+            }
+            
+            // Reset position with animation
+            DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration*2) {
+                dragOffset = CGSize(
+                    width: isLeftSwipe ? geometry.size.width * 1.5 : -geometry.size.width * 1.5,
+                    height: 0
+                )
+                rotation = Angle(degrees: isLeftSwipe ? 5 : -5)
+                
+                // Use a simpler animation for the incoming view
+                withAnimation(.easeOut(duration: animationDuration)) {
+                    dragOffset = .zero
+                    rotation = .zero
+                }
+            }
+        } else {
+            // Reset position if swipe wasn't far enough - use simpler animation
+            withAnimation(.easeOut(duration: 0.2)) {
+                dragOffset = .zero
+                rotation = .zero
+            }
         }
     }
     
@@ -153,359 +231,369 @@ struct DayView: View, Hashable {
         weekViewDates = newWeekDates
     }
     
+    // Lazy initializer for week dates - only called when needed
+    private var lazyWeekDates: [WeekViewDay] {
+        if weekViewDates.isEmpty && isDateHeaderExpanded {
+            // This runs only once when needed
+            DispatchQueue.main.async {
+                self.updateWeekDates(for: self.currentDate)
+            }
+        }
+        return weekViewDates
+    }
+    
     var body: some View {
-        GeometryReader { geometry in
-            VStack(spacing: 10) {
-                // Header
-                HStack {
-                    Button(action: {
-                        if let onBack = onBack {
-                            onBack()
-                        } else {
-                            NavigationUtil.navigationPath.removeLast()
-                            NavigationUtil.navigationPath.append(CalendarView(initialDate: currentDate))
-                        }
-                    }) {
-                        Image(systemName: "calendar")
-                            .font(.system(size: 20))
-                            .foregroundColor(.white)
-                    }
-                    
-                    VStack(spacing: 0) {
-                        // Date header with chevron (stays in place)
-                        HStack {
-                            if animationID != nil {
-                                Text(formattedDate)
-                                    .font(.subheadline)
-                                    .foregroundColor(.white.opacity(0.8))
-                                    .matchedGeometryEffect(id: "text-\(dateID)", in: animationID!, properties: .position)
-                                    .fixedSize(horizontal: true, vertical: false)
-                                    .lineLimit(1)
-                            } else {
-                                Text(formattedDate)
-                                    .font(.subheadline)
-                                    .foregroundColor(.white.opacity(0.8))
-                                    .fixedSize(horizontal: true, vertical: false)
-                                    .lineLimit(1)
-                            }
-                            
-                            Image(systemName: isDateHeaderExpanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 12))
-                                .foregroundColor(.white.opacity(0.8))
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            // Trigger haptic feedback
-                            dateHeaderFeedbackGenerator.prepare()
-                            dateHeaderFeedbackGenerator.impactOccurred()
-                            
-                            // Use a consistent animation throughout
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                isDateHeaderExpanded.toggle()
-                                if isDateHeaderExpanded {
-                                    updateWeekDates(for: currentDate)
-                                }
-                            }
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    if !isToday {
+        ZStack {
+            GeometryReader { geometry in
+                VStack(spacing: 10) {
+                    // Header
+                    HStack {
                         Button(action: {
-                            // Prepare and trigger haptic feedback
-                            feedbackGenerator.prepare()
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                feedbackGenerator.impactOccurred()
+                            if let onBack = onBack {
+                                onBack()
+                            } else {
+                                NavigationUtil.navigationPath.removeLast()
+                                NavigationUtil.navigationPath.append(CalendarView(initialDate: currentDate))
                             }
-                            updateToNewDate(Date())
                         }) {
-                            HStack(spacing: 4) {
-                                if isFutureDay {
-                                    Image(systemName: "arrow.left")
-                                        .font(.system(size: 10))
+                            Image(systemName: "calendar")
+                                .font(.system(size: 20))
+                                .foregroundColor(.white)
+                        }
+                        
+                        VStack(spacing: 0) {
+                            // Date header with chevron (stays in place)
+                            HStack {
+                                if animationID != nil {
+                                    Text(formattedDate)
+                                        .font(.subheadline)
+                                        .foregroundColor(.white.opacity(0.8))
+                                        .matchedGeometryEffect(id: "text-\(dateID)", in: animationID!, properties: .position)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                        .lineLimit(1)
+                                } else {
+                                    Text(formattedDate)
+                                        .font(.subheadline)
+                                        .foregroundColor(.white.opacity(0.8))
+                                        .fixedSize(horizontal: true, vertical: false)
+                                        .lineLimit(1)
                                 }
                                 
-                                Text("today")
-                                    .font(.caption)
-                                    .fontWeight(.regular)
+                                Image(systemName: isDateHeaderExpanded ? "chevron.up" : "chevron.down")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                // Trigger haptic feedback
+                                dateHeaderFeedbackGenerator.prepare()
+                                dateHeaderFeedbackGenerator.impactOccurred()
                                 
-                                if !isFutureDay {
-                                    Image(systemName: "arrow.right")
-                                        .font(.system(size: 10))
+                                // Toggle the expanded state first
+                                isDateHeaderExpanded.toggle()
+                                
+                                // Use a consistent animation throughout
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    // Only populate week dates if expanding
+                                    if isDateHeaderExpanded {
+                                        updateWeekDates(for: currentDate)
+                                    }
                                 }
                             }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(.ultraThinMaterial)
-                            .cornerRadius(6)
-                            .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
                         }
-                    }
-
-                    // Main Menu Button
-                    Button(action: {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            showMenu = true
-                        }
-                    }) {
-                        Image(systemName: "line.3.horizontal")
-                            .font(.system(size: 20))
-                            .foregroundColor(.white)
-                            .padding(.leading, 16)
-                    }
-                    .padding(.vertical, 8)
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
-                .padding(.bottom, 0)
-                .zIndex(2)
-                
-                // Week view between header and EasyListView
-                if isDateHeaderExpanded {
-                    // Swipeable week view
-                    ZStack {
-                        // Day circles - centered
-                        HStack(spacing: 16) {
-                            ForEach(weekViewDates) { weekDay in
-                                Button(action: {
-                                    // Trigger haptic feedback when selecting a new day
-                                    selectionFeedbackGenerator.prepare()
-                                    selectionFeedbackGenerator.impactOccurred()
-                                    
-                                    // Only update the date without modifying the week view
-                                    updateToNewDate(weekDay.date)
-                                }) {
-                                    VStack(spacing: 2) {
-                                        // Day of week
-                                        Text(dayOfWeekLetter(for: weekDay.date))
+                        
+                        Spacer()
+                        
+                        if !isToday {
+                            Button(action: {
+                                // Prepare and trigger haptic feedback
+                                feedbackGenerator.prepare()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                    feedbackGenerator.impactOccurred()
+                                }
+                                updateToNewDate(Date())
+                            }) {
+                                HStack(spacing: 4) {
+                                    if isFutureDay {
+                                        Image(systemName: "arrow.left")
                                             .font(.system(size: 10))
-                                            .foregroundColor(weekDay.isToday ? .white : .white.opacity(0.9))
-                                            .fontWeight(weekDay.isToday ? .bold : .regular)
-                                        
-                                        // Day number
-                                        Text("\(dayNumber(for: weekDay.date))")
-                                            .font(.system(size: 14, weight: weekDay.isToday ? .bold : .medium))
-                                            .foregroundColor(.white)
                                     }
-                                    .frame(width: 28, height: 40)
-                                    .background(
-                                        ZStack {
-                                            // Background circle
-                                            Circle()
-                                                .fill(weekDay.isSelected ? Color.black.opacity(0.15) : Color.clear)
-                                                .frame(width: 32, height: 32)
-                                            
-                                            // Border for selected day
-                                            if weekDay.isSelected {
-                                                Circle()
-                                                    .stroke(Color.white, lineWidth: 0.5)
-                                                    .opacity(0.3)
-                                                    .frame(width: 32, height: 32)
-                                            }
-                                        }
-                                    )
+                                    
+                                    Text("today")
+                                        .font(.caption)
+                                        .fontWeight(.regular)
+                                    
+                                    if !isFutureDay {
+                                        Image(systemName: "arrow.right")
+                                            .font(.system(size: 10))
+                                    }
                                 }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(.ultraThinMaterial)
+                                .cornerRadius(6)
+                                .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
                             }
                         }
-                        .padding(.horizontal)
-                        .offset(
-                            x: weekDragOffset.width,
-                            y: 0 // No vertical movement at all
-                        )
-                    }
-                    .frame(height: 46)
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                // Only track horizontal movement
-                                weekDragOffset.width = value.translation.width
-                                // Set animation direction based on drag direction
-                                weekAnimationDirection = weekDragOffset.width > 0 ? -1 : 1
+
+                        // Main Menu Button
+                        Button(action: {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                showMenu = true
                             }
-                            .onEnded { value in
-                                let horizontalAmount = value.translation.width
-                                let threshold: CGFloat = 50
-                                
-                                // Check if drag was significant enough to trigger week change
-                                if abs(horizontalAmount) > threshold {
-                                    // Determine direction
-                                    let isSwipingToPreviousWeek = horizontalAmount > 0
-                                    
-                                    // Animate to edge to complete the transition
-                                    withAnimation(.easeOut(duration: 0.2)) {
-                                        weekDragOffset.width = isSwipingToPreviousWeek ? 
-                                            geometry.size.width : -geometry.size.width
+                        }) {
+                            Image(systemName: "line.3.horizontal")
+                                .font(.system(size: 20))
+                                .foregroundColor(.white)
+                                .padding(.leading, 16)
+                        }
+                        .padding(.vertical, 8)
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                    .padding(.bottom, 0)
+                    .zIndex(2)
+                    
+                    // Week view between header and EasyListView
+                    if isDateHeaderExpanded {
+                        // Swipeable week view
+                        ZStack {
+                            // Day circles - centered
+                            HStack(spacing: 16) {
+                                ForEach(lazyWeekDates) { weekDay in
+                                    Button(action: {
+                                        // Trigger haptic feedback when selecting a new day
+                                        selectionFeedbackGenerator.prepare()
+                                        selectionFeedbackGenerator.impactOccurred()
+                                        
+                                        // Only update the date without modifying the week view
+                                        updateToNewDate(weekDay.date)
+                                    }) {
+                                        VStack(spacing: 2) {
+                                            // Day of week
+                                            Text(dayOfWeekLetter(for: weekDay.date))
+                                                .font(.system(size: 10))
+                                                .foregroundColor(weekDay.isToday ? .white : .white.opacity(0.9))
+                                                .fontWeight(weekDay.isToday ? .bold : .regular)
+                                            
+                                            // Day number
+                                            Text("\(dayNumber(for: weekDay.date))")
+                                                .font(.system(size: 14, weight: weekDay.isToday ? .bold : .medium))
+                                                .foregroundColor(.white)
+                                        }
+                                        .frame(width: 28, height: 40)
+                                        .background(
+                                            ZStack {
+                                                // Background circle
+                                                Circle()
+                                                    .fill(weekDay.isSelected ? Color.black.opacity(0.15) : Color.clear)
+                                                    .frame(width: 32, height: 32)
+                                                
+                                                // Border for selected day
+                                                if weekDay.isSelected {
+                                                    Circle()
+                                                        .stroke(Color.white, lineWidth: 0.5)
+                                                        .opacity(0.3)
+                                                        .frame(width: 32, height: 32)
+                                                }
+                                            }
+                                        )
                                     }
+                                }
+                            }
+                            .padding(.horizontal)
+                            .offset(
+                                x: weekDragOffset.width,
+                                y: 0 // No vertical movement at all
+                            )
+                        }
+                        .frame(height: 46)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    // Only track horizontal movement
+                                    weekDragOffset.width = value.translation.width
+                                    // Set animation direction based on drag direction
+                                    weekAnimationDirection = weekDragOffset.width > 0 ? -1 : 1
+                                }
+                                .onEnded { value in
+                                    let horizontalAmount = value.translation.width
+                                    let threshold: CGFloat = 50
                                     
-                                    // Update to new week
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                        if isSwipingToPreviousWeek {
-                                            // Previous week
-                                            if let previousWeekDate = Calendar.current.date(
-                                                byAdding: .weekOfYear,
-                                                value: -1,
-                                                to: weekViewDates.first?.date ?? currentDate
-                                            ) {
-                                                updateWeekDates(for: previousWeekDate)
-                                            }
-                                        } else {
-                                            // Next week
-                                            if let nextWeekDate = Calendar.current.date(
-                                                byAdding: .weekOfYear,
-                                                value: 1,
-                                                to: weekViewDates.first?.date ?? currentDate
-                                            ) {
-                                                updateWeekDates(for: nextWeekDate)
-                                            }
+                                    // Check if drag was significant enough to trigger week change
+                                    if abs(horizontalAmount) > threshold {
+                                        // Determine direction
+                                        let isSwipingToPreviousWeek = horizontalAmount > 0
+                                        
+                                        // Animate to edge to complete the transition
+                                        withAnimation(.easeOut(duration: 0.2)) {
+                                            weekDragOffset.width = isSwipingToPreviousWeek ? 
+                                                geometry.size.width : -geometry.size.width
                                         }
                                         
-                                        // Reset position but from opposite side for transition
-                                        weekDragOffset.width = isSwipingToPreviousWeek ? 
-                                            -geometry.size.width : geometry.size.width
-                                        
-                                        // Animate back to center
-                                        withAnimation(.easeOut(duration: 0.2)) {
+                                        // Update to new week
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                            if isSwipingToPreviousWeek {
+                                                // Previous week
+                                                if let previousWeekDate = Calendar.current.date(
+                                                    byAdding: .weekOfYear,
+                                                    value: -1,
+                                                    to: weekViewDates.first?.date ?? currentDate
+                                                ) {
+                                                    updateWeekDates(for: previousWeekDate)
+                                                }
+                                            } else {
+                                                // Next week
+                                                if let nextWeekDate = Calendar.current.date(
+                                                    byAdding: .weekOfYear,
+                                                    value: 1,
+                                                    to: weekViewDates.first?.date ?? currentDate
+                                                ) {
+                                                    updateWeekDates(for: nextWeekDate)
+                                                }
+                                            }
+                                            
+                                            // Reset position but from opposite side for transition
+                                            weekDragOffset.width = isSwipingToPreviousWeek ? 
+                                                -geometry.size.width : geometry.size.width
+                                            
+                                            // Animate back to center
+                                            withAnimation(.easeOut(duration: 0.2)) {
+                                                weekDragOffset.width = 0
+                                            }
+                                            
+                                            // Reset animation direction
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                                weekAnimationDirection = 0
+                                            }
+                                        }
+                                    } else {
+                                        // Not enough to trigger week change, animate back to center
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                             weekDragOffset.width = 0
                                         }
                                         
                                         // Reset animation direction
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                             weekAnimationDirection = 0
                                         }
                                     }
-                                } else {
-                                    // Not enough to trigger week change, animate back to center
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                        weekDragOffset.width = 0
-                                    }
-                                    
-                                    // Reset animation direction
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                        weekAnimationDirection = 0
-                                    }
                                 }
-                            }
-                    )
-                    .modifier(SlideInTransitionModifier(isExpanded: isDateHeaderExpanded, geometry: geometry))
-                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isDateHeaderExpanded)
-                    .padding(.bottom, 4)
-                    .zIndex(1)
-                }
-                
-                // EasyListView with gesture and animation
-                EasyListView(date: currentDate)
-                    .frame(height: geometry.size.height - (isDateHeaderExpanded ? 110 : 52)) // Adjust height when week view is visible
-                    .id(currentDate)
-                    .offset(x: dragOffset.width, y: dragOffset.height)
-                    .rotationEffect(rotation)
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                // Only track horizontal movement, ignore vertical
-                                dragOffset = CGSize(width: value.translation.width, height: 0)
-                                // Calculate rotation based only on horizontal movement
-                                let rotationFactor = Double(dragOffset.width / 40)
-                                rotation = Angle(degrees: rotationFactor)
-                            }
-                            .onEnded { value in
-                                focusManager.removeAllFocus() //should save off everything in the EasyListView
-                                let horizontalAmount = value.translation.width
-                                
-                                // Check if the swipe is far enough horizontally
-                                if abs(horizontalAmount) > 50 {
-                                    let isLeftSwipe = horizontalAmount < 0
-                                    
-                                    // Animate the card off screen
-                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                                        dragOffset = CGSize(
-                                            width: isLeftSwipe ? -geometry.size.width * 1.5 : geometry.size.width * 1.5,
-                                            height: 0
-                                        )
-                                        rotation = Angle(degrees: isLeftSwipe ? -10 : 10)
-                                    }
-                                    
-                                    // Update to new date after a short delay
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                        if isLeftSwipe {
-                                            updateToNewDate(Calendar.current.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate)
-                                        } else {
-                                            updateToNewDate(Calendar.current.date(byAdding: .day, value: -1, to: currentDate) ?? currentDate)
-                                        }
-                                        
-                                        // Reset position with animation, but with inverted rotation for incoming view
-                                        dragOffset = CGSize(
-                                            width: isLeftSwipe ? geometry.size.width * 1.5 : -geometry.size.width * 1.5,
-                                            height: 0
-                                        )
-                                        // Set initial rotation in opposite direction for incoming view
-                                        rotation = Angle(degrees: isLeftSwipe ? 10 : -10)
-                                        
-                                        withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
-                                            dragOffset = .zero
-                                            rotation = .zero
-                                        }
-                                    }
-                                } else {
-                                    // Reset position if swipe wasn't far enough
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
-                                        dragOffset = .zero
-                                        rotation = .zero
-                                    }
+                        )
+                        .modifier(SlideInTransitionModifier(isExpanded: isDateHeaderExpanded, geometry: geometry))
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isDateHeaderExpanded)
+                        .padding(.bottom, 4)
+                        .zIndex(1)
+                    }
+                    
+                    // EasyListView with gesture and animation - now uses our StateObject view model
+                    EasyListView()
+                        .environmentObject(easyListViewModel) // Make the view model available
+                        .frame(height: geometry.size.height - (isDateHeaderExpanded ? 110 : 52)) // Adjust height when week view is visible
+                        .offset(x: dragOffset.width, y: dragOffset.height)
+                        .rotationEffect(rotation)
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    // Only track horizontal movement, ignore vertical
+                                    dragOffset = CGSize(width: value.translation.width, height: 0)
+                                    // Calculate rotation based only on horizontal movement
+                                    let rotationFactor = Double(dragOffset.width / 40)
+                                    rotation = Angle(degrees: rotationFactor)
                                 }
-                            }
-                    )
-            }
-            .onChange(of: showMenu) { oldValue, newValue in
-                if newValue {
-                    removeAllFocus()
+                                .onEnded { value in
+                                    handleSwipe(horizontalAmount: value.translation.width, in: geometry)
+                                }
+                        )
                 }
-            }
-            .onAppear {
-                // Prepare all haptic feedback generators
-                feedbackGenerator.prepare()
-                dateHeaderFeedbackGenerator.prepare()
-                selectionFeedbackGenerator.prepare()
-                
-                // Ensure week dates are updated if the week view is expanded
-                if isDateHeaderExpanded {
-                    updateWeekDates(for: currentDate)
+                .onChange(of: showMenu) { oldValue, newValue in
+                    if newValue {
+                        removeAllFocus()
+                    }
                 }
-            }
-            .onDisappear {
-                // Reset any active animations and states when view disappears
-                weekDragOffset = .zero
-                weekVerticalDragOffset = 0
-                weekAnimationDirection = 0
-            }
-            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
-                // Save state or perform cleanup when app enters background
-                if !isDateHeaderExpanded {
-                    // Ensure week view state is clean when not expanded
+                .onAppear {
+                    // Prepare all haptic feedback generators
+                    feedbackGenerator.prepare()
+                    dateHeaderFeedbackGenerator.prepare()
+                    selectionFeedbackGenerator.prepare()
+                    
+                    // Load data after the view has appeared and layout is complete
+                    DispatchQueue.main.async {
+                        easyListViewModel.loadData()
+                    }
+                    
+                    // We're removing this call to prevent layout issues during initial loading
+                    // if isDateHeaderExpanded {
+                    //     updateWeekDates(for: currentDate)
+                    // }
+                }
+                .onDisappear {
+                    // Reset any active animations and states when view disappears
                     weekDragOffset = .zero
                     weekVerticalDragOffset = 0
                     weekAnimationDirection = 0
-                    weekViewDates = []
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+                    // Save state or perform cleanup when app enters background
+                    if !isDateHeaderExpanded {
+                        // Ensure week view state is clean when not expanded
+                        weekDragOffset = .zero
+                        weekVerticalDragOffset = 0
+                        weekAnimationDirection = 0
+                        weekViewDates = []
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                    // Restore state when app comes back to foreground
+                    if isDateHeaderExpanded {
+                        // Ensure week dates are updated
+                        updateWeekDates(for: currentDate)
+                    } else {
+                        // Make sure week view is fully reset when not expanded
+                        weekDragOffset = .zero
+                        weekVerticalDragOffset = 0
+                        weekAnimationDirection = 0
+                        weekViewDates = []
+                    }
+                }
+                // Listen for ShowItemDetails notification
+                .onReceive(NotificationCenter.default.publisher(for: Notification.Name.showItemDetails)) { notification in
+                    if let item = notification.object as? Models.ChecklistItem {
+                        selectedItem = item
+                        showingItemDetails = true
+                    }
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-                // Restore state when app comes back to foreground
-                if isDateHeaderExpanded {
-                    // Ensure week dates are updated
-                    updateWeekDates(for: currentDate)
-                } else {
-                    // Make sure week view is fully reset when not expanded
-                    weekDragOffset = .zero
-                    weekVerticalDragOffset = 0
-                    weekAnimationDirection = 0
-                    weekViewDates = []
-                }
+            .navigationBarBackButtonHidden(true)
+            .preference(key: RemoveFocusPreferenceKey.self, value: FocusRemovalAction(removeAllFocus: removeAllFocus))
+            
+            // ItemDetails overlay
+            if showingItemDetails, let item = selectedItem {
+                // Semi-transparent backdrop for closing the details view
+                Color.black.opacity(0.01)
+                    .edgesIgnoringSafeArea(.all)
+                    .allowsHitTesting(true)
+                    .transition(.opacity)
+                    .zIndex(998)
+                    .onTapGesture {
+                        // Close if tap is outside the details view
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            showingItemDetails = false
+                        }
+                    }
+                
+                // ItemDetailsView overlay
+                ItemDetailsView(
+                    item: item,
+                    isPresented: $showingItemDetails
+                )
+                .transition(.opacity)
+                .zIndex(999)
             }
         }
-        .navigationBarBackButtonHidden(true)
-        .preference(key: RemoveFocusPreferenceKey.self, value: FocusRemovalAction(removeAllFocus: removeAllFocus))
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showingItemDetails)
     }
     
     // Add these helper functions inside DayView struct

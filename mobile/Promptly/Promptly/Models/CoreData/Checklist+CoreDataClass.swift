@@ -20,10 +20,11 @@ public class Checklist: NSManagedObject {
             }
         }
         
+        // Create a Checklist with the ItemCollection
         return Models.Checklist(
             id: id ?? UUID(),
             date: date ?? Date(),
-            items: items,
+            items: items, // The initializer will create the ItemCollection for us
             notes: notes ?? ""
         )
     }

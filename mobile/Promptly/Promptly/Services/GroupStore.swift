@@ -18,7 +18,6 @@ final class GroupStore: ObservableObject {
         DispatchQueue.main.async {
             self.loadGroups {
                 // Initialization completed successfully
-                print("GroupStore: Initial groups loaded")
             }
         }
     }
@@ -37,6 +36,11 @@ final class GroupStore: ObservableObject {
             // Dispatch updates to @Published properties to the main queue
             DispatchQueue.main.async {
                 self.groups = newGroups
+                self.lastGroupUpdateTimestamp = Date()
+                
+                // Post notification about updated groups
+                NotificationCenter.default.post(name: NSNotification.Name("GroupStoreUpdated"), object: nil)
+                
                 // Call the completion handler after the groups have been updated
                 completion?()
             }

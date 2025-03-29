@@ -1,41 +1,78 @@
 import Foundation
 
+// Reference type collection to hold ChecklistItems
+class ItemCollection {
+    var items: [Models.ChecklistItem]
+    
+    init(items: [Models.ChecklistItem] = []) {
+        self.items = items
+    }
+}
+
 extension Models {
     struct Checklist: Identifiable, Codable {
         let id: UUID
         let date: Date
-        var items: [ChecklistItem]
+        var itemCollection: ItemCollection
         var notes: String
+        
+        // Computed property to maintain backward compatibility
+        var items: [ChecklistItem] {
+            get { return itemCollection.items }
+            set { itemCollection.items = newValue }
+        }
+        
+        // Encoding/Decoding for Codable conformance
+        enum CodingKeys: String, CodingKey {
+            case id, date, items, notes
+        }
+        
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(UUID.self, forKey: .id)
+            date = try container.decode(Date.self, forKey: .date)
+            let decodedItems = try container.decode([ChecklistItem].self, forKey: .items)
+            itemCollection = ItemCollection(items: decodedItems)
+            notes = try container.decode(String.self, forKey: .notes)
+        }
+        
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(id, forKey: .id)
+            try container.encode(date, forKey: .date)
+            try container.encode(itemCollection.items, forKey: .items)
+            try container.encode(notes, forKey: .notes)
+        }
         
         init(id: UUID = UUID(), date: Date = Date(), items: [ChecklistItem] = [], notes: String = "") {
             self.id = id
             self.date = date
-            self.items = items
+            self.itemCollection = ItemCollection(items: items)
             self.notes = notes
         }
         
         mutating func toggleItem(_ item: ChecklistItem) {
-            if let index = items.firstIndex(where: { $0.id == item.id }) {
-                items[index].isCompleted.toggle()
+            if let index = itemCollection.items.firstIndex(where: { $0.id == item.id }) {
+                itemCollection.items[index].isCompleted.toggle()
             }
         }
         
         mutating func addItem(_ item: ChecklistItem) {
-            items.append(item)
+            itemCollection.items.append(item)
         }
         
         mutating func updateItem(_ item: ChecklistItem) {
-            if let index = items.firstIndex(where: { $0.id == item.id }) {
-                items[index] = item
+            if let index = itemCollection.items.firstIndex(where: { $0.id == item.id }) {
+                itemCollection.items[index] = item
             }
         }
         
         mutating func deleteItems(at indexSet: IndexSet) {
-            items.remove(atOffsets: indexSet)
+            itemCollection.items.remove(atOffsets: indexSet)
         }
         
         mutating func moveItems(from source: IndexSet, to destination: Int) {
-            items.move(fromOffsets: source, toOffset: destination)
+            itemCollection.items.move(fromOffsets: source, toOffset: destination)
         }
         
         mutating func updateNotes(_ newNotes: String) {
@@ -45,12 +82,12 @@ extension Models {
         
         // Efficiently remove all items at once
         mutating func removeAllItems() {
-            items = []
+            itemCollection.items = []
         }
         
         // Efficiently remove all items that belong to a specific group
         mutating func removeAllItemsInGroup(groupId: UUID) {
-            items.removeAll(where: { $0.groupId == groupId })
+            itemCollection.items.removeAll(where: { $0.groupId == groupId })
         }
     }
 } 

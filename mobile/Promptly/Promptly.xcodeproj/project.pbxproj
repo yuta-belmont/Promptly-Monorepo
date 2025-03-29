@@ -27,6 +27,7 @@
 		8F7DEA432D80DDCA00287676 /* ChecklistPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F7DEA402D80DDCA00287676 /* ChecklistPersistence.swift */; };
 		8F8FE7412D85EA3C00355B3D /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F8FE73F2D85EA3C00355B3D /* LoginView.swift */; };
 		8F8FE7432D85EA7100355B3D /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F8FE7422D85EA7100355B3D /* AuthManager.swift */; };
+		8F91A2782D959DC1008383FF /* ItemDetailsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F91A2772D959DC1008383FF /* ItemDetailsViewModel.swift */; };
 		8F9DFEF52D6FA66900F62D5E /* PromptlyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F9DFEF42D6FA66900F62D5E /* PromptlyApp.swift */; };
 		8F9DFEF92D6FA66A00F62D5E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8F9DFEF82D6FA66A00F62D5E /* Assets.xcassets */; };
 		8F9DFEFD2D6FA66A00F62D5E /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8F9DFEFC2D6FA66A00F62D5E /* Preview Assets.xcassets */; };
@@ -61,8 +62,6 @@
 		8FE0E2782D8B837100EE0D83 /* SubItem+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE0E2772D8B837100EE0D83 /* SubItem+CoreDataProperties.swift */; };
 		8FE0E2792D8B837100EE0D83 /* SubItem+CoreDataClass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE0E2762D8B837100EE0D83 /* SubItem+CoreDataClass.swift */; };
 		8FE0E27B2D8B84ED00EE0D83 /* SubItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE0E27A2D8B84ED00EE0D83 /* SubItem.swift */; };
-		8FE0E27F2D8C8AB200EE0D83 /* PlannerItemViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE0E27E2D8C8AB200EE0D83 /* PlannerItemViewModel.swift */; };
-		8FE0E2852D90657000EE0D83 /* PlannerFocusCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE0E2842D90657000EE0D83 /* PlannerFocusCoordinator.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXBuildRule section */
@@ -100,6 +99,7 @@
 		8F7DEA412D80DDCA00287676 /* SpeechRecognitionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRecognitionService.swift; sourceTree = "<group>"; };
 		8F8FE73F2D85EA3C00355B3D /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		8F8FE7422D85EA7100355B3D /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
+		8F91A2772D959DC1008383FF /* ItemDetailsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailsViewModel.swift; sourceTree = "<group>"; };
 		8F9DFEF12D6FA66900F62D5E /* Promptly.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Promptly.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8F9DFEF42D6FA66900F62D5E /* PromptlyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptlyApp.swift; sourceTree = "<group>"; };
 		8F9DFEF82D6FA66A00F62D5E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -127,8 +127,6 @@
 		8FE0E2762D8B837100EE0D83 /* SubItem+CoreDataClass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SubItem+CoreDataClass.swift"; sourceTree = "<group>"; };
 		8FE0E2772D8B837100EE0D83 /* SubItem+CoreDataProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SubItem+CoreDataProperties.swift"; sourceTree = "<group>"; };
 		8FE0E27A2D8B84ED00EE0D83 /* SubItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubItem.swift; sourceTree = "<group>"; };
-		8FE0E27E2D8C8AB200EE0D83 /* PlannerItemViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerItemViewModel.swift; sourceTree = "<group>"; };
-		8FE0E2842D90657000EE0D83 /* PlannerFocusCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerFocusCoordinator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -246,7 +244,6 @@
 		8F9DFF032D70AE4B00F62D5E /* Services */ = {
 			isa = PBXGroup;
 			children = (
-				8FE0E2842D90657000EE0D83 /* PlannerFocusCoordinator.swift */,
 				8FE0E26F2D87D48900EE0D83 /* FirestoreService.swift */,
 				8F8FE7422D85EA7100355B3D /* AuthManager.swift */,
 				8F7DEA402D80DDCA00287676 /* ChecklistPersistence.swift */,
@@ -265,7 +262,7 @@
 		8F9DFF042D70AE5F00F62D5E /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
-				8FE0E27E2D8C8AB200EE0D83 /* PlannerItemViewModel.swift */,
+				8F91A2772D959DC1008383FF /* ItemDetailsViewModel.swift */,
 				8F2F11A02D83C5B200B47051 /* ManageGroupsViewModel.swift */,
 				8F3C830E2D7A07F30072CCAF /* EasyListViewModel.swift */,
 				8FB9D7A52D761D0C00F8B0E2 /* DashboardViewModel.swift */,
@@ -388,16 +385,15 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8F91A2782D959DC1008383FF /* ItemDetailsViewModel.swift in Sources */,
 				8FC4560B2D7CB83B007EE5DB /* BaseView.swift in Sources */,
 				8FCD49672D819D9200C0A2E3 /* DataModel.xcdatamodeld in Sources */,
-				8FE0E27F2D8C8AB200EE0D83 /* PlannerItemViewModel.swift in Sources */,
 				8F31EDE72D753A570041A5F9 /* LoadingView.swift in Sources */,
 				8F8FE7432D85EA7100355B3D /* AuthManager.swift in Sources */,
 				8F31EDDB2D74B9A10041A5F9 /* ChatHistory.swift in Sources */,
 				8F35F3682D81E98100A112F1 /* ModelNamespace.swift in Sources */,
 				8FC448382D723D940008E3AB /* ChatInputViewModel.swift in Sources */,
 				8FC4560D2D7D4EB3007EE5DB /* FocusManager.swift in Sources */,
-				8FE0E2852D90657000EE0D83 /* PlannerFocusCoordinator.swift in Sources */,
 				8F7DEA3D2D80D98500287676 /* GroupStore.swift in Sources */,
 				8F3C830A2D7A03270072CCAF /* SharedShapes.swift in Sources */,
 				8F3C830B2D7A03270072CCAF /* ViewModifiers.swift in Sources */,
