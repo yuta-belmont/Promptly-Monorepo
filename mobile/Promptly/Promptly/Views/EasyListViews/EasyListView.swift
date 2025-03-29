@@ -256,7 +256,6 @@ struct EasyListHeader: View {
                         .rotationEffect(.degrees(showingNotes ? 180 : 0))
                         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showingNotes)
                 }
-                
                 if isEditing {
                     Button(action: {
                         // Add haptic feedback before calling onDone
@@ -267,6 +266,7 @@ struct EasyListHeader: View {
                         Text("Done")
                             .foregroundColor(.white)
                             .dynamicTypeSize(.small...DynamicTypeSize.large)
+                            //.padding(.bottom, ) // Match the padding used by the image buttons
                     }
                     .frame(minWidth: 44)
                 }
@@ -274,6 +274,7 @@ struct EasyListHeader: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 8)
+        .frame(height: 44) // Fixed height of 44 points
         .headerBackground()
         .cornerRadius(16, corners: [.topLeft, .topRight])
         .onAppear {
@@ -352,20 +353,12 @@ struct ListContent: View {
     
     // Consolidated scroll helper function
     private func scrollToNewItem(_ proxy: ScrollViewProxy) {
-
          // Delay the first scroll by 0.1 seconds, then animate for 0.1 seconds
          DispatchQueue.main.asyncAfter(deadline: .now()) {
              withAnimation(.easeInOut(duration: 0.1)) {
                  proxy.scrollTo("newItemRow", anchor: .center)
+         
              }
-             /*
-            // Catch if we haven't scrolled to the correct spot yet:
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    proxy.scrollTo("newItemRow", anchor: .bottom)
-                }
-            }
-              */
         }
     }
     
@@ -425,11 +418,9 @@ struct ListContent: View {
                 .animation(.easeInOut(duration: 0.2), value: viewModel.items.count)
                 .environment(\.defaultMinListRowHeight, 0) // Minimize row height calculations
                 .onChange(of: isNewItemFocused) { oldValue, newValue in
-                    // Only handle focus management and scrolling on initial focus:
+                    // Only handle focus management
                     if newValue && !viewModel.isItemLimitReached {
-                        scrollToNewItem(proxy)
                         focusManager.requestFocus(for: .easyList)
-                        
                     }
                     
                     // Handle saving when losing focus
@@ -441,8 +432,8 @@ struct ListContent: View {
                     // Update editing state
                     updateEditingState()
                 }
-                .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
-                    // Only scroll when the keyboard has completely finished appearing
+                .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidChangeFrameNotification)) { _ in
+                    //Only scroll when the keyboard has completely finished appearing
                     if isNewItemFocused {
                         scrollToNewItem(proxy)
                     }
@@ -456,8 +447,6 @@ struct ListContent: View {
             .opacity(isEditing ? 0 : 1)
             .animation(.easeInOut(duration: 0.2), value: isEditing)
         }
-        // Constrain the entire ZStack to the available height
-        .frame(height: availableHeight)
         .onChange(of: isEditing) { oldValue, newValue in
             if !newValue {
                 let emptyItems = viewModel.items.enumerated().filter { $0.element.title.isEmpty }
@@ -524,6 +513,9 @@ struct ListContent: View {
                 // No need to post notification - view handles its own state
             },
             onItemTap: { itemId in
+                // Remove any focus first, then post notification to show details
+                isNewItemFocused = false
+                
                 // Pass the item up to DayView by posting a notification
                 if let item = viewModel.getItem(id: itemId) {
                     NotificationCenter.default.post(
@@ -854,44 +846,40 @@ struct EasyListView: View {
                     // Content container with flip effect
                     ZStack {
                         // List content with flip effect
-                        ZStack {
-                            ListContent(
-                                viewModel: viewModel,
-                                isNewItemFocused: _isNewItemFocused,
-                                isEditing: $isEditing,
-                                headerTitle: viewModel.headerTitle,
-                                availableHeight: geometry.size.height - (keyboardHeight > 0 ? min(keyboardHeight * 0.05, 10) : 0),
-                                removeAllFocus: {
-                                    // Remove focus
-                                    isEditing = false
-                                    isNewItemFocused = false
-                                    isNotesFocused = false
-                                }
-                            )
-                            // Apply clip shape to ensure content doesn't visually extend beyond boundaries
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .contentShape(RoundedRectangle(cornerRadius: 16)) // Add for better hit testing
-                        }
+                        ListContent(
+                            viewModel: viewModel,
+                            isNewItemFocused: _isNewItemFocused,
+                            isEditing: $isEditing,
+                            headerTitle: viewModel.headerTitle,
+                            availableHeight: geometry.size.height,
+                            removeAllFocus: {
+                                // Remove focus
+                                isEditing = false
+                                isNewItemFocused = false
+                                isNotesFocused = false
+                            }
+                        )
+                        // Apply clip shape to ensure content doesn't visually extend beyond boundaries
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .contentShape(RoundedRectangle(cornerRadius: 16)) // Add for better hit testing
                         // Apply 3D flip effect and hide when flipped (back of card)
                         .opacity(viewModel.isShowingNotes ? 0 : 1)
                         .flipEffect(isFlipped: viewModel.isShowingNotes)
                         
                         // Notes content with flip effect
-                        ZStack {
-                            NotesView(
-                                notes: Binding(
-                                    get: { viewModel.checklist.notes },
-                                    set: { _ in /* This is now handled by the onSave callback */ }
-                                ),
-                                isFocused: _isNotesFocused,
-                                isEditing: $isEditing,
-                                title: viewModel.headerTitle,
-                                onSave: { viewModel.updateNotes($0) }
-                            )
-                            // Apply the same clip shape to notes view for consistency
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .contentShape(RoundedRectangle(cornerRadius: 16)) // Add for better hit testing
-                        }
+                        NotesView(
+                            notes: Binding(
+                                get: { viewModel.checklist.notes },
+                                set: { _ in /* This is now handled by the onSave callback */ }
+                            ),
+                            isFocused: _isNotesFocused,
+                            isEditing: $isEditing,
+                            title: viewModel.headerTitle,
+                            onSave: { viewModel.updateNotes($0) }
+                        )
+                        // Apply the same clip shape to notes view for consistency
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .contentShape(RoundedRectangle(cornerRadius: 16)) // Add for better hit testing
                         // Apply 3D flip effect in opposite direction (negative Y axis)
                         .opacity(viewModel.isShowingNotes ? 1 : 0)
                         .flipEffect(isFlipped: !viewModel.isShowingNotes, axis: (0, -1, 0))

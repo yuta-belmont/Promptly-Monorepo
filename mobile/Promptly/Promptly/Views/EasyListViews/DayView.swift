@@ -379,7 +379,7 @@ struct DayView: View, Hashable {
                                             
                                             // Day number
                                             Text("\(dayNumber(for: weekDay.date))")
-                                                .font(.system(size: 14, weight: weekDay.isToday ? .bold : .medium))
+                                                .font(.system(size: weekDay.isToday ? 15 : 14, weight: weekDay.isToday ? .bold : .medium))
                                                 .foregroundColor(.white)
                                         }
                                         .frame(width: 28, height: 40)
@@ -388,14 +388,14 @@ struct DayView: View, Hashable {
                                                 // Background circle
                                                 Circle()
                                                     .fill(weekDay.isSelected ? Color.black.opacity(0.15) : Color.clear)
-                                                    .frame(width: 32, height: 32)
+                                                    .frame(width: 36, height: 36)
                                                 
                                                 // Border for selected day
                                                 if weekDay.isSelected {
                                                     Circle()
                                                         .stroke(Color.white, lineWidth: 0.5)
                                                         .opacity(0.3)
-                                                        .frame(width: 32, height: 32)
+                                                        .frame(width: 36, height: 36)
                                                 }
                                             }
                                         )
@@ -488,25 +488,38 @@ struct DayView: View, Hashable {
                         .zIndex(1)
                     }
                     
-                    // EasyListView with gesture and animation - now uses our StateObject view model
-                    EasyListView()
-                        .environmentObject(easyListViewModel) // Make the view model available
-                        .frame(height: geometry.size.height - (isDateHeaderExpanded ? 110 : 52)) // Adjust height when week view is visible
-                        .offset(x: dragOffset.width, y: dragOffset.height)
-                        .rotationEffect(rotation)
-                        .gesture(
-                            DragGesture()
-                                .onChanged { value in
-                                    // Only track horizontal movement, ignore vertical
-                                    dragOffset = CGSize(width: value.translation.width, height: 0)
-                                    // Calculate rotation based only on horizontal movement
-                                    let rotationFactor = Double(dragOffset.width / 40)
-                                    rotation = Angle(degrees: rotationFactor)
-                                }
-                                .onEnded { value in
-                                    handleSwipe(horizontalAmount: value.translation.width, in: geometry)
-                                }
-                        )
+                    // Wrap in Group with animation for smooth transitions
+                    Group {
+                        if !showingItemDetails {
+                            // Only show EasyListView when not showing item details
+                            EasyListView()
+                                .environmentObject(easyListViewModel) // Make the view model available
+                                .frame(height: geometry.size.height - (isDateHeaderExpanded ? 110 : 52)) // Adjust height when week view is visible
+                                .offset(x: dragOffset.width, y: dragOffset.height)
+                                .rotationEffect(rotation)
+                                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                                .id("easyListView-\(currentDate.timeIntervalSince1970)") // Force complete view reconstruction
+                                .gesture(
+                                    DragGesture()
+                                        .onChanged { value in
+                                            // Only track horizontal movement, ignore vertical
+                                            dragOffset = CGSize(width: value.translation.width, height: 0)
+                                            // Calculate rotation based only on horizontal movement
+                                            let rotationFactor = Double(dragOffset.width / 40)
+                                            rotation = Angle(degrees: rotationFactor)
+                                        }
+                                        .onEnded { value in
+                                            handleSwipe(horizontalAmount: value.translation.width, in: geometry)
+                                        }
+                                )
+                        } else {
+                            // Using a clear spacer to maintain layout structure when EasyListView is removed
+                            Color.clear
+                                .frame(height: geometry.size.height - (isDateHeaderExpanded ? 110 : 52))
+                                .transition(.opacity)
+                        }
+                    }
+                    .animation(.easeInOut(duration: 0.2), value: showingItemDetails)
                 }
                 .onChange(of: showMenu) { oldValue, newValue in
                     if newValue {
@@ -561,6 +574,10 @@ struct DayView: View, Hashable {
                 // Listen for ShowItemDetails notification
                 .onReceive(NotificationCenter.default.publisher(for: Notification.Name.showItemDetails)) { notification in
                     if let item = notification.object as? Models.ChecklistItem {
+                        // Clear all focus to ensure data is saved
+                        removeAllFocus()
+                        
+                        // Then show the details view
                         selectedItem = item
                         showingItemDetails = true
                     }
@@ -579,21 +596,21 @@ struct DayView: View, Hashable {
                     .zIndex(998)
                     .onTapGesture {
                         // Close if tap is outside the details view
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
                             showingItemDetails = false
                         }
                     }
                 
-                // ItemDetailsView overlay
+                // ItemDetailsView overlay with matching transition
                 ItemDetailsView(
                     item: item,
                     isPresented: $showingItemDetails
                 )
-                .transition(.opacity)
+                .transition(.opacity.combined(with: .scale(scale: 1.02)))
                 .zIndex(999)
             }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showingItemDetails)
+        .animation(.easeInOut(duration: 0.2), value: showingItemDetails)
     }
     
     // Add these helper functions inside DayView struct

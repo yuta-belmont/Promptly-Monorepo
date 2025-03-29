@@ -340,6 +340,7 @@ private struct SubItemRowView: View {
     let subItem: PlannerItemDisplayData.SubItemDisplayData
     @Binding var itemData: MutablePlannerItemData
     let onToggleSubItem: ((UUID, UUID, Bool) -> Void)?
+    let onSubItemTap: (() -> Void)?  // New callback for tapping the subitem row
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
 
     // Computed property to get the local completion state
@@ -384,6 +385,12 @@ private struct SubItemRowView: View {
                 .opacity(isSubItemCompletedLocally ? 0.7 : 1.0)
                 .frame(maxWidth: UIScreen.main.bounds.width * 0.78, alignment: .leading)
                 .padding(.vertical, 3)
+                .contentShape(Rectangle()) // Make text area tappable
+                .onTapGesture {
+                    if let onTap = onSubItemTap {
+                        onTap()
+                    }
+                }
         }
         .padding(.leading, 0)
         .frame(height: 30)
@@ -397,13 +404,18 @@ private struct SubItemRowView: View {
 private struct SubItemListView: View {
     @Binding var itemData: MutablePlannerItemData
     let onToggleSubItem: ((UUID, UUID, Bool) -> Void)?
+    let onItemTap: ((UUID) -> Void)?  // Add parameter to pass down the callback
     
     var body: some View {
         ForEach(itemData.subItems, id: \.id) { subItem in
             SubItemRowView(
                 subItem: subItem,
                 itemData: $itemData,
-                onToggleSubItem: onToggleSubItem
+                onToggleSubItem: onToggleSubItem,
+                onSubItemTap: {
+                    // Call the parent item's tap handler when a subitem is tapped
+                    onItemTap?(itemData.id)
+                }
             )
             .id("subitem-\(itemData.id.uuidString)-\(subItem.id.uuidString)-\(subItem.isCompleted.description)")
         }
@@ -414,6 +426,7 @@ private struct SubItemListView: View {
 private struct SubItemsSection: View {
     @Binding var itemData: MutablePlannerItemData
     let onToggleSubItem: ((UUID, UUID, Bool) -> Void)?
+    let onItemTap: ((UUID) -> Void)?  // Add parameter to pass down the callback
     
     var body: some View {
         if itemData.areSubItemsExpanded {
@@ -427,7 +440,8 @@ private struct SubItemsSection: View {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     SubItemListView(
                         itemData: $itemData,
-                        onToggleSubItem: onToggleSubItem
+                        onToggleSubItem: onToggleSubItem,
+                        onItemTap: onItemTap  // Pass down the callback
                     )
                     .id("subitems-list-\(itemData.id.uuidString)-\(itemData.subItems.count)")
                 }
@@ -522,7 +536,8 @@ struct PlannerItemView: View, Equatable {
             
             SubItemsSection(
                 itemData: $itemData,
-                onToggleSubItem: onToggleSubItem
+                onToggleSubItem: onToggleSubItem,
+                onItemTap: onItemTap  // Pass the onItemTap callback to SubItemsSection
             )
         }
         .padding(.vertical, 6)

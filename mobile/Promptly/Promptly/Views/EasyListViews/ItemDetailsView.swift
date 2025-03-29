@@ -25,7 +25,10 @@ struct ItemDetailsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     
                     Button(action: {
-                        isPresented = false
+                        // Use animation to ensure smooth transition back to EasyListView
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isPresented = false
+                        }
                     }) {
                         Image(systemName: "xmark")
                             .foregroundColor(.white.opacity(0.8))
