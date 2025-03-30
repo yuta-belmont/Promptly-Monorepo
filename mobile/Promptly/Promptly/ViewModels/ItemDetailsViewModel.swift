@@ -253,4 +253,114 @@ final class ItemDetailsViewModel: ObservableObject {
             saveItem()
         }
     }
+    
+    // Update the title of the item
+    func updateTitle(_ newTitle: String) {
+        debugLog("updateTitle", "updating title to: \(newTitle)")
+        
+        // Create a mutable copy of the item
+        var mutableItem = item
+        
+        // Update the title
+        mutableItem.title = newTitle
+        
+        // Update the published item
+        item = mutableItem
+        
+        // Save changes to persistence
+        saveItem()
+    }
+    
+    // Update the title of a subitem
+    func updateSubitemTitle(_ subitemId: UUID, newTitle: String) {
+        debugLog("updateSubitemTitle", "updating subitem \(subitemId.uuidString.prefix(8)) title to: \(newTitle)")
+        
+        // Create a mutable copy of the item
+        var mutableItem = item
+        
+        // Find the subitem and update its title
+        if let subitemIndex = mutableItem.subItems.firstIndex(where: { $0.id == subitemId }) {
+            mutableItem.subItems[subitemIndex].title = newTitle
+            
+            // Update the published item
+            item = mutableItem
+            
+            // Save changes to persistence
+            saveItem()
+        }
+    }
+    
+    // Move a subitem (for drag and drop reordering)
+    func moveSubitem(from sourceId: UUID, to destinationId: UUID) {
+        debugLog("moveSubitem", "moving subitem from \(sourceId.uuidString.prefix(8)) to \(destinationId.uuidString.prefix(8))")
+        
+        // Create a mutable copy of the item
+        var mutableItem = item
+        
+        // Get indices for the source and destination items
+        guard let sourceIndex = mutableItem.subItems.firstIndex(where: { $0.id == sourceId }),
+              let destinationIndex = mutableItem.subItems.firstIndex(where: { $0.id == destinationId }) else {
+            debugLog("moveSubitem", "couldn't find indices for source or destination")
+            return
+        }
+        
+        // Remove the source item and insert it at the destination index
+        let sourceItem = mutableItem.subItems.remove(at: sourceIndex)
+        
+        // Determine the insert location based on whether destination is before or after source
+        if sourceIndex < destinationIndex {
+            // If source was before destination, destination index is now one less after removal
+            mutableItem.subItems.insert(sourceItem, at: destinationIndex)
+        } else {
+            // If source was after destination, destination index is unchanged
+            mutableItem.subItems.insert(sourceItem, at: destinationIndex)
+        }
+        
+        // Update the published item
+        item = mutableItem
+        
+        // Save changes to persistence
+        saveItem()
+    }
+    
+    // Move a subitem to the end of the list
+    func moveSubitemToEnd(_ sourceId: UUID) {
+        debugLog("moveSubitemToEnd", "moving subitem \(sourceId.uuidString.prefix(8)) to end of list")
+        
+        // Create a mutable copy of the item
+        var mutableItem = item
+        
+        // Get index for the source item
+        guard let sourceIndex = mutableItem.subItems.firstIndex(where: { $0.id == sourceId }) else {
+            debugLog("moveSubitemToEnd", "couldn't find index for source")
+            return
+        }
+        
+        // Remove the source item and append it to the end
+        let sourceItem = mutableItem.subItems.remove(at: sourceIndex)
+        mutableItem.subItems.append(sourceItem)
+        
+        // Update the published item
+        item = mutableItem
+        
+        // Save changes to persistence
+        saveItem()
+    }
+    
+    // Handle standard SwiftUI List move operations
+    func moveSubitems(from source: IndexSet, to destination: Int) {
+        debugLog("moveSubitems", "moving from indices \(source) to position \(destination)")
+        
+        // Create a mutable copy of the item
+        var mutableItem = item
+        
+        // Use the standard move operation on the subItems array
+        mutableItem.subItems.move(fromOffsets: source, toOffset: destination)
+        
+        // Update the published item
+        item = mutableItem
+        
+        // Save changes to persistence
+        saveItem()
+    }
 } 

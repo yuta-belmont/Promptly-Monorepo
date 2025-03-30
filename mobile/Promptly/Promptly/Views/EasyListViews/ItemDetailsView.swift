@@ -7,6 +7,14 @@ struct ItemDetailsView: View {
     @State private var showingPopover = false
     @State private var isGroupSectionExpanded = false
     @FocusState private var isSubitemFieldFocused: Bool
+    @State private var isEditingTitle = false
+    @State private var editedTitleText = ""
+    @FocusState private var isTitleFieldFocused: Bool
+    @State private var editingSubitemId: UUID? = nil
+    @State private var editedSubitemText = ""
+    @FocusState private var isSubitemEditFieldFocused: Bool
+    // State for drag and drop functionality
+    @State private var draggedItem: Models.SubItem?
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
     init(item: Models.ChecklistItem, isPresented: Binding<Bool>) {
@@ -89,14 +97,52 @@ struct ItemDetailsView: View {
                 .padding(.bottom, 4)
                 
                 // Item title below header
-                Text(viewModel.item.title)
-                    .font(.title3)
-                    .foregroundColor(.white)
-                    .lineLimit(4)
-                    .strikethrough(viewModel.item.isCompleted, color: .gray)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
+                ZStack {
+                    if isEditingTitle {
+                        // Editable title field
+                        TextEditor(text: $editedTitleText)
+                            .font(.title3)
+                            .foregroundColor(.white)
+                            .scrollContentBackground(.hidden)
+                            .background(Color.clear)
+                            .padding(.horizontal)
+                            // Estimate height for a single line of text plus padding
+                            .frame(height: 48)
+                            .focused($isTitleFieldFocused)
+                            .onChange(of: editedTitleText) {_, newValue in
+                                // Check for Enter key
+                                if newValue.contains("\n") {
+                                    // Remove the newline character
+                                    editedTitleText = newValue.replacingOccurrences(of: "\n", with: "")
+                                    
+                                    // Save the title
+                                    saveTitle()
+                                }
+                            }
+                            .onAppear {
+                                // Set focus in the next run loop
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+                                    isTitleFieldFocused = true
+                                }
+                            }
+                    } else {
+                        // Static title text (tappable)
+                        Button(action: {
+                            startEditingTitle()
+                        }) {
+                            Text(viewModel.item.title)
+                                .font(.title3)
+                                .foregroundColor(.white)
+                                .lineLimit(4)
+                                .strikethrough(viewModel.item.isCompleted, color: .gray)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal)
+                                .padding(.bottom, 8)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
                 
                 // Divider between header section and content
                 Divider()
@@ -104,13 +150,12 @@ struct ItemDetailsView: View {
                     .padding(.horizontal)
                 
                 // Main item details
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        // Subitems section - only show if there are subitems or we want to add one
-                        VStack(alignment: .leading, spacing: 16) {
+                GeometryReader { geometry in
+                    ScrollViewReader { proxy in
+                        VStack(alignment: .leading, spacing: 20) {
                             if !viewModel.item.subItems.isEmpty {
-                                // List of subitems
-                                VStack(alignment: .leading, spacing: 16) {
+                                // List of subitems with standard SwiftUI drag and drop
+                                List {
                                     ForEach(viewModel.item.subItems) { subitem in
                                         HStack(alignment: .top, spacing: 12) {
                                             // Subitem status indicator with toggle functionality
@@ -124,21 +169,72 @@ struct ItemDetailsView: View {
                                             }
                                             .buttonStyle(.plain)
                                             
-                                            // Subitem title
-                                            Text(subitem.title)
-                                                .font(.body)
-                                                .foregroundColor(.white)
-                                                .lineLimit(3)
-                                                .strikethrough(subitem.isCompleted, color: .gray)
+                                            // Editable subitem title
+                                            ZStack {
+                                                if editingSubitemId == subitem.id {
+                                                    TextEditor(text: $editedSubitemText)
+                                                        .font(.body)
+                                                        .foregroundColor(.white)
+                                                        .scrollContentBackground(.hidden)
+                                                        .background(Color.clear)
+                                                        //these paddings are carefully curated for keeping same position between text editor and text
+                                                        .padding(.top, -4)
+                                                        .padding(.bottom, -6)
+                                                        .padding(.leading, -5)
+                                                        .focused($isSubitemEditFieldFocused)
+                                                        .onAppear {
+                                                            // Set focus in the next run loop
+                                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                                                isSubitemEditFieldFocused = true
+                                                            }
+                                                        }
+                                                } else {
+                                                    // Static subitem title (tappable)
+                                                    Button(action: {
+                                                        startEditingSubitem(subitem)
+                                                    }) {
+                                                        Text(subitem.title)
+                                                            .font(.body)
+                                                            .foregroundColor(.white)
+                                                            .lineLimit(3)
+                                                            .strikethrough(subitem.isCompleted, color: .gray)
+                                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                                            .padding(.vertical, 4)
+                                                            .contentShape(Rectangle())
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                }
+                                            }
+                                        }
+                                        .listRowBackground(Color.clear)
+                                        .listRowSeparator(.hidden)
+                                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                                        .id(subitem.id) // Ensure each row has a stable ID
+                                        .onAppear {
+                                            print("Row appeared: \(subitem.id) - \(subitem.title)")
                                         }
                                     }
+                                    .onMove(perform: { indices, destination in
+                                        print("MOVE CALLED - FROM: \(indices) TO: \(destination)")
+                                        viewModel.moveSubitems(from: indices, to: destination)
+                                    })
                                 }
-                                .padding(.horizontal)
+                                .listStyle(.plain)
+                                .environment(\.editMode, .constant(.active))
+                                .scrollContentBackground(.hidden)
+                                .padding(.horizontal, 0)
                                 .padding(.top, 8)
+                                // Just like EasyListView, use the geometry to size the List
+                                .frame(height: geometry.size.height * 0.7) // Use 70% of available height
+                                // Force List to update when items change
+                                .id("subitemsList-\(viewModel.item.subItems.map { $0.id.uuidString }.joined())")
+                                .onAppear {
+                                    print("List appeared with \(viewModel.item.subItems.count) items: \(viewModel.item.subItems.map { $0.title })")
+                                }
                             }
                             
                             // Add subitem field
-                            HStack(alignment: .top, spacing: 12) {
+                            HStack(alignment: .top, spacing: 6) {
                                 // Empty circle for new subitem (only visible when focused)
                                 if isSubitemFieldFocused {
                                     Image(systemName: "circle")
@@ -153,26 +249,46 @@ struct ItemDetailsView: View {
                                 }
                                 
                                 // Text field for new subitem
-                                TextField("Add subitem...", text: $newSubitemText)
+                                TextEditor(text: $newSubitemText)
                                     .font(.body)
                                     .foregroundColor(.white)
-                                    .submitLabel(.done)
+                                    .scrollContentBackground(.hidden)
+                                    .background(Color.clear)
+                                    .padding(.top, -4)
+                                    .padding(.bottom, -6)
+                                    .padding(.leading, 1)
                                     .focused($isSubitemFieldFocused)
-                                    .onSubmit {
-                                        if !newSubitemText.isEmpty {
-                                            viewModel.addSubitem(newSubitemText)
-                                            newSubitemText = ""
-                                            // Keep focus for adding multiple items
-                                            isSubitemFieldFocused = true
+                                    .onChange(of: newSubitemText) { _, newValue in
+                                        // Add a check for submitting by pressing Enter/Return
+                                        if newValue.contains("\n") {
+                                            // Remove the newline character
+                                            newSubitemText = newValue.replacingOccurrences(of: "\n", with: "")
+                                            
+                                            // Submit if not empty
+                                            if !newSubitemText.isEmpty {
+                                                viewModel.addSubitem(newSubitemText)
+                                                newSubitemText = ""
+                                                // Keep focus for adding multiple items
+                                                isSubitemFieldFocused = true
+                                            }
                                         }
                                     }
+                                    .overlay(
+                                        Text(newSubitemText.isEmpty ? "Add subitem..." : "")
+                                            .font(.body)
+                                            .foregroundColor(.white.opacity(0.5))
+                                            .padding(.leading, 5)
+                                            .padding(.top, 4)
+                                            .frame(maxWidth: .infinity, alignment: .leading),
+                                        alignment: .topLeading
+                                    )
                             }
                             .padding(.horizontal)
-                            .padding(.top, 8)
+                            .padding(.top, 0)
                             .animation(.easeInOut(duration: 0.2), value: isSubitemFieldFocused)
                         }
+                        .padding(.bottom, 20)
                     }
-                    .padding(.bottom, 20)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -190,14 +306,53 @@ struct ItemDetailsView: View {
         .onAppear {
             viewModel.loadDetails()
             feedbackGenerator.prepare()
+            
+            // Debug current item state
+            print("ItemDetailsView appeared with item ID: \(viewModel.item.id)")
+            print("Item has \(viewModel.item.subItems.count) subitems")
+            print("Subitem IDs: \(viewModel.item.subItems.map { $0.id })")
+            print("Subitem titles: \(viewModel.item.subItems.map { $0.title })")
+            
+            // Debug scroll view bounds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                print("Item still has \(viewModel.item.subItems.count) subitems after delay")
+            }
         }
         .onDisappear {
+            // Save any ongoing edits
+            if isEditingTitle {
+                saveTitle()
+            }
+            if editingSubitemId != nil {
+                saveSubitemEdit()
+            }
+            
+            // Save changes when view disappears
             viewModel.saveChanges()
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("NewChecklistAvailable"))) { notification in
             if let notificationDate = notification.object as? Date,
                Calendar.current.isDate(notificationDate, inSameDayAs: viewModel.item.date) {
                 viewModel.loadDetails()
+            }
+        }
+        .onTapGesture {
+            // When tapping outside of text fields, save any ongoing edits
+            if isEditingTitle {
+                saveTitle()
+            }
+            if editingSubitemId != nil {
+                saveSubitemEdit()
+            }
+        }
+        .onChange(of: isTitleFieldFocused) { _, newValue in
+            if !newValue && isEditingTitle {
+                saveTitle()
+            }
+        }
+        .onChange(of: isSubitemEditFieldFocused) { _, newValue in
+            if !newValue && editingSubitemId != nil {
+                saveSubitemEdit()
             }
         }
     }
@@ -314,5 +469,38 @@ private struct MetadataRow: View {
         formatter.dateStyle = .none
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+}
+
+// MARK: - Helper Methods
+extension ItemDetailsView {
+    
+    // Title editing methods
+    private func startEditingTitle() {
+        editedTitleText = viewModel.item.title
+        isEditingTitle = true
+    }
+    
+    private func saveTitle() {
+        guard !editedTitleText.isEmpty else { return }
+        if editedTitleText != viewModel.item.title {
+            viewModel.updateTitle(editedTitleText)
+        }
+        isEditingTitle = false
+    }
+    
+    // Subitem editing methods
+    private func startEditingSubitem(_ subitem: Models.SubItem) {
+        editingSubitemId = subitem.id
+        editedSubitemText = subitem.title
+    }
+    
+    private func saveSubitemEdit() {
+        guard let subitemId = editingSubitemId,
+              !editedSubitemText.isEmpty else { return }
+        if editedSubitemText != viewModel.item.subItems.first(where: { $0.id == subitemId })?.title {
+            viewModel.updateSubitemTitle(subitemId, newTitle: editedSubitemText)
+        }
+        self.editingSubitemId = nil
     }
 } 
