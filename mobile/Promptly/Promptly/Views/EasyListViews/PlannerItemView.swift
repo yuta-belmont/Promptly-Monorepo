@@ -124,12 +124,6 @@ private struct ItemMenuButton: View {
                     // Update data immediately
                     itemData.notification = newNotification
                     
-                    // For completed state visual feedback
-                    if newNotification != nil && itemData.isCompletedLocally {
-                        // When setting a notification, mark as incomplete for immediate UI feedback
-                        itemData.isCompletedLocally = false
-                    }
-                    
                     // Then call the parent callback to update the data model
                     metadataCallbacks.onNotificationChange?(newNotification)
                 },
@@ -160,7 +154,7 @@ private struct ItemMenuButton: View {
 // MARK: - Main item row component
 private struct MainItemRow: View {
     @Binding var itemData: MutablePlannerItemData
-    let onToggleItem: ((UUID) -> Void)?
+    let onToggleItem: ((UUID, Date?) -> Void)?
     let itemCallbacks: ItemCallbacks
     let metadataCallbacks: MetadataCallbacks
     let onTextTap: () -> Void
@@ -174,7 +168,7 @@ private struct MainItemRow: View {
                 // Update local state immediately
                 itemData.isCompletedLocally.toggle()
                 // Notify parent of the change
-                onToggleItem?(itemData.id)
+                onToggleItem?(itemData.id, itemData.notification)
             }) {
                 Image(systemName: itemData.isCompletedLocally ? "checkmark.circle.fill" : "circle")
                     .foregroundColor(itemData.isCompletedLocally ? .green : .gray)
@@ -191,10 +185,12 @@ private struct MainItemRow: View {
             )
             
             // Expand/collapse button
-            ExpandCollapseButton(
-                hasSubItems: !itemData.subItems.isEmpty,
-                areSubItemsExpanded: $itemData.areSubItemsExpanded
-            )
+            if !itemData.subItems.isEmpty {
+                ExpandCollapseButton(
+                    hasSubItems: !itemData.subItems.isEmpty,
+                    areSubItemsExpanded: $itemData.areSubItemsExpanded
+                )
+            }
             
             // Menu button
             ItemMenuButton(
@@ -323,6 +319,7 @@ private struct MetadataRow: View {
                         Text(formatNotificationTime(notificationTime))
                             .font(.footnote)
                             .foregroundColor(isPastDue ? .red.opacity(0.5) : .white.opacity(0.5))
+                            .strikethrough(itemData.isCompletedLocally, color: .gray)
                     }
                     .foregroundColor(notificationTime < Date() ? .red.opacity(0.5) : .white.opacity(0.5))
                 }
@@ -479,7 +476,7 @@ struct PlannerItemView: View, Equatable {
     }
     
     // Callbacks to parent
-    let onToggleItem: ((UUID) -> Void)?
+    let onToggleItem: ((UUID, Date?) -> Void)?
     let onToggleSubItem: ((UUID, UUID, Bool) -> Void)?
     let onLoseFocus: ((String) -> Void)?
     let onNotificationChange: ((Date?) -> Void)?
@@ -495,7 +492,7 @@ struct PlannerItemView: View, Equatable {
     
     init(
         displayData: PlannerItemDisplayData,
-        onToggleItem: ((UUID) -> Void)? = nil,
+        onToggleItem: ((UUID, Date?) -> Void)? = nil,
         onToggleSubItem: ((UUID, UUID, Bool) -> Void)? = nil,
         onLoseFocus: ((String) -> Void)? = nil,
         onNotificationChange: ((Date?) -> Void)? = nil,
@@ -593,6 +590,10 @@ struct PlannerItemView: View, Equatable {
             // Update group info when the groupId changes
             if newGroupId != nil {
                 _ = updateGroupInfo()
+            } else {
+                // When group is removed, clear the group info
+                itemData.groupTitle = nil
+                itemData.groupColor = nil
             }
         }
     }
@@ -612,7 +613,7 @@ struct PlannerItemView: View, Equatable {
 extension PlannerItemView {
     static func create(
         displayData: PlannerItemDisplayData,
-        onToggleItem: ((UUID) -> Void)? = nil,
+        onToggleItem: ((UUID, Date?) -> Void)? = nil,
         onToggleSubItem: ((UUID, UUID, Bool) -> Void)? = nil,
         onLoseFocus: ((String) -> Void)? = nil,
         onNotificationChange: ((Date?) -> Void)? = nil,

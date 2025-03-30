@@ -413,7 +413,7 @@ private struct ChatHeaderView: View {
                     }
                     .padding()
                     .frame(width: 280)
-                    .background(Color(.systemBackground))
+                    .background(.ultraThinMaterial)
                     .presentationCompactAdaptation(.none)
                 }
                 .allowsHitTesting(true)

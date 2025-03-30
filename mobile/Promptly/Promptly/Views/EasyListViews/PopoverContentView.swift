@@ -13,6 +13,7 @@ struct PopoverContentView: View {
     let onNotificationChange: ((Date?) -> Void)?
     let onGroupChange: ((UUID?) -> Void)?
     let onDelete: () -> Void
+    let showDeleteOption: Bool
     @State private var isNotificationEnabled: Bool
     @State private var selectedTime: Date
     @State private var isTestSectionExpanded: Bool = false
@@ -31,7 +32,8 @@ struct PopoverContentView: View {
         isGroupSectionExpanded: Binding<Bool>,
         onNotificationChange: ((Date?) -> Void)?,
         onGroupChange: ((UUID?) -> Void)? = nil,
-        onDelete: @escaping () -> Void
+        onDelete: @escaping () -> Void,
+        showDeleteOption: Bool = true
     ) {
         self.itemId = itemId
         self.itemDate = itemDate
@@ -42,6 +44,7 @@ struct PopoverContentView: View {
         self.onNotificationChange = onNotificationChange
         self.onGroupChange = onGroupChange
         self.onDelete = onDelete
+        self.showDeleteOption = showDeleteOption
         _isNotificationEnabled = State(initialValue: itemNotification != nil)
         _selectedTime = State(initialValue: itemNotification ?? Date())
     }
@@ -52,7 +55,8 @@ struct PopoverContentView: View {
         isGroupSectionExpanded: Binding<Bool>,
         onNotificationChange: ((Date?) -> Void)?,
         onGroupChange: ((UUID?) -> Void)? = nil,
-        onDelete: @escaping () -> Void
+        onDelete: @escaping () -> Void,
+        showDeleteOption: Bool = true
     ) {
         self.init(
             itemId: displayData.id,
@@ -62,7 +66,8 @@ struct PopoverContentView: View {
             isGroupSectionExpanded: isGroupSectionExpanded,
             onNotificationChange: onNotificationChange,
             onGroupChange: onGroupChange,
-            onDelete: onDelete
+            onDelete: onDelete,
+            showDeleteOption: showDeleteOption
         )
     }
     
@@ -246,42 +251,44 @@ struct PopoverContentView: View {
                 .cornerRadius(8)
                 .padding(.horizontal, 4)
             }
-            
-            Divider()
-                .background(Color.white.opacity(0.2))
 
-            // Delete Row - Entire row is tappable
-            Button(action: {
-                feedbackGenerator.impactOccurred()
-                
-                if deleteConfirmationActive {
-                    // Second tap - perform delete
-                    deleteTimer?.invalidate()
-                    deleteTimer = nil
-                    deleteConfirmationActive = false
-                    onDelete()
-                    // No need to wait for animation to complete - close popover immediately
-                } else {
-                    // First tap - start confirmation timer
-                    deleteConfirmationActive = true
-                    deleteTimer?.invalidate()
-                    deleteTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { _ in
+            // Only show delete button if showDeleteOption is true
+            if showDeleteOption {
+                Divider()
+                    .background(Color.white.opacity(0.2))
+                // Delete Row - Entire row is tappable
+                Button(action: {
+                    feedbackGenerator.impactOccurred()
+                    
+                    if deleteConfirmationActive {
+                        // Second tap - perform delete
+                        deleteTimer?.invalidate()
+                        deleteTimer = nil
                         deleteConfirmationActive = false
+                        onDelete()
+                        // No need to wait for animation to complete - close popover immediately
+                    } else {
+                        // First tap - start confirmation timer
+                        deleteConfirmationActive = true
+                        deleteTimer?.invalidate()
+                        deleteTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { _ in
+                            deleteConfirmationActive = false
+                        }
                     }
+                }) {
+                    HStack {
+                        Image(systemName: "trash")
+                            .frame(width: 24)
+                        Text(deleteConfirmationActive ? "Confirm" : "Delete")
+                        Spacer()
+                    }
+                    .foregroundColor(.red)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())  // Make entire area tappable
                 }
-            }) {
-                HStack {
-                    Image(systemName: "trash")
-                        .frame(width: 24)
-                    Text(deleteConfirmationActive ? "Confirm" : "Delete")
-                    Spacer()
-                }
-                .foregroundColor(.red)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .contentShape(Rectangle())  // Make entire area tappable
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .frame(width: 180)
         .background(.ultraThinMaterial)

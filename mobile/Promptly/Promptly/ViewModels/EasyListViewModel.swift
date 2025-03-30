@@ -228,23 +228,6 @@ final class EasyListViewModel: ObservableObject {
         deleteItems(at: IndexSet([index]))
     }
     
-    /// Updates the notification time for an item
-    func updateItemNotification(_ item: Models.ChecklistItem, with notification: Date?) {
-        guard let itemIndex = checklist.itemCollection.items.firstIndex(where: { $0.id == item.id }) else { return }
-        
-        // Directly update the item in the collection
-        checklist.itemCollection.items[itemIndex].notification = notification
-        
-        // Reset completion status if a notification is being set
-        if notification != nil {
-            checklist.itemCollection.items[itemIndex].isCompleted = false
-        }
-        
-        // Mark changes and save
-        hasUnsavedChanges = true
-        saveChecklist()
-    }
-    
     func deleteItems(at indexSet: IndexSet) {
         // Process items before deleting them
         for index in indexSet {
@@ -385,8 +368,13 @@ final class EasyListViewModel: ObservableObject {
     
     // MARK: - Group Management
     
-    func updateItemGroup(_ item: Models.ChecklistItem, with groupId: UUID?) {
-        guard let itemIndex = checklist.itemCollection.items.firstIndex(where: { $0.id == item.id }) else { return }
+    /// Updates the group for a specific item by ID
+    func updateItemGroup(itemId: UUID, with groupId: UUID?) {
+        guard let itemIndex = checklist.itemCollection.items.firstIndex(where: { $0.id == itemId }) else { 
+            return 
+        }
+        
+        let item = checklist.itemCollection.items[itemIndex]
         
         // If the item already belongs to a group, remove it from that group
         if let oldGroupId = item.groupId {
@@ -493,6 +481,8 @@ final class EasyListViewModel: ObservableObject {
         // Update the checklist by appending the new items directly to the collection
         checklist.itemCollection.items.append(contentsOf: itemsToActuallyImport)
         hasUnsavedChanges = true
+        saveChecklist()
+        reloadChecklist()
     }
     
     // MARK: - Refresh Functionality
@@ -507,17 +497,6 @@ final class EasyListViewModel: ObservableObject {
     }
     
     // MARK: - Item Toggling
-    
-    /// Toggles the completion state of a main checklist item
-    func toggleItemCompletion(_ item: Models.ChecklistItem) {
-        guard let itemIndex = checklist.itemCollection.items.firstIndex(where: { $0.id == item.id }) else { return }
-        
-        // Update the item in the checklist collection with the isCompleted state from the parameter
-        checklist.itemCollection.items[itemIndex].isCompleted = item.isCompleted
-        
-        // Mark changes for later saving
-        hasUnsavedChanges = true
-    }
     
     /// Toggles the completion state of a main checklist item by ID
     func toggleItemCompletion(itemId: UUID) {
@@ -541,19 +520,6 @@ final class EasyListViewModel: ObservableObject {
         // Update the sub-item's completion state
         checklist.itemCollection.items[itemIndex].subItemCollection.items[subItemIndex].isCompleted = isCompleted
         
-        // Update parent item completion based on subitems
-        let allSubItemsCompleted = checklist.itemCollection.items[itemIndex].subItems.allSatisfy { $0.isCompleted }
-        let anySubItemsIncomplete = checklist.itemCollection.items[itemIndex].subItems.contains { !$0.isCompleted }
-        
-        // If all subitems are complete, mark parent complete
-        if !checklist.itemCollection.items[itemIndex].subItems.isEmpty && allSubItemsCompleted {
-            checklist.itemCollection.items[itemIndex].isCompleted = true
-        }
-        // If any subitems are incomplete, mark parent incomplete
-        else if anySubItemsIncomplete {
-            checklist.itemCollection.items[itemIndex].isCompleted = false
-        }
-        
         // Mark changes for later saving
         hasUnsavedChanges = true
     }
@@ -574,47 +540,17 @@ final class EasyListViewModel: ObservableObject {
     
     /// Updates the notification for a specific item by ID
     func updateItemNotification(itemId: UUID, with notification: Date?) {
+        print("UPDATE ITEM NOTIFICATION called with date: \(String(describing: notification))")
         guard let itemIndex = checklist.itemCollection.items.firstIndex(where: { $0.id == itemId }) else { return }
         
         // Directly update the notification in the collection
         checklist.itemCollection.items[itemIndex].notification = notification
         
-        // Reset completion status if a notification is being set
-        if notification != nil {
-            checklist.itemCollection.items[itemIndex].isCompleted = false
-        }
+        // Update notification directly
+        let updatedItem = checklist.itemCollection.items[itemIndex]
+        notificationManager.updateNotificationForEditedItem(updatedItem, in: checklist)
         
         // Mark changes and save
-        hasUnsavedChanges = true
-        saveChecklist()
-    }
-    
-    /// Updates the group for a specific item by ID
-    func updateItemGroup(itemId: UUID, with groupId: UUID?) {
-        guard let itemIndex = checklist.itemCollection.items.firstIndex(where: { $0.id == itemId }) else { return }
-        let item = checklist.itemCollection.items[itemIndex]
-        
-        // If the item already belongs to a group, remove it from that group
-        if let oldGroupId = item.groupId {
-            groupStore.removeItemFromGroup(itemId: item.id, groupId: oldGroupId)
-        }
-        
-        if let newGroupId = groupId {
-            // Get the actual group object
-            let newGroup = groupStore.getGroup(by: newGroupId)
-            
-            // Update the group directly in the collection
-            checklist.itemCollection.items[itemIndex].updateGroup(newGroup)
-            
-            // Add the item to the group
-            let updatedItem = checklist.itemCollection.items[itemIndex]
-            groupStore.addItemToGroup(item: updatedItem, groupId: newGroupId)
-        } else {
-            // Clear the group
-            checklist.itemCollection.items[itemIndex].updateGroup(nil)
-        }
-        
-        // Mark changes to save later - consistent with other operations
         hasUnsavedChanges = true
     }
     

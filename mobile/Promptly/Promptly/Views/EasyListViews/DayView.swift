@@ -519,8 +519,10 @@ struct DayView: View, Hashable {
                                 .transition(.opacity)
                         }
                     }
-                    .animation(.easeInOut(duration: 0.2), value: showingItemDetails)
+                    .animation(.easeInOut(duration: 0.25), value: showingItemDetails)
                 }
+                .opacity(showingItemDetails ? 0 : 1) // Make the entire VStack transparent when showing item details
+                .animation(.easeInOut(duration: 0.25), value: showingItemDetails)
                 .onChange(of: showMenu) { oldValue, newValue in
                     if newValue {
                         removeAllFocus()
@@ -573,13 +575,17 @@ struct DayView: View, Hashable {
                 }
                 // Listen for ShowItemDetails notification
                 .onReceive(NotificationCenter.default.publisher(for: Notification.Name.showItemDetails)) { notification in
-                    if let item = notification.object as? Models.ChecklistItem {
+                    // Handle receiving item ID instead of the full item
+                    if let itemId = notification.object as? UUID {
                         // Clear all focus to ensure data is saved
                         removeAllFocus()
                         
-                        // Then show the details view
-                        selectedItem = item
-                        showingItemDetails = true
+                        // Fetch the latest version of the item directly from the view model
+                        if let freshItem = easyListViewModel.getItem(id: itemId) {
+                            // Update the selected item with the fresh version
+                            selectedItem = freshItem
+                            showingItemDetails = true
+                        }
                     }
                 }
             }
@@ -596,7 +602,7 @@ struct DayView: View, Hashable {
                     .zIndex(998)
                     .onTapGesture {
                         // Close if tap is outside the details view
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(.easeInOut(duration: 0.25)) {
                             showingItemDetails = false
                         }
                     }
@@ -606,11 +612,14 @@ struct DayView: View, Hashable {
                     item: item,
                     isPresented: $showingItemDetails
                 )
-                .transition(.opacity.combined(with: .scale(scale: 1.02)))
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                    removal: .move(edge: .bottom).combined(with: .opacity)
+                ))
                 .zIndex(999)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: showingItemDetails)
+        .animation(.easeInOut(duration: 0.25), value: showingItemDetails)
     }
     
     // Add these helper functions inside DayView struct

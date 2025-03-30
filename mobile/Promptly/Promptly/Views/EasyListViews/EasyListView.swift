@@ -1,14 +1,6 @@
 import SwiftUI
 import UIKit
 
-// Add debug helper function at the top
-/*
-private func debugLog(_ source: String, _ action: String) {
-    let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
-    print("\(timestamp) [EasyListView]: \(source) - \(action)")
-}
- */
-
 // Add preference key at the top of the file
 struct IsEditingPreferenceKey: PreferenceKey {
     static var defaultValue: Bool = false
@@ -488,10 +480,12 @@ struct ListContent: View {
         
         return PlannerItemView.create(
             displayData: displayData,
-            onToggleItem: { itemId in
+            onToggleItem: { itemId, itemNotification in
                 // Directly update the item in the EasyListViewModel by ID
                 viewModel.toggleItemCompletion(itemId: itemId)
                 // No need to post notification - view handles its own state
+                //print("EasyListView - onToggleItem - updating notification with: item.date=\(item.date), //item.notification=\(String(describing: item.notification))")
+                viewModel.updateItemNotification(itemId: itemId, with: itemNotification)
             },
             onToggleSubItem: { mainItemId, subItemId, isCompleted in
                 // Update the sub-item in the EasyListViewModel
@@ -510,19 +504,20 @@ struct ListContent: View {
             },
             onGroupChange: { groupId in
                 viewModel.updateItemGroup(itemId: item.id, with: groupId)
-                // No need to post notification - view handles its own state
             },
             onItemTap: { itemId in
-                // Remove any focus first, then post notification to show details
+                // Remove any focus first
                 isNewItemFocused = false
                 
-                // Pass the item up to DayView by posting a notification
-                if let item = viewModel.getItem(id: itemId) {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("ShowItemDetails"),
-                        object: item
-                    )
-                }
+                // Save checklist before opening details view
+                viewModel.saveChecklist()
+                
+                // Post only the item ID instead of the entire item
+                // This ensures that the ItemDetailsView will fetch the latest version of the item
+                NotificationCenter.default.post(
+                    name: Notification.Name("ShowItemDetails"),
+                    object: itemId
+                )
             }
         )
         // Individual ID is now set on the row above
@@ -938,6 +933,9 @@ struct EasyListView: View {
             if calendar.isDate(newChecklistDate, inSameDayAs: viewModel.date) {
                 viewModel.reloadChecklist()
             }
+        }
+        .onAppear() {
+           // viewModel.reloadChecklist()
         }
     }
 }

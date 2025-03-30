@@ -94,7 +94,7 @@ extension Models {
         
         // Update the group reference
         mutating func updateGroup(_ newGroup: ItemGroup?) {
-            self.group = newGroup
+            group = newGroup
         }
         
         // For backward compatibility - update using groupId
