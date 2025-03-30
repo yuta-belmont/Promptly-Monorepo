@@ -10,9 +10,18 @@ struct ItemDetailsView: View {
     @State private var isEditingTitle = false
     @State private var editedTitleText = ""
     @FocusState private var isTitleFieldFocused: Bool
-    @State private var editingSubitemId: UUID? = nil
+    @State private var editingSubitemId: UUID? = nil {
+        didSet {
+            print("🔴 editingSubitemId didSet - setting focus to: \(editingSubitemId?.uuidString ?? "nil")")
+            focusedSubitemId = editingSubitemId
+        }
+    }
     @State private var editedSubitemText = ""
-    @FocusState private var isSubitemEditFieldFocused: Bool
+    @FocusState private var focusedSubitemId: UUID? {
+        didSet {
+            print("⚪️ FocusState actually changed to: \(focusedSubitemId?.uuidString ?? "nil")")
+        }
+    }
     // State for drag and drop functionality
     @State private var draggedItem: Models.SubItem?
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
@@ -151,143 +160,73 @@ struct ItemDetailsView: View {
                 
                 // Main item details
                 GeometryReader { geometry in
-                    ScrollViewReader { proxy in
-                        VStack(alignment: .leading, spacing: 20) {
-                            if !viewModel.item.subItems.isEmpty {
-                                // List of subitems with standard SwiftUI drag and drop
-                                List {
-                                    ForEach(viewModel.item.subItems) { subitem in
-                                        HStack(alignment: .top, spacing: 12) {
-                                            // Subitem status indicator with toggle functionality
-                                            Button(action: {
-                                                feedbackGenerator.impactOccurred()
-                                                viewModel.toggleSubitemCompleted(subitemId: subitem.id)
-                                            }) {
-                                                Image(systemName: subitem.isCompleted ? "checkmark.circle.fill" : "circle")
-                                                    .foregroundColor(subitem.isCompleted ? .green : .gray)
-                                                    .font(.system(size: 20))
-                                            }
-                                            .buttonStyle(.plain)
-                                            
-                                            // Editable subitem title
-                                            ZStack {
-                                                if editingSubitemId == subitem.id {
-                                                    TextEditor(text: $editedSubitemText)
-                                                        .font(.body)
-                                                        .foregroundColor(.white)
-                                                        .scrollContentBackground(.hidden)
-                                                        .background(Color.clear)
-                                                        //these paddings are carefully curated for keeping same position between text editor and text
-                                                        .padding(.top, -4)
-                                                        .padding(.bottom, -6)
-                                                        .padding(.leading, -5)
-                                                        .focused($isSubitemEditFieldFocused)
-                                                        .onAppear {
-                                                            // Set focus in the next run loop
-                                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                                                isSubitemEditFieldFocused = true
-                                                            }
-                                                        }
-                                                } else {
-                                                    // Static subitem title (tappable)
-                                                    Button(action: {
-                                                        startEditingSubitem(subitem)
-                                                    }) {
-                                                        Text(subitem.title)
-                                                            .font(.body)
-                                                            .foregroundColor(.white)
-                                                            .lineLimit(3)
-                                                            .strikethrough(subitem.isCompleted, color: .gray)
-                                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                                            .padding(.vertical, 4)
-                                                            .contentShape(Rectangle())
-                                                    }
-                                                    .buttonStyle(.plain)
-                                                }
+                    ZStack(alignment: .bottom) {
+                        ScrollViewReader { proxy in
+                            List {
+                                ForEach(viewModel.item.subItems) { subitem in
+                                    SubItemView(
+                                        subitem: subitem,
+                                        onToggle: {
+                                            feedbackGenerator.impactOccurred()
+                                            viewModel.toggleSubitemCompleted(subitemId: subitem.id)
+                                        },
+                                        onTap: {
+                                            startEditingSubitem(subitem)
+                                        },
+                                        editingSubitemId: $editingSubitemId,
+                                        editedSubitemText: $editedSubitemText,
+                                        focusedSubitemId: $focusedSubitemId,
+                                        onSave: { newText in
+                                            if !newText.isEmpty {
+                                                viewModel.updateSubitemTitle(subitem.id, newTitle: newText)
                                             }
                                         }
-                                        .listRowBackground(Color.clear)
-                                        .listRowSeparator(.hidden)
-                                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                                        .id(subitem.id) // Ensure each row has a stable ID
-                                        .onAppear {
-                                            print("Row appeared: \(subitem.id) - \(subitem.title)")
-                                        }
-                                    }
-                                    .onMove(perform: { indices, destination in
-                                        print("MOVE CALLED - FROM: \(indices) TO: \(destination)")
-                                        viewModel.moveSubitems(from: indices, to: destination)
-                                    })
-                                }
-                                .listStyle(.plain)
-                                .environment(\.editMode, .constant(.active))
-                                .scrollContentBackground(.hidden)
-                                .padding(.horizontal, 0)
-                                .padding(.top, 8)
-                                // Just like EasyListView, use the geometry to size the List
-                                .frame(height: geometry.size.height * 0.7) // Use 70% of available height
-                                // Force List to update when items change
-                                .id("subitemsList-\(viewModel.item.subItems.map { $0.id.uuidString }.joined())")
-                                .onAppear {
-                                    print("List appeared with \(viewModel.item.subItems.count) items: \(viewModel.item.subItems.map { $0.title })")
-                                }
-                            }
-                            
-                            // Add subitem field
-                            HStack(alignment: .top, spacing: 6) {
-                                // Empty circle for new subitem (only visible when focused)
-                                if isSubitemFieldFocused {
-                                    Image(systemName: "circle")
-                                        .foregroundColor(.gray)
-                                        .font(.system(size: 20))
-                                        .transition(.opacity)
-                                } else {
-                                    // Placeholder with same width to maintain alignment
-                                    Color.clear
-                                        .frame(width: 20, height: 20)
-                                        .transition(.opacity)
-                                }
-                                
-                                // Text field for new subitem
-                                TextEditor(text: $newSubitemText)
-                                    .font(.body)
-                                    .foregroundColor(.white)
-                                    .scrollContentBackground(.hidden)
-                                    .background(Color.clear)
-                                    .padding(.top, -4)
-                                    .padding(.bottom, -6)
-                                    .padding(.leading, 1)
-                                    .focused($isSubitemFieldFocused)
-                                    .onChange(of: newSubitemText) { _, newValue in
-                                        // Add a check for submitting by pressing Enter/Return
-                                        if newValue.contains("\n") {
-                                            // Remove the newline character
-                                            newSubitemText = newValue.replacingOccurrences(of: "\n", with: "")
-                                            
-                                            // Submit if not empty
-                                            if !newSubitemText.isEmpty {
-                                                viewModel.addSubitem(newSubitemText)
-                                                newSubitemText = ""
-                                                // Keep focus for adding multiple items
-                                                isSubitemFieldFocused = true
-                                            }
-                                        }
-                                    }
-                                    .overlay(
-                                        Text(newSubitemText.isEmpty ? "Add subitem..." : "")
-                                            .font(.body)
-                                            .foregroundColor(.white.opacity(0.5))
-                                            .padding(.leading, 5)
-                                            .padding(.top, 4)
-                                            .frame(maxWidth: .infinity, alignment: .leading),
-                                        alignment: .topLeading
                                     )
+                                    .id(subitem.id)
+                                    .listRowBackground(Color.clear)
+                                    .listRowSeparator(.hidden)
+                                    .listRowInsets(EdgeInsets())
+                                }
+                                .onMove(perform: { indices, destination in
+                                    viewModel.moveSubitems(from: indices, to: destination)
+                                })
+                                
+                                NewSubItemRow(
+                                    text: $newSubitemText,
+                                    isFocused: $isSubitemFieldFocused,
+                                    onSubmit: {
+                                        if !newSubitemText.isEmpty {
+                                            viewModel.addSubitem(newSubitemText)
+                                            newSubitemText = ""
+                                            isSubitemFieldFocused = true
+                                        }
+                                    }
+                                )
+                                .id("newSubItemRow")
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets())
+                                
+                                Color.clear.frame(height: 44)
+                                    .listRowBackground(Color.clear)
+                                    .listRowInsets(EdgeInsets())
+                                    .listRowSeparator(.hidden)
                             }
-                            .padding(.horizontal)
-                            .padding(.top, 0)
-                            .animation(.easeInOut(duration: 0.2), value: isSubitemFieldFocused)
+                            .listStyle(.plain)
+                            .environment(\.defaultMinListRowHeight, 0)
+                            .scrollContentBackground(.hidden)
+                            .frame(height: geometry.size.height * 0.7)
+                            .onChange(of: newSubitemText) { _, newValue in
+                                if newValue.contains("\n") {
+                                    newSubitemText = newValue.replacingOccurrences(of: "\n", with: "")
+                                    if !newSubitemText.isEmpty {
+                                        viewModel.addSubitem(newSubitemText)
+                                        newSubitemText = ""
+                                        isSubitemFieldFocused = true
+                                    }
+                                }
+                            }
                         }
-                        .padding(.bottom, 20)
                     }
                 }
             }
@@ -336,22 +275,14 @@ struct ItemDetailsView: View {
                 viewModel.loadDetails()
             }
         }
-        .onTapGesture {
-            // When tapping outside of text fields, save any ongoing edits
-            if isEditingTitle {
-                saveTitle()
-            }
-            if editingSubitemId != nil {
-                saveSubitemEdit()
-            }
-        }
         .onChange(of: isTitleFieldFocused) { _, newValue in
             if !newValue && isEditingTitle {
                 saveTitle()
             }
         }
-        .onChange(of: isSubitemEditFieldFocused) { _, newValue in
-            if !newValue && editingSubitemId != nil {
+        .onChange(of: focusedSubitemId) { oldValue, newValue in
+            print("🟤 Focus onChange: \(oldValue?.uuidString ?? "nil") -> \(newValue?.uuidString ?? "nil")")
+            if newValue == nil && editingSubitemId != nil {
                 saveSubitemEdit()
             }
         }
@@ -491,8 +422,10 @@ extension ItemDetailsView {
     
     // Subitem editing methods
     private func startEditingSubitem(_ subitem: Models.SubItem) {
+        print("🟡 startEditingSubitem called")
         editingSubitemId = subitem.id
         editedSubitemText = subitem.title
+        print("🟡 editingSubitemId set to: \(subitem.id)")
     }
     
     private func saveSubitemEdit() {
@@ -502,5 +435,128 @@ extension ItemDetailsView {
             viewModel.updateSubitemTitle(subitemId, newTitle: editedSubitemText)
         }
         self.editingSubitemId = nil
+    }
+}
+
+// Add SubItemView definition
+private struct SubItemView: View {
+    let subitem: Models.SubItem
+    let onToggle: () -> Void
+    let onTap: () -> Void
+    @Binding var editingSubitemId: UUID?
+    @Binding var editedSubitemText: String
+    @FocusState.Binding var focusedSubitemId: UUID?
+    let onSave: (String) -> Void
+    @State private var isPreloading = false
+    
+    var body: some View {
+        let _ = print("📋 SubItemView body called for id: \(subitem.id), isEditing: \(editingSubitemId == subitem.id)")
+        
+        HStack(alignment: .top, spacing: 12) {
+            Button(action: onToggle) {
+                Image(systemName: subitem.isCompleted ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(subitem.isCompleted ? .green : .gray)
+                    .font(.system(size: 20))
+            }
+            .buttonStyle(.plain)
+            
+            ZStack {
+                if editingSubitemId != subitem.id || isPreloading {
+                    Text(subitem.title)
+                        .font(.body)
+                        .foregroundColor(.white)
+                        .lineLimit(3)
+                        .strikethrough(subitem.isCompleted, color: .gray)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 6)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            print("🔵 Text tapped, setting isPreloading = true")
+                            isPreloading = true
+                            DispatchQueue.main.async {
+                                print("🔵 Async: setting isPreloading = false and calling onTap")
+                                isPreloading = false
+                                onTap()
+                            }
+                        }
+                }
+                
+                if editingSubitemId == subitem.id || isPreloading {
+                    TextEditor(text: $editedSubitemText)
+                        .font(.body)
+                        .foregroundColor(.white)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.clear)
+                        .padding(.vertical, 0)
+                        .padding(.leading, 0)
+                        .focused($focusedSubitemId, equals: subitem.id)
+                        .opacity(isPreloading ? 0 : 1)
+                        .onChange(of: isPreloading) { oldValue, newValue in
+                            print("🟢 TextEditor isPreloading changed: \(oldValue) -> \(newValue)")
+                            if !newValue {
+                                print("🟢 TextEditor should now be visible")
+                            }
+                        }
+                        .onAppear {
+                            print("🟣 TextEditor appeared, isPreloading: \(isPreloading), focused: \(focusedSubitemId == subitem.id), id: \(subitem.id)")
+                        }
+                        .onDisappear {
+                            print("⚫️ TextEditor disappeared for id: \(subitem.id)")
+                        }
+                        .task {
+                            print("🎯 TextEditor task started for id: \(subitem.id)")
+                        }
+                        .onChange(of: focusedSubitemId) { oldValue, newValue in
+                            print("🔮 TextEditor focus changed: \(oldValue?.uuidString ?? "nil") -> \(newValue?.uuidString ?? "nil"), id: \(subitem.id)")
+                        }
+                }
+            }
+        }
+        .contentShape(Rectangle())
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets())
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
+    }
+}
+
+// Add NewSubItemRow component before SubItemView
+private struct NewSubItemRow: View {
+    @Binding var text: String
+    let isFocused: FocusState<Bool>.Binding
+    let onSubmit: () -> Void
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "circle")
+                .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0))
+                .font(.system(size: 20))
+                .transition(.opacity)
+            
+            TextEditor(text: $text)
+                .font(.body)
+                .foregroundColor(.white)
+                .scrollContentBackground(.hidden)
+                .background(Color.clear)
+                .focused(isFocused)
+                .border(.purple, width: 0.5)
+                .overlay(
+                    Text(text.isEmpty ? "Add subitem..." : "")
+                        .font(.body)
+                        .foregroundColor(.white.opacity(0.5))
+                        .padding(.leading, 10)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .border(.yellow, width: 0.5),
+                    alignment: .topLeading
+                )
+        }
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets())
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
     }
 } 
