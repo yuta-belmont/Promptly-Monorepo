@@ -1,3 +1,4 @@
+//ViewModifiers.swift
 import SwiftUI
 
 // MARK: - View Extensions
@@ -10,6 +11,6 @@ extension View {
     
     /// Applies the standard material background with gradient overlay used in headers
     func headerBackground() -> some View {
-        background(Color.black.opacity(0.5))
+        background(Color.black.opacity(0.35))
     }
 } 

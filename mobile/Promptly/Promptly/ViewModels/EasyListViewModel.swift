@@ -44,6 +44,7 @@ struct PlannerItemDisplayData: Identifiable, Equatable {
     let groupColor: Color?
     let subItems: [SubItemDisplayData]
     let date: Date  // For API compatibility when needed
+    let lastModified: Date? // Optional timestamp for forcing view updates
     
     struct SubItemDisplayData: Identifiable, Equatable {
         let id: UUID
@@ -83,7 +84,8 @@ struct PlannerItemDisplayData: Identifiable, Equatable {
                     isCompleted: subItem.isCompleted
                 )
             },
-            date: item.date
+            date: item.date,
+            lastModified: item.lastModified // Pass through the optional lastModified
         )
     }
 }

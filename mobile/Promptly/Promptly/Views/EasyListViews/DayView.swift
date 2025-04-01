@@ -583,6 +583,20 @@ struct DayView: View, Hashable {
                         }
                     }
                 }
+                // Listen for ItemDetailsUpdated notification
+                .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ItemDetailsUpdated"))) { notification in
+                    if let updatedItemId = notification.object as? UUID {
+                        // Reload the checklist data
+                        DispatchQueue.main.async {
+                            easyListViewModel.reloadChecklist()
+                            
+                            // Close the details view with animation
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                showingItemDetails = false
+                            }
+                        }
+                    }
+                }
             }
             .navigationBarBackButtonHidden(true)
             .preference(key: RemoveFocusPreferenceKey.self, value: FocusRemovalAction(removeAllFocus: removeAllFocus))

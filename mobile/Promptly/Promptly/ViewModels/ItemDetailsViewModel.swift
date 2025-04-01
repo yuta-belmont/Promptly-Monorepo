@@ -4,6 +4,7 @@ import Combine
 
 // Add debug helper function at the top
 private func debugLog(_ source: String, _ action: String) {
+    return
     let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
     print("\(timestamp) [ItemDetailsViewModel]: \(source) - \(action)")
 }
@@ -370,6 +371,57 @@ final class ItemDetailsViewModel: ObservableObject {
         
         // Remove the subitem
         mutableItem.subItems.removeAll { $0.id == subitemId }
+        
+        // Update the published item
+        item = mutableItem
+        
+        // Save changes to persistence
+        saveItem()
+    }
+    
+    // Delete all subitems
+    func deleteAllSubitems() {
+        debugLog("deleteAllSubitems", "deleting all subitems")
+        
+        // Create a mutable copy of the item
+        var mutableItem = item
+        
+        // Remove all subitems
+        mutableItem.subItems.removeAll()
+        
+        // Update the published item
+        item = mutableItem
+        
+        // Save changes to persistence
+        saveItem()
+    }
+    
+    // Delete completed subitems
+    func deleteCompletedSubitems() {
+        debugLog("deleteCompletedSubitems", "deleting completed subitems")
+        
+        // Create a mutable copy of the item
+        var mutableItem = item
+        
+        // Remove completed subitems
+        mutableItem.subItems.removeAll { $0.isCompleted }
+        
+        // Update the published item
+        item = mutableItem
+        
+        // Save changes to persistence
+        saveItem()
+    }
+    
+    // Delete incomplete subitems
+    func deleteIncompleteSubitems() {
+        debugLog("deleteIncompleteSubitems", "deleting incomplete subitems")
+        
+        // Create a mutable copy of the item
+        var mutableItem = item
+        
+        // Remove incomplete subitems
+        mutableItem.subItems.removeAll { !$0.isCompleted }
         
         // Update the published item
         item = mutableItem

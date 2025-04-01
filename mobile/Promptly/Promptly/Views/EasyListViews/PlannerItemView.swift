@@ -157,7 +157,6 @@ private struct MainItemRow: View {
     let onToggleItem: ((UUID, Date?) -> Void)?
     let itemCallbacks: ItemCallbacks
     let metadataCallbacks: MetadataCallbacks
-    let onTextTap: () -> Void
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
     var body: some View {
@@ -180,8 +179,7 @@ private struct MainItemRow: View {
             // Text input area
             ItemTextInputArea(
                 title: itemData.title,
-                isCompletedLocally: itemData.isCompletedLocally,
-                onTextTap: onTextTap
+                isCompletedLocally: itemData.isCompletedLocally
             )
             
             // Expand/collapse button
@@ -212,8 +210,6 @@ private struct MainItemRow: View {
 private struct ItemTextInputArea: View {
     let title: String
     let isCompletedLocally: Bool
-    let onTextTap: () -> Void
-    
     // Simplified properties
     private var displayText: String {
         title.isEmpty ? "Enter task here..." : title
@@ -239,9 +235,6 @@ private struct ItemTextInputArea: View {
             .padding(.horizontal, 5)
             .opacity(textOpacity)
             .contentShape(Rectangle())
-            .onTapGesture {
-                onTextTap()
-            }
     }
 }
 
@@ -337,7 +330,6 @@ private struct SubItemRowView: View {
     let subItem: PlannerItemDisplayData.SubItemDisplayData
     @Binding var itemData: MutablePlannerItemData
     let onToggleSubItem: ((UUID, UUID, Bool) -> Void)?
-    let onSubItemTap: (() -> Void)?  // New callback for tapping the subitem row
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
 
     // Computed property to get the local completion state
@@ -348,7 +340,7 @@ private struct SubItemRowView: View {
     
     var body: some View {
         HStack(spacing: 0) {
-            // Direct toggle with local state update
+            // Checkbox button
             Button(action: {
                 debugLog("SubItemRowView", "checkbox button tapped")
                 feedbackGenerator.impactOccurred()
@@ -382,12 +374,6 @@ private struct SubItemRowView: View {
                 .opacity(isSubItemCompletedLocally ? 0.7 : 1.0)
                 .frame(maxWidth: UIScreen.main.bounds.width * 0.78, alignment: .leading)
                 .padding(.vertical, 3)
-                .contentShape(Rectangle()) // Make text area tappable
-                .onTapGesture {
-                    if let onTap = onSubItemTap {
-                        onTap()
-                    }
-                }
         }
         .padding(.leading, 0)
         .frame(height: 30)
@@ -401,18 +387,13 @@ private struct SubItemRowView: View {
 private struct SubItemListView: View {
     @Binding var itemData: MutablePlannerItemData
     let onToggleSubItem: ((UUID, UUID, Bool) -> Void)?
-    let onItemTap: ((UUID) -> Void)?  // Add parameter to pass down the callback
     
     var body: some View {
         ForEach(itemData.subItems, id: \.id) { subItem in
             SubItemRowView(
                 subItem: subItem,
                 itemData: $itemData,
-                onToggleSubItem: onToggleSubItem,
-                onSubItemTap: {
-                    // Call the parent item's tap handler when a subitem is tapped
-                    onItemTap?(itemData.id)
-                }
+                onToggleSubItem: onToggleSubItem
             )
             .id("subitem-\(itemData.id.uuidString)-\(subItem.id.uuidString)-\(subItem.isCompleted.description)")
         }
@@ -423,7 +404,6 @@ private struct SubItemListView: View {
 private struct SubItemsSection: View {
     @Binding var itemData: MutablePlannerItemData
     let onToggleSubItem: ((UUID, UUID, Bool) -> Void)?
-    let onItemTap: ((UUID) -> Void)?  // Add parameter to pass down the callback
     
     var body: some View {
         if itemData.areSubItemsExpanded {
@@ -437,8 +417,7 @@ private struct SubItemsSection: View {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     SubItemListView(
                         itemData: $itemData,
-                        onToggleSubItem: onToggleSubItem,
-                        onItemTap: onItemTap  // Pass down the callback
+                        onToggleSubItem: onToggleSubItem
                     )
                     .id("subitems-list-\(itemData.id.uuidString)-\(itemData.subItems.count)")
                 }
@@ -458,6 +437,9 @@ struct PlannerItemView: View, Equatable {
     // Single mutable state source that combines displayData and localState
     @State private var itemData: MutablePlannerItemData
     @State private var isGlowing: Bool = false
+    
+    // Store the display data to observe changes
+    let displayData: PlannerItemDisplayData
     
     // Direct access to GroupStore for current group info
     @ObservedObject private var groupStore = GroupStore.shared
@@ -485,6 +467,16 @@ struct PlannerItemView: View, Equatable {
     
     // MARK: - Equatable Implementation
     static func == (lhs: PlannerItemView, rhs: PlannerItemView) -> Bool {
+        // If both have lastModified timestamps, compare them
+        if let lhsModified = lhs.displayData.lastModified,
+           let rhsModified = rhs.displayData.lastModified {
+            return lhs.itemData.id == rhs.itemData.id && 
+                   lhs.itemData.isCompleted == rhs.itemData.isCompleted && 
+                   lhs.itemData.title == rhs.itemData.title &&
+                   lhsModified == rhsModified
+        }
+        
+        // If either doesn't have lastModified, just compare the other fields
         return lhs.itemData.id == rhs.itemData.id && 
                lhs.itemData.isCompleted == rhs.itemData.isCompleted && 
                lhs.itemData.title == rhs.itemData.title
@@ -499,6 +491,8 @@ struct PlannerItemView: View, Equatable {
         onGroupChange: ((UUID?) -> Void)? = nil,
         onItemTap: ((UUID) -> Void)? = nil
     ) {
+        // Store the display data
+        self.displayData = displayData
         // Initialize the itemData from displayData
         self._itemData = State(initialValue: MutablePlannerItemData(from: displayData))
         
@@ -521,10 +515,7 @@ struct PlannerItemView: View, Equatable {
                 metadataCallbacks: MetadataCallbacks(
                     onNotificationChange: onNotificationChange,
                     onGroupChange: onGroupChange
-                ),
-                onTextTap: {
-                    onItemTap?(itemData.id)
-                }
+                )
             )
             
             MetadataRow(
@@ -533,8 +524,7 @@ struct PlannerItemView: View, Equatable {
             
             SubItemsSection(
                 itemData: $itemData,
-                onToggleSubItem: onToggleSubItem,
-                onItemTap: onItemTap  // Pass the onItemTap callback to SubItemsSection
+                onToggleSubItem: onToggleSubItem
             )
         }
         .padding(.vertical, 6)
@@ -564,6 +554,17 @@ struct PlannerItemView: View, Equatable {
         .opacity(itemData.opacity)
         .padding(.horizontal, 4)
         .padding(.vertical, 2)
+        .contentShape(Rectangle()) // Make the entire view tappable
+        .onTapGesture {
+            // Trigger tap glow animation
+            isGlowing = true
+            DispatchQueue.main.asyncAfter(deadline: .now()) {
+                withAnimation(.easeInOut(duration: 0.5)) {
+                    isGlowing = false
+                }
+            }
+            onItemTap?(itemData.id)
+        }
         .listRowSeparator(.hidden)
         // Watch for local completed state changes to trigger animations
         .onChange(of: itemData.isCompletedLocally) { _, isCompleted in
@@ -595,6 +596,9 @@ struct PlannerItemView: View, Equatable {
                 itemData.groupTitle = nil
                 itemData.groupColor = nil
             }
+        }
+        .onChange(of: displayData) { _, newDisplayData in
+            itemData = MutablePlannerItemData(from: newDisplayData)
         }
     }
     

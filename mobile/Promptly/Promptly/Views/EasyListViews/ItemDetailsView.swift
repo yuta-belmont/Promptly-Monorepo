@@ -5,6 +5,8 @@ struct ItemDetailsView: View {
     @StateObject private var viewModel: ItemDetailsViewModel
     @State private var newSubitemText = ""
     @State private var showingPopover = false
+    @State private var showingDeleteConfirmation = false
+    @State private var deleteConfirmationActive = false
     @State private var isGroupSectionExpanded = false
     @FocusState private var isSubitemFieldFocused: Bool
     @State private var isEditingTitle = false
@@ -98,109 +100,7 @@ struct ItemDetailsView: View {
         ZStack {
             // Main content
             VStack(spacing: 0) {
-                // Header with controls
-                HStack(alignment: .center, spacing: 8) {
-                    // Checkbox for completion status
-                    Button(action: {
-                        feedbackGenerator.impactOccurred()
-                        viewModel.toggleCompleted()
-                    }) {
-                        Image(systemName: viewModel.item.isCompleted ? "checkmark.circle.fill" : "circle")
-                            .foregroundColor(viewModel.item.isCompleted ? .green : .gray)
-                            .font(.system(size: 24))
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // Metadata in the middle (metadata row component reused)
-                    MetadataRowCompact(item: viewModel.item)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .id("metadata-\(viewModel.item.id)-\(viewModel.item.groupId?.uuidString ?? "none")-\(viewModel.item.notification?.timeIntervalSince1970 ?? 0)-\(viewModel.item.isCompleted)")
-                        .animation(.easeInOut, value: viewModel.item.isCompleted)
-                    
-                    // Add subitem button
-                    if !isSubitemFieldFocused {
-                        Button(action: {
-                            feedbackGenerator.impactOccurred()
-                            isSubitemFieldFocused = true
-                            //post notification to scroll to bottom (we need to do this in case the field isn't
-                            //visible so we can actually add focus
-                            NotificationCenter.default.post(
-                                name: NSNotification.Name("ScrollToNewSubitemRow"),
-                                object: nil
-                            )
-
-                        }) {
-                            Image(systemName: "plus")
-                                .foregroundColor(.white.opacity(0.6))
-                                .font(.system(size: 20))
-                                .frame(width: 30, height: 30)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    
-                    // Ellipsis menu button
-                    Button(action: {
-                        isGroupSectionExpanded = false
-                        showingPopover = true
-                    }) {
-                        Image(systemName: "ellipsis")
-                            .rotationEffect(.degrees(90))
-                            .foregroundColor(.white.opacity(0.6))
-                            .font(.system(size: 16))
-                            .frame(width: 30, height: 30)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showingPopover,
-                             attachmentAnchor: .point(.center),
-                             arrowEdge: .top) {
-                        PopoverContentView(
-                            itemId: viewModel.item.id,
-                            itemDate: viewModel.item.date,
-                            itemNotification: viewModel.item.notification,
-                            itemGroupId: viewModel.item.groupId,
-                            isGroupSectionExpanded: $isGroupSectionExpanded,
-                            onNotificationChange: { newNotification in
-                                viewModel.updateNotification(newNotification)
-                            },
-                            onGroupChange: { newGroupId in
-                                viewModel.updateGroup(newGroupId)
-                            },
-                            onDelete: {},
-                            showDeleteOption: false
-                        )
-                        .presentationCompactAdaptation(.none)
-                    }
-                    
-                    if isAnyFieldFocused {
-                        // Done button
-                        Button(action: {
-                            removeAllFocus()
-                        }) {
-                            Text("Done")
-                                .foregroundColor(.blue)
-                                .font(.system(size: 17, weight: .regular))
-                                .padding(.horizontal, 8)
-                        }
-                    } else {
-                        // Close (X) button
-                        Button(action: {
-                            // Use animation to ensure smooth transition back to EasyListView
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                isPresented = false
-                            }
-                        }) {
-                            Image(systemName: "xmark")
-                                .foregroundColor(.white.opacity(0.8))
-                                .font(.system(size: 18, weight: .medium))
-                                .padding(6)
-                        }
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.top, 10)
-                .padding(.bottom, 4)
+                headerView
                 
                 // Item title below header
                 ZStack {
@@ -399,6 +299,12 @@ struct ItemDetailsView: View {
             print("💾 About to save all changes...")
             viewModel.saveChanges()
             print("✨ All changes saved")
+            
+            // Post notification that item was updated
+            NotificationCenter.default.post(
+                name: Notification.Name("ItemDetailsUpdated"),
+                object: viewModel.item.id
+            )
         }
         .onChange(of: isTitleFieldFocused) { _, newValue in
             if !newValue && isEditingTitle {
@@ -417,6 +323,154 @@ struct ItemDetailsView: View {
                 }
             } else {
                 print("⏭️ Skipping focus change handling during focus removal process")
+            }
+        }
+    }
+    
+    private var headerView: some View {
+        HStack(alignment: .center, spacing: 8) {
+            // Checkbox
+            checkboxButton
+            
+            // Metadata
+            MetadataRowCompact(item: viewModel.item)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .id("metadata-\(viewModel.item.id)-\(viewModel.item.groupId?.uuidString ?? "none")-\(viewModel.item.notification?.timeIntervalSince1970 ?? 0)-\(viewModel.item.isCompleted)")
+                .animation(.easeInOut, value: viewModel.item.isCompleted)
+            
+            // Action buttons
+            if !isSubitemFieldFocused {
+                actionButtons
+            }
+            
+            // Menu and close buttons
+            menuAndCloseButtons
+        }
+        .padding(.horizontal)
+        .padding(.top, 10)
+        .padding(.bottom, 12)
+    }
+    
+    private var checkboxButton: some View {
+        Button(action: {
+            feedbackGenerator.impactOccurred()
+            viewModel.toggleCompleted()
+        }) {
+            Image(systemName: viewModel.item.isCompleted ? "checkmark.circle.fill" : "circle")
+                .foregroundColor(viewModel.item.isCompleted ? .green : .gray)
+                .font(.system(size: 24))
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var actionButtons: some View {
+        Group {
+                // Ellipsis menu button
+                Button(action: {
+                    isGroupSectionExpanded = false
+                    showingPopover = true
+                }) {
+                    Image(systemName: "ellipsis")
+                        .rotationEffect(.degrees(90))
+                        .foregroundColor(.white.opacity(0.6))
+                        .font(.system(size: 16))
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showingPopover,
+                         attachmentAnchor: .point(.center),
+                         arrowEdge: .top) {
+                    PopoverContentView(
+                        itemId: viewModel.item.id,
+                        itemDate: viewModel.item.date,
+                        itemNotification: viewModel.item.notification,
+                        itemGroupId: viewModel.item.groupId,
+                        isGroupSectionExpanded: $isGroupSectionExpanded,
+                        onNotificationChange: { newNotification in
+                            viewModel.updateNotification(newNotification)
+                        },
+                        onGroupChange: { newGroupId in
+                            viewModel.updateGroup(newGroupId)
+                        },
+                        onDelete: {},
+                        showDeleteOption: false
+                    )
+                    .presentationCompactAdaptation(.none)
+                }
+            // Add button
+            Button(action: {
+                feedbackGenerator.impactOccurred()
+                isSubitemFieldFocused = true
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("ScrollToNewSubitemRow"),
+                    object: nil
+                )
+            }) {
+                Image(systemName: "plus")
+                    .foregroundColor(.white.opacity(0.6))
+                    .font(.system(size: 20))
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
+            // Delete button
+            Button(action: {
+                feedbackGenerator.impactOccurred()
+                showingDeleteConfirmation = true
+            }) {
+                Image(systemName: "trash")
+                    .foregroundColor(.white.opacity(0.6))
+                    .font(.system(size: 20))
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .top) {
+                SubitemDeleteConfirmationView(
+                    isPresented: $showingDeleteConfirmation,
+                    isConfirmationActive: $deleteConfirmationActive,
+                    onDeleteAll: {
+                        viewModel.deleteAllSubitems()
+                    },
+                    onDeleteCompleted: {
+                        viewModel.deleteCompletedSubitems()
+                    },
+                    onDeleteIncomplete: {
+                        viewModel.deleteIncompleteSubitems()
+                    },
+                    feedbackGenerator: feedbackGenerator
+                )
+            }
+        }
+    }
+    
+    private var menuAndCloseButtons: some View {
+        Group {
+            
+            if isAnyFieldFocused {
+                // Done button
+                Button(action: {
+                    removeAllFocus()
+                }) {
+                    Text("Done")
+                        .foregroundColor(.blue)
+                        .font(.system(size: 17, weight: .regular))
+                        .padding(.horizontal, 8)
+                }
+            } else {
+                // Close button
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        isPresented = false
+                    }
+                }) {
+                    Image(systemName: "xmark")
+                        .foregroundColor(.white.opacity(0.8))
+                        .font(.system(size: 18, weight: .medium))
+                        .padding(6)
+                }
             }
         }
     }
@@ -787,5 +841,135 @@ private struct NewSubItemRow: View {
         .listRowInsets(EdgeInsets())
         .padding(.horizontal, 16)
         .padding(.vertical, 4)
+    }
+}
+
+// Add DeleteConfirmationView for subitems before the ItemDetailsView struct
+private struct SubitemDeleteConfirmationView: View {
+    @Binding var isPresented: Bool
+    @Binding var isConfirmationActive: Bool
+    let onDeleteAll: () -> Void
+    let onDeleteCompleted: () -> Void
+    let onDeleteIncomplete: () -> Void
+    let feedbackGenerator: UIImpactFeedbackGenerator
+    @State private var deleteTimer: Timer?
+    @State private var selectedOption: DeleteOption = .all
+    
+    enum DeleteOption {
+        case all, completed, incomplete
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Delete All Subitems Option
+            Button(action: {
+                feedbackGenerator.impactOccurred()
+                
+                if isConfirmationActive && selectedOption == .all {
+                    deleteTimer?.invalidate()
+                    deleteTimer = nil
+                    isConfirmationActive = false
+                    onDeleteAll()
+                    isPresented = false
+                } else {
+                    selectedOption = .all
+                    isConfirmationActive = true
+                    resetTimer()
+                }
+            }) {
+                HStack {
+                    Image(systemName: "trash")
+                        .frame(width: 24)
+                    Text(isConfirmationActive && selectedOption == .all ? "Confirm" : "Delete All")
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .foregroundColor(.red)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
+            Divider()
+                .background(Color.white.opacity(0.2))
+            
+            // Delete Completed Subitems Option
+            Button(action: {
+                feedbackGenerator.impactOccurred()
+                
+                if isConfirmationActive && selectedOption == .completed {
+                    deleteTimer?.invalidate()
+                    deleteTimer = nil
+                    isConfirmationActive = false
+                    onDeleteCompleted()
+                    isPresented = false
+                } else {
+                    selectedOption = .completed
+                    isConfirmationActive = true
+                    resetTimer()
+                }
+            }) {
+                HStack {
+                    Image(systemName: "checkmark.circle")
+                        .frame(width: 24)
+                    Text(isConfirmationActive && selectedOption == .completed ? "Confirm" : "Delete Completed")
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .foregroundColor(.red)
+                .opacity(0.7)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
+            Divider()
+                .background(Color.white.opacity(0.2))
+            
+            // Delete Incomplete Subitems Option
+            Button(action: {
+                feedbackGenerator.impactOccurred()
+                
+                if isConfirmationActive && selectedOption == .incomplete {
+                    deleteTimer?.invalidate()
+                    deleteTimer = nil
+                    isConfirmationActive = false
+                    onDeleteIncomplete()
+                    isPresented = false
+                } else {
+                    selectedOption = .incomplete
+                    isConfirmationActive = true
+                    resetTimer()
+                }
+            }) {
+                HStack {
+                    Image(systemName: "circle")
+                        .frame(width: 24)
+                    Text(isConfirmationActive && selectedOption == .incomplete ? "Confirm" : "Delete Incomplete")
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .foregroundColor(.red)
+                .opacity(0.7)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .presentationCompactAdaptation(.none)
+        .onDisappear {
+            deleteTimer?.invalidate()
+            deleteTimer = nil
+            isConfirmationActive = false
+        }
+    }
+    
+    private func resetTimer() {
+        deleteTimer?.invalidate()
+        deleteTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { _ in
+            isConfirmationActive = false
+        }
     }
 } 

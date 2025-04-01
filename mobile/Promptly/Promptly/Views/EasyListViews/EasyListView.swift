@@ -375,7 +375,7 @@ struct ListContent: View {
                 List {
                     ForEach(viewModel.items, id: \.id) { item in
                         makePlannerItemView(for: item)
-                            .id("item-\(item.id.uuidString)-\(item.isCompleted)-\(item.title.hashValue)")
+                            .id("item-\(item.id.uuidString)-\(item.isCompleted)-\(item.title.hashValue)-\(item.notification?.timeIntervalSince1970 ?? 0)-\(item.subItems.count)")
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets())
@@ -835,7 +835,7 @@ struct EasyListView: View {
                 ZStack {
                     // Background applied to the entire container
                     Rectangle()
-                        .fill(Color.black.opacity(0.5))
+                        .fill(Color.black.opacity(0.35))
                         .cornerRadius(16, corners: [.bottomLeft, .bottomRight])
                     
                     // Content container with flip effect
