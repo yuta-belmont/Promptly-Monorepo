@@ -835,7 +835,7 @@ struct EasyListView: View {
                 ZStack {
                     // Background applied to the entire container
                     Rectangle()
-                        .fill(.ultraThinMaterial.opacity(0.5))
+                        .fill(Color.black.opacity(0.5))
                         .cornerRadius(16, corners: [.bottomLeft, .bottomRight])
                     
                     // Content container with flip effect
@@ -885,6 +885,10 @@ struct EasyListView: View {
             }
         }
         .padding(.bottom, 0)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
+        )
         .preference(key: IsEditingPreferenceKey.self, value: isEditing)
         .onChange(of: isEditing) { oldValue, newValue in
             if newValue {

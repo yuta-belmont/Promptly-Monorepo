@@ -64,7 +64,8 @@ final class ItemDetailsViewModel: ObservableObject {
     }
     
     // Public method to save changes when view disappears
-    func saveChanges() {
+    func saveChanges()
+    {
         debugLog("saveChanges", "saving item state on view disappear")
         saveItem()
     }
@@ -81,7 +82,8 @@ final class ItemDetailsViewModel: ObservableObject {
             persistence.saveChecklist(newChecklist)
             return
         }
-        
+        item.lastModified = Date()
+
         debugLog("saveItem", "updating item in existing checklist")
         // Find the item in the checklist and update it
         if let itemIndex = checklist.itemCollection.items.firstIndex(where: { $0.id == item.id }) {
@@ -94,12 +96,6 @@ final class ItemDetailsViewModel: ObservableObject {
         
         // Save the updated checklist
         persistence.saveChecklist(checklist)
-        
-        // Notify the app that the checklist was updated
-        NotificationCenter.default.post(
-            name: Notification.Name("NewChecklistAvailable"),
-            object: item.date
-        )
     }
     
     // Helper method to load fresh item data during initialization
@@ -146,7 +142,7 @@ final class ItemDetailsViewModel: ObservableObject {
         debugLog("updateNotification", "called with date: \(String(describing: newNotification))")
         
         // Cancel existing notification if there is one
-        if let oldNotification = item.notification {
+        if let _ = item.notification {
             // Use the correct method to remove notifications
             notificationManager.removeAllNotificationsForItem(item)
         }
@@ -157,7 +153,7 @@ final class ItemDetailsViewModel: ObservableObject {
         item = mutableItem
         
         // Schedule new notification if needed
-        if let newDate = newNotification {
+        if let _ = newNotification {
             // Get the current checklist for the item's date
             if let checklist = persistence.loadChecklist(for: item.date) {
                 // Schedule the notification with both required parameters
@@ -285,6 +281,7 @@ final class ItemDetailsViewModel: ObservableObject {
             // Update the published item
             item = mutableItem
             
+            item.lastModified = Date()
             // Save changes to persistence
             saveItem()
         }
@@ -356,6 +353,23 @@ final class ItemDetailsViewModel: ObservableObject {
         
         // Use the standard move operation on the subItems array
         mutableItem.subItems.move(fromOffsets: source, toOffset: destination)
+        
+        // Update the published item
+        item = mutableItem
+        
+        // Save changes to persistence
+        saveItem()
+    }
+    
+    // Delete a subitem by ID
+    func deleteSubitem(_ subitemId: UUID) {
+        debugLog("deleteSubitem", "deleting subitem with ID: \(subitemId.uuidString.prefix(8))")
+        
+        // Create a mutable copy of the item
+        var mutableItem = item
+        
+        // Remove the subitem
+        mutableItem.subItems.removeAll { $0.id == subitemId }
         
         // Update the published item
         item = mutableItem

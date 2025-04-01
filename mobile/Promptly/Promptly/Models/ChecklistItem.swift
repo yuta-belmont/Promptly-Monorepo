@@ -25,6 +25,7 @@ extension Models {
         private(set) var group: ItemGroup?  // Direct reference to the ItemGroup
         let date: Date  // The date this item belongs to
         var subItemCollection: SubItemCollection
+        var lastModified = Date() // Just for view updates, not persisted
         
         // Computed property for backward compatibility
         var groupId: UUID? {
@@ -52,6 +53,7 @@ extension Models {
             date = try container.decode(Date.self, forKey: .date)
             let decodedSubItems = try container.decode([SubItem].self, forKey: .subItems)
             subItemCollection = SubItemCollection(items: decodedSubItems)
+            lastModified = Date() // Initialize with current date
         }
         
         func encode(to encoder: Encoder) throws {
@@ -63,16 +65,18 @@ extension Models {
             try container.encodeIfPresent(group, forKey: .group)
             try container.encode(date, forKey: .date)
             try container.encode(subItemCollection.items, forKey: .subItems)
+            // Don't encode lastModified since it's just for view updates
         }
         
-        init(id: UUID = UUID(), title: String, date: Date, isCompleted: Bool = false, notification: Date? = nil, group: ItemGroup? = nil, subItems: [SubItem] = []) {
+        init(id: UUID = UUID(), title: String, date: Date = Date(), isCompleted: Bool = false, notification: Date? = nil, group: ItemGroup? = nil, subItems: [SubItem] = []) {
             self.id = id
             self.title = title
-            self.date = date
-            self.isCompleted = isCompleted
             self.notification = notification
+            self.isCompleted = isCompleted
             self.group = group
+            self.date = date
             self.subItemCollection = SubItemCollection(items: subItems)
+            self.lastModified = Date()
         }
         
         // For backward compatibility - initialize with groupId
@@ -133,11 +137,12 @@ extension Models {
         }
         
         static func == (lhs: ChecklistItem, rhs: ChecklistItem) -> Bool {
-            lhs.id == rhs.id
+            lhs.id == rhs.id && lhs.lastModified == rhs.lastModified
         }
         
         func hash(into hasher: inout Hasher) {
             hasher.combine(id)
+            hasher.combine(lastModified)
         }
     }
 }

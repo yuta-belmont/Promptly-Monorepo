@@ -10,25 +10,6 @@ extension View {
     
     /// Applies the standard material background with gradient overlay used in headers
     func headerBackground() -> some View {
-        background(
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .opacity(0.5)
-                .overlay(
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .opacity(0.5)
-                        .mask(
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .black, location: 0),
-                                    .init(color: .clear, location: 1)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                )
-        )
+        background(Color.black.opacity(0.5))
     }
 } 

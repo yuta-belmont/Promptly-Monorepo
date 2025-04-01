@@ -12,19 +12,82 @@ struct ItemDetailsView: View {
     @FocusState private var isTitleFieldFocused: Bool
     @State private var editingSubitemId: UUID? = nil {
         didSet {
-            print("🔴 editingSubitemId didSet - setting focus to: \(editingSubitemId?.uuidString ?? "nil")")
-            focusedSubitemId = editingSubitemId
+            print("🎨 editingSubitemId changed: \(String(describing: oldValue)) -> \(String(describing: editingSubitemId))")
         }
     }
     @State private var editedSubitemText = ""
     @FocusState private var focusedSubitemId: UUID? {
         didSet {
-            print("⚪️ FocusState actually changed to: \(focusedSubitemId?.uuidString ?? "nil")")
+            print("🎯 focusedSubitemId changed: \(String(describing: oldValue)) -> \(String(describing: focusedSubitemId))")
         }
     }
+    
+    // Add focus removal state
+    private enum FocusRemovalState {
+        case saving
+        case clearingFocus
+        case completed
+    }
+    @State private var focusRemovalState: FocusRemovalState?
+    
     // State for drag and drop functionality
     @State private var draggedItem: Models.SubItem?
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
+    
+    // Computed property to check if any field is focused
+    private var isAnyFieldFocused: Bool {
+        isSubitemFieldFocused || isTitleFieldFocused || focusedSubitemId != nil
+    }
+    
+    // Function to remove all focus
+    private func removeAllFocus() {
+        print("🔄 Starting focus removal process...")
+        focusRemovalState = .saving
+        
+        // Phase 1: Save all edits
+        if isEditingTitle {
+            print("💾 Saving title edit")
+            saveTitle()
+        }
+        if editingSubitemId != nil {
+            print("💾 Saving subitem edit")
+            let currentEditingId = editingSubitemId
+            editingSubitemId = nil  // Clear editing state first
+            
+            if let id = currentEditingId {
+                if editedSubitemText.isEmpty {
+                    print("🗑️ Deleting empty subitem")
+                    viewModel.deleteSubitem(id)
+                } else {
+                    print("📝 Updating subitem title")
+                    viewModel.updateSubitemTitle(id, newTitle: editedSubitemText)
+                }
+            }
+        }
+        
+        // Phase 2: Clear focus states
+        print("🎯 Clearing focus states...")
+        focusRemovalState = .clearingFocus
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.2)) {
+                self.isSubitemFieldFocused = false
+                self.isTitleFieldFocused = false
+                self.focusedSubitemId = nil
+                
+                // Phase 3: Mark as complete
+                print("✅ Focus removal complete")
+                self.focusRemovalState = .completed
+                
+                // Reset state after a brief delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    self.focusRemovalState = nil
+                }
+            }
+        }
+    }
+    
+    @State private var dragOffset = CGSize.zero
+    @State private var draggedTooFar = false
     
     init(item: Models.ChecklistItem, isPresented: Binding<Bool>) {
         self._isPresented = isPresented
@@ -53,6 +116,28 @@ struct ItemDetailsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .id("metadata-\(viewModel.item.id)-\(viewModel.item.groupId?.uuidString ?? "none")-\(viewModel.item.notification?.timeIntervalSince1970 ?? 0)-\(viewModel.item.isCompleted)")
                         .animation(.easeInOut, value: viewModel.item.isCompleted)
+                    
+                    // Add subitem button
+                    if !isSubitemFieldFocused {
+                        Button(action: {
+                            feedbackGenerator.impactOccurred()
+                            isSubitemFieldFocused = true
+                            //post notification to scroll to bottom (we need to do this in case the field isn't
+                            //visible so we can actually add focus
+                            NotificationCenter.default.post(
+                                name: NSNotification.Name("ScrollToNewSubitemRow"),
+                                object: nil
+                            )
+
+                        }) {
+                            Image(systemName: "plus")
+                                .foregroundColor(.white.opacity(0.6))
+                                .font(.system(size: 20))
+                                .frame(width: 30, height: 30)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
                     
                     // Ellipsis menu button
                     Button(action: {
@@ -88,17 +173,29 @@ struct ItemDetailsView: View {
                         .presentationCompactAdaptation(.none)
                     }
                     
-                    // Close (X) button
-                    Button(action: {
-                        // Use animation to ensure smooth transition back to EasyListView
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            isPresented = false
+                    if isAnyFieldFocused {
+                        // Done button
+                        Button(action: {
+                            removeAllFocus()
+                        }) {
+                            Text("Done")
+                                .foregroundColor(.blue)
+                                .font(.system(size: 17, weight: .regular))
+                                .padding(.horizontal, 8)
                         }
-                    }) {
-                        Image(systemName: "xmark")
-                            .foregroundColor(.white.opacity(0.8))
-                            .font(.system(size: 18, weight: .medium))
-                            .padding(6)
+                    } else {
+                        // Close (X) button
+                        Button(action: {
+                            // Use animation to ensure smooth transition back to EasyListView
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                isPresented = false
+                            }
+                        }) {
+                            Image(systemName: "xmark")
+                                .foregroundColor(.white.opacity(0.8))
+                                .font(.system(size: 18, weight: .medium))
+                                .padding(6)
+                        }
                     }
                 }
                 .padding(.horizontal)
@@ -114,9 +211,8 @@ struct ItemDetailsView: View {
                             .foregroundColor(.white)
                             .scrollContentBackground(.hidden)
                             .background(Color.clear)
-                            .padding(.horizontal)
-                            // Estimate height for a single line of text plus padding
-                            .frame(height: 48)
+                            .padding(.horizontal, 8)
+                            .frame(maxHeight: 96)
                             .focused($isTitleFieldFocused)
                             .onChange(of: editedTitleText) {_, newValue in
                                 // Check for Enter key
@@ -134,6 +230,11 @@ struct ItemDetailsView: View {
                                     isTitleFieldFocused = true
                                 }
                             }
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                    .padding(.horizontal, 4)
+                            )
                     } else {
                         // Static title text (tappable)
                         Button(action: {
@@ -166,6 +267,7 @@ struct ItemDetailsView: View {
                                 ForEach(viewModel.item.subItems) { subitem in
                                     SubItemView(
                                         subitem: subitem,
+                                        viewModel: viewModel,
                                         onToggle: {
                                             feedbackGenerator.impactOccurred()
                                             viewModel.toggleSubitemCompleted(subitemId: subitem.id)
@@ -194,11 +296,23 @@ struct ItemDetailsView: View {
                                 NewSubItemRow(
                                     text: $newSubitemText,
                                     isFocused: $isSubitemFieldFocused,
-                                    onSubmit: {
+                                    onSubmit: { keepFocus in
                                         if !newSubitemText.isEmpty {
                                             viewModel.addSubitem(newSubitemText)
                                             newSubitemText = ""
-                                            isSubitemFieldFocused = true
+                                            // Only maintain focus if explicitly requested (i.e., from return key)
+                                            isSubitemFieldFocused = keepFocus
+                                            if keepFocus {
+                                                // Scroll to bottom only when keeping focus
+                                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                                    withAnimation {
+                                                        proxy.scrollTo("newSubItemRow", anchor: .bottom)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        else {
+                                            isSubitemFieldFocused = false
                                         }
                                     }
                                 )
@@ -215,15 +329,17 @@ struct ItemDetailsView: View {
                             .listStyle(.plain)
                             .environment(\.defaultMinListRowHeight, 0)
                             .scrollContentBackground(.hidden)
-                            .frame(height: geometry.size.height * 0.7)
-                            .onChange(of: newSubitemText) { _, newValue in
-                                if newValue.contains("\n") {
-                                    newSubitemText = newValue.replacingOccurrences(of: "\n", with: "")
-                                    if !newSubitemText.isEmpty {
-                                        viewModel.addSubitem(newSubitemText)
-                                        newSubitemText = ""
-                                        isSubitemFieldFocused = true
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+                                if isSubitemFieldFocused {
+                                    withAnimation(.easeOut(duration: 0.2)) {
+                                        proxy.scrollTo("newSubItemRow", anchor: .bottom)
                                     }
+                                }
+                            }
+                            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ScrollToNewSubitemRow"))) { _ in
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    proxy.scrollTo("newSubItemRow", anchor: .bottom)
                                 }
                             }
                         }
@@ -232,33 +348,46 @@ struct ItemDetailsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
-                Color.clear
-                    .background(.ultraThinMaterial)
+                Color.black
+                    .opacity(0.5)
             )
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
                     .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
             )
-            .padding()
+            .offset(x: dragOffset.width)
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        // Only allow dragging from the left edge (first 88 points) and only to the right
+                        if value.startLocation.x < 44 && value.translation.width > 0 {
+                            dragOffset = value.translation
+                        }
+                    }
+                    .onEnded { value in
+                        // If dragged more than 100 points to the right, dismiss
+                        if value.startLocation.x < 44 && value.translation.width > 100 {
+                            draggedTooFar = true
+                            // Use animation to ensure smooth transition back to EasyListView
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                isPresented = false
+                            }
+                        }
+                        // If not dragged far enough, animate back to original position
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            dragOffset = .zero
+                        }
+                    }
+            )
         }
         .onAppear {
             viewModel.loadDetails()
             feedbackGenerator.prepare()
-            
-            // Debug current item state
-            print("ItemDetailsView appeared with item ID: \(viewModel.item.id)")
-            print("Item has \(viewModel.item.subItems.count) subitems")
-            print("Subitem IDs: \(viewModel.item.subItems.map { $0.id })")
-            print("Subitem titles: \(viewModel.item.subItems.map { $0.title })")
-            
-            // Debug scroll view bounds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                print("Item still has \(viewModel.item.subItems.count) subitems after delay")
-            }
         }
         .onDisappear {
             // Save any ongoing edits
+            print("🔄 View disappearing - checking for unsaved edits...")
             if isEditingTitle {
                 saveTitle()
             }
@@ -267,13 +396,9 @@ struct ItemDetailsView: View {
             }
             
             // Save changes when view disappears
+            print("💾 About to save all changes...")
             viewModel.saveChanges()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("NewChecklistAvailable"))) { notification in
-            if let notificationDate = notification.object as? Date,
-               Calendar.current.isDate(notificationDate, inSameDayAs: viewModel.item.date) {
-                viewModel.loadDetails()
-            }
+            print("✨ All changes saved")
         }
         .onChange(of: isTitleFieldFocused) { _, newValue in
             if !newValue && isEditingTitle {
@@ -281,9 +406,17 @@ struct ItemDetailsView: View {
             }
         }
         .onChange(of: focusedSubitemId) { oldValue, newValue in
-            print("🟤 Focus onChange: \(oldValue?.uuidString ?? "nil") -> \(newValue?.uuidString ?? "nil")")
-            if newValue == nil && editingSubitemId != nil {
-                saveSubitemEdit()
+            print("🔍 Focus change handler - old: \(String(describing: oldValue)), new: \(String(describing: newValue)), editing: \(String(describing: editingSubitemId)), state: \(String(describing: focusRemovalState))")
+            
+            // Only handle focus changes if we're not in the middle of focus removal
+            if focusRemovalState == nil {
+                if oldValue != nil && newValue == nil && editingSubitemId != nil {
+                    print("📱 Subitem lost focus - saving changes...")
+                    saveSubitemEdit()
+                    print("💫 Focus-based save completed")
+                }
+            } else {
+                print("⏭️ Skipping focus change handling during focus removal process")
             }
         }
     }
@@ -422,17 +555,32 @@ extension ItemDetailsView {
     
     // Subitem editing methods
     private func startEditingSubitem(_ subitem: Models.SubItem) {
-        print("🟡 startEditingSubitem called")
+        print("📝 startEditingSubitem called for subitem: \(subitem.id)")
+        print("📊 Before change - editing: \(String(describing: editingSubitemId)), focused: \(String(describing: focusedSubitemId))")
+        
+        // If we have an existing edit, save it first
+        if editingSubitemId != nil {
+            print("💾 Saving previous edit before starting new one")
+            saveSubitemEdit()
+        }
+        
         editingSubitemId = subitem.id
         editedSubitemText = subitem.title
-        print("🟡 editingSubitemId set to: \(subitem.id)")
     }
     
     private func saveSubitemEdit() {
-        guard let subitemId = editingSubitemId,
-              !editedSubitemText.isEmpty else { return }
-        if editedSubitemText != viewModel.item.subItems.first(where: { $0.id == subitemId })?.title {
+        print("💾 saveSubitemEdit called with editingSubitemId: \(String(describing: editingSubitemId))")
+        print("📋 Current editedSubitemText content: '\(editedSubitemText)'")
+        guard let subitemId = editingSubitemId else { return }
+        
+        if editedSubitemText.isEmpty {
+            // Delete the subitem if text is empty
+            print("🗑️ Deleting subitem due to empty text")
+            viewModel.deleteSubitem(subitemId)
+        } else if editedSubitemText != viewModel.item.subItems.first(where: { $0.id == subitemId })?.title {
+            print("📝 About to save subitem edit. Current text: '\(editedSubitemText)'")
             viewModel.updateSubitemTitle(subitemId, newTitle: editedSubitemText)
+            print("✅ Subitem edit saved with text: '\(editedSubitemText)'")
         }
         self.editingSubitemId = nil
     }
@@ -441,6 +589,7 @@ extension ItemDetailsView {
 // Add SubItemView definition
 private struct SubItemView: View {
     let subitem: Models.SubItem
+    let viewModel: ItemDetailsViewModel
     let onToggle: () -> Void
     let onTap: () -> Void
     @Binding var editingSubitemId: UUID?
@@ -449,76 +598,146 @@ private struct SubItemView: View {
     let onSave: (String) -> Void
     @State private var isPreloading = false
     
+    // Add state for swipe
+    @State private var offset: CGFloat = 0
+    @State private var isSwiped = false
+    private let deleteWidth: CGFloat = 75
+    
     var body: some View {
-        let _ = print("📋 SubItemView body called for id: \(subitem.id), isEditing: \(editingSubitemId == subitem.id)")
-        
-        HStack(alignment: .top, spacing: 12) {
-            Button(action: onToggle) {
-                Image(systemName: subitem.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(subitem.isCompleted ? .green : .gray)
-                    .font(.system(size: 20))
-            }
-            .buttonStyle(.plain)
+        ZStack(alignment: .trailing) {
+            // Delete button background and button - position off screen when not swiped
+            Rectangle()
+                .fill(Color.red)
+                .frame(width: deleteWidth)
+                .offset(x: offset < 0 || isSwiped ? 0 : deleteWidth)
             
-            ZStack {
-                if editingSubitemId != subitem.id || isPreloading {
-                    Text(subitem.title)
-                        .font(.body)
-                        .foregroundColor(.white)
-                        .lineLimit(3)
-                        .strikethrough(subitem.isCompleted, color: .gray)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 6)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            print("🔵 Text tapped, setting isPreloading = true")
-                            isPreloading = true
-                            DispatchQueue.main.async {
-                                print("🔵 Async: setting isPreloading = false and calling onTap")
-                                isPreloading = false
-                                onTap()
-                            }
-                        }
+            Button(action: {
+                withAnimation {
+                    viewModel.deleteSubitem(subitem.id)
                 }
+            }) {
+                Image(systemName: "trash")
+                    .font(.title2)
+                    .foregroundColor(.white)
+                    .frame(width: deleteWidth)
+            }
+            .offset(x: offset < 0 || isSwiped ? 0 : deleteWidth)
+            
+            // Main content
+            HStack(alignment: .top, spacing: 12) {
+                Button(action: onToggle) {
+                    Image(systemName: subitem.isCompleted ? "checkmark.circle.fill" : "circle")
+                        .foregroundColor(subitem.isCompleted ? .green : .gray)
+                        .font(.system(size: 20))
+                        .padding(.top, 8)
+                }
+                .buttonStyle(.plain)
                 
-                if editingSubitemId == subitem.id || isPreloading {
-                    TextEditor(text: $editedSubitemText)
-                        .font(.body)
-                        .foregroundColor(.white)
-                        .scrollContentBackground(.hidden)
-                        .background(Color.clear)
-                        .padding(.vertical, 0)
-                        .padding(.leading, 0)
-                        .focused($focusedSubitemId, equals: subitem.id)
-                        .opacity(isPreloading ? 0 : 1)
-                        .onChange(of: isPreloading) { oldValue, newValue in
-                            print("🟢 TextEditor isPreloading changed: \(oldValue) -> \(newValue)")
-                            if !newValue {
-                                print("🟢 TextEditor should now be visible")
+                ZStack {
+                    if editingSubitemId != subitem.id || isPreloading {
+                        Text(subitem.title)
+                            .font(.body)
+                            .foregroundColor(.white)
+                            .lineLimit(3)
+                            .strikethrough(subitem.isCompleted, color: .gray)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 5)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                isPreloading = true
+                                DispatchQueue.main.async {
+                                    onTap()
+                                    isPreloading = false
+                                }
                             }
-                        }
-                        .onAppear {
-                            print("🟣 TextEditor appeared, isPreloading: \(isPreloading), focused: \(focusedSubitemId == subitem.id), id: \(subitem.id)")
-                        }
-                        .onDisappear {
-                            print("⚫️ TextEditor disappeared for id: \(subitem.id)")
-                        }
-                        .task {
-                            print("🎯 TextEditor task started for id: \(subitem.id)")
-                        }
-                        .onChange(of: focusedSubitemId) { oldValue, newValue in
-                            print("🔮 TextEditor focus changed: \(oldValue?.uuidString ?? "nil") -> \(newValue?.uuidString ?? "nil"), id: \(subitem.id)")
-                        }
+                    }
+                    
+                    if editingSubitemId == subitem.id || isPreloading {
+                        TextEditor(text: $editedSubitemText)
+                            .font(.body)
+                            .foregroundColor(.white)
+                            .scrollContentBackground(.hidden)
+                            .background(Color.clear)
+                            .padding(.vertical, 0)
+                            .padding(.leading, 0)
+                            .focused($focusedSubitemId, equals: subitem.id)
+                            .onChange(of: editedSubitemText) { oldValue, newValue in
+                                if newValue.contains("\n") {
+                                    editedSubitemText = oldValue
+                                    onSave(editedSubitemText)
+                                    focusedSubitemId = nil
+                                    editingSubitemId = nil
+                                }
+                            }
+                            .opacity(isPreloading ? 0 : 1)
+                            .onChange(of: isPreloading) { oldValue, newValue in
+                                if oldValue == true && newValue == false && editingSubitemId == subitem.id {
+                                    focusedSubitemId = subitem.id
+                                }
+                            }
+                    }
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+            .offset(x: offset)
         }
-        .contentShape(Rectangle())
+        .simultaneousGesture(
+            DragGesture()
+                .onChanged { value in
+                    // Calculate the angle of the drag to determine if it's horizontal enough
+                    let horizontalAmount = abs(value.translation.width)
+                    let verticalAmount = abs(value.translation.height)
+                    
+                    // Only respond if the gesture is primarily horizontal
+                    // (horizontal movement is at least 3x the vertical movement)
+                    if horizontalAmount > verticalAmount * 3 && horizontalAmount > 25 {
+                        // Only allow left swipe (negative values)
+                        let translation = value.translation.width
+                        if translation < 0 {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                // Add some resistance to the drag
+                                offset = max(-deleteWidth, translation)
+                            }
+                        } else if isSwiped {
+                            // If already swiped, allow closing with some resistance
+                            offset = -deleteWidth + min(deleteWidth, translation)
+                        }
+                    }
+                }
+                .onEnded { value in
+                    let translation = value.translation.width
+                    let velocity = value.velocity.width
+                    let horizontalAmount = abs(value.translation.width)
+                    let verticalAmount = abs(value.translation.height)
+                    
+                    // Only complete the swipe if it was primarily horizontal
+                    if horizontalAmount > verticalAmount * 3 && horizontalAmount > 50 {
+                        // Determine if we should open or close based on velocity and position
+                        if (translation < -deleteWidth/2 || velocity < -100) && !isSwiped {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                offset = -deleteWidth
+                                isSwiped = true
+                            }
+                        } else {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                offset = 0
+                                isSwiped = false
+                            }
+                        }
+                    } else {
+                        // If the gesture wasn't horizontal enough, reset position
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            offset = 0
+                            isSwiped = false
+                        }
+                    }
+                }
+        )
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
         .listRowInsets(EdgeInsets())
-        .padding(.horizontal, 16)
-        .padding(.vertical, 4)
     }
 }
 
@@ -526,14 +745,15 @@ private struct SubItemView: View {
 private struct NewSubItemRow: View {
     @Binding var text: String
     let isFocused: FocusState<Bool>.Binding
-    let onSubmit: () -> Void
+    let onSubmit: (Bool) -> Void
     
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
+        HStack(alignment: .top, spacing: 12) {
             Image(systemName: "circle")
                 .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0))
                 .font(.system(size: 20))
                 .transition(.opacity)
+                .padding(.top, 8)
             
             TextEditor(text: $text)
                 .font(.body)
@@ -541,15 +761,24 @@ private struct NewSubItemRow: View {
                 .scrollContentBackground(.hidden)
                 .background(Color.clear)
                 .focused(isFocused)
-                .border(.purple, width: 0.5)
+                .onChange(of: isFocused.wrappedValue) { _, isFocused in
+                    if !isFocused && !text.isEmpty {
+                        onSubmit(false) // Don't keep focus when submitting via focus loss
+                    }
+                }
+                .onChange(of: text) { _, newValue in
+                    if newValue.contains("\n") {
+                        text = newValue.replacingOccurrences(of: "\n", with: "")
+                        onSubmit(true) // Keep focus when submitting via return key
+                    }
+                }
                 .overlay(
                     Text(text.isEmpty ? "Add subitem..." : "")
                         .font(.body)
                         .foregroundColor(.white.opacity(0.5))
-                        .padding(.leading, 10)
+                        .padding(.leading, 6)
                         .padding(.vertical, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .border(.yellow, width: 0.5),
+                        .frame(maxWidth: .infinity, alignment: .leading),
                     alignment: .topLeading
                 )
         }

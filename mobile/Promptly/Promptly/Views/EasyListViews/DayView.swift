@@ -151,7 +151,7 @@ struct DayView: View, Hashable {
             ) ?? currentDate
             
             // Start updating the data model immediately
-            let animationDuration: Double = 0.15
+            let animationDuration: Double = 0.3
             
             // Animate the card off screen with simpler animation
             withAnimation(.easeOut(duration: animationDuration)) {
@@ -169,7 +169,7 @@ struct DayView: View, Hashable {
             }
             
             // Reset position with animation
-            DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration*2) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration) {
                 dragOffset = CGSize(
                     width: isLeftSwipe ? geometry.size.width * 1.5 : -geometry.size.width * 1.5,
                     height: 0
@@ -538,11 +538,6 @@ struct DayView: View, Hashable {
                     DispatchQueue.main.async {
                         easyListViewModel.loadData()
                     }
-                    
-                    // We're removing this call to prevent layout issues during initial loading
-                    // if isDateHeaderExpanded {
-                    //     updateWeekDates(for: currentDate)
-                    // }
                 }
                 .onDisappear {
                     // Reset any active animations and states when view disappears
@@ -613,8 +608,8 @@ struct DayView: View, Hashable {
                     isPresented: $showingItemDetails
                 )
                 .transition(.asymmetric(
-                    insertion: .move(edge: .bottom).combined(with: .opacity),
-                    removal: .move(edge: .bottom).combined(with: .opacity)
+                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                    removal: .move(edge: .trailing).combined(with: .opacity)
                 ))
                 .zIndex(999)
             }
