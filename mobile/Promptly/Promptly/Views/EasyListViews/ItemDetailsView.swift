@@ -280,7 +280,7 @@ struct ItemDetailsView: View {
                 DragGesture()
                     .onChanged { value in
                         // Only allow dragging from the left edge (first 88 points) and only to the right
-                        if value.startLocation.x < 44 && value.translation.width > 0 {
+                        if value.startLocation.x < 88 && value.translation.width > 0 {
                             dragOffset = value.translation
                         }
                     }
@@ -796,7 +796,7 @@ private struct SubItemView: View {
                     let verticalAmount = abs(value.translation.height)
                     
                     // Only complete the swipe if it was primarily horizontal
-                    if horizontalAmount > verticalAmount * 3 && horizontalAmount > 50 {
+                    if horizontalAmount > verticalAmount * 2 && horizontalAmount > 50 {
                         // Determine if we should open or close based on velocity and position
                         if (translation < -deleteWidth/2 || velocity < -100) && !isSwiped {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {

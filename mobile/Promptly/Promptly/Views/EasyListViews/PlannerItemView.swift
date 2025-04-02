@@ -597,8 +597,13 @@ struct PlannerItemView: View, Equatable {
                 itemData.groupColor = nil
             }
         }
-        .onChange(of: displayData) { _, newDisplayData in
-            itemData = MutablePlannerItemData(from: newDisplayData)
+        .onChange(of: displayData) { oldValue, newValue in
+            // Debug print for displayData changes
+            let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+            print("\(timestamp) [PlannerItemView] Updating view for item: \(newValue.id.uuidString), title: \(newValue.title), isCompleted: \(newValue.isCompleted)")
+            print("\(timestamp) [PlannerItemView] Old state - isCompleted: \(oldValue.isCompleted), New state - isCompleted: \(newValue.isCompleted)")
+            
+            itemData = MutablePlannerItemData(from: newValue)
         }
     }
     

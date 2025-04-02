@@ -182,7 +182,10 @@ struct EasyListHeader: View {
     let onDeleteAll: () -> Void
     let onDeleteCompleted: () -> Void
     let onDeleteIncomplete: () -> Void
+    let onUndo: () -> Void
+    let canUndo: Bool
     let currentDate: Date
+    @EnvironmentObject private var undoManager: UndoStateManager
     
     @State private var showingDeleteConfirmation = false
     @State private var deleteConfirmationActive = false
@@ -199,6 +202,18 @@ struct EasyListHeader: View {
             
             HStack(spacing: 26) {
                 if !showingNotes {
+                    if undoManager.canUndo {
+                        Button(action: {
+                            onDone() // Remove focus
+                            feedbackGenerator.impactOccurred()
+                            onUndo()
+                        }) {
+                            Image(systemName: "arrow.uturn.backward")
+                                .foregroundColor(.white)
+                                .padding(.bottom, 2)
+                        }
+                    }
+                    
                     Button(action: {
                         onDone() // Remove focus
                         feedbackGenerator.impactOccurred()
@@ -470,7 +485,7 @@ struct ListContent: View {
     
     private func deleteItem(_ item: Models.ChecklistItem) {
         if let index = viewModel.items.firstIndex(where: { $0.id == item.id }) {
-            viewModel.deleteItems(at: IndexSet([index]))
+            viewModel.deleteItemWithoutUndo(id: item.id)
         }
     }
     
@@ -827,8 +842,13 @@ struct EasyListView: View {
                 onDeleteIncomplete: {
                     viewModel.deleteIncompleteItems()
                 },
+                onUndo: {
+                    viewModel.undo()
+                },
+                canUndo: viewModel.canUndo,
                 currentDate: viewModel.date
             )
+            .environmentObject(viewModel.undoManager)
             
             // Use GeometryReader to coordinate the size of the background and the scrollable content
             GeometryReader { geometry in

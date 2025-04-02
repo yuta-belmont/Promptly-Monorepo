@@ -8,6 +8,39 @@ private func debugLog(_ source: String, _ action: String) {
     print("\(timestamp) [EasyListViewModel]: \(source) - \(action)")
 }
 
+// Define undo action types
+enum UndoAction {
+    case deleteItems(items: [Models.ChecklistItem], indices: IndexSet)
+    case importItems(items: [Models.ChecklistItem])
+}
+
+// Separate class to manage undo state
+class UndoStateManager: ObservableObject {
+    @Published var canUndo: Bool = false
+    private var undoCache: [UndoAction] = []
+    private let maxUndoActions = 1
+    
+    func addToUndoCache(_ action: UndoAction) {
+        undoCache.insert(action, at: 0)
+        if undoCache.count > maxUndoActions {
+            undoCache.removeLast()
+        }
+        canUndo = !undoCache.isEmpty
+    }
+    
+    func clearCache() {
+        undoCache.removeAll()
+        canUndo = false
+    }
+    
+    func getNextAction() -> UndoAction? {
+        guard !undoCache.isEmpty else { return nil }
+        let action = undoCache.removeFirst()
+        canUndo = !undoCache.isEmpty
+        return action
+    }
+}
+
 // Simple structure to hold group information for UI purposes
 struct GroupInfo {
     let id: UUID
@@ -97,6 +130,11 @@ final class EasyListViewModel: ObservableObject {
     @Published var isShowingNotes: Bool
     @Published var showingImportLimitAlert = false
     @Published private(set) var isLoading = false
+    
+    // Replace direct undo cache with the manager
+    let undoManager = UndoStateManager()
+    var canUndo: Bool { undoManager.canUndo }
+    
     private let persistence = ChecklistPersistence.shared
     private let notificationManager = NotificationManager.shared
     private let groupStore = GroupStore.shared
@@ -120,8 +158,6 @@ final class EasyListViewModel: ObservableObject {
         // Initialize with empty checklist instead of loading data immediately
         self.checklist = Models.Checklist(date: date)
         self.isShowingNotes = UserDefaults.standard.bool(forKey: "isShowingNotes")
-        
-        // Don't clean up empty items on init - defer until loadData is called
     }
     
     // New method to load data - this will be called from the view's onAppear
@@ -159,6 +195,9 @@ final class EasyListViewModel: ObservableObject {
         debugLog("updateToDate", "Switching from \(oldDateString) to \(newDateString)")
         
         let startTime = CFAbsoluteTimeGetCurrent()
+        
+        // Clear the undo cache when switching days
+        undoManager.clearCache()
         
         // Update the date first
         self.date = newDate
@@ -230,7 +269,20 @@ final class EasyListViewModel: ObservableObject {
         deleteItems(at: IndexSet([index]))
     }
     
+    /// Deletes an item identified by ID without adding to undo cache
+    func deleteItemWithoutUndo(id: UUID) {
+        guard let index = checklist.items.firstIndex(where: { $0.id == id }) else { return }
+        // Use the method that doesn't add to undo cache
+        deleteItemsWithoutUndo(at: IndexSet([index]))
+    }
+    
     func deleteItems(at indexSet: IndexSet) {
+        // Check if there are actually items to delete
+        guard !indexSet.isEmpty else { return }
+        
+        // Store items before deleting them for undo
+        let itemsToDelete = indexSet.map { checklist.items[$0] }
+        
         // Process items before deleting them
         for index in indexSet {
             if index < checklist.items.count {
@@ -240,16 +292,28 @@ final class EasyListViewModel: ObservableObject {
             }
         }
         
+        // Add to undo cache using the manager
+        undoManager.addToUndoCache(.deleteItems(items: itemsToDelete, indices: indexSet))
+        
         // Use the direct reference to delete items
         checklist.deleteItems(at: indexSet)
         hasUnsavedChanges = true
     }
     
     func deleteAllItems() {
+        // Check if there are actually items to delete
+        guard !checklist.items.isEmpty else { return }
+        
+        // Store all items for undo
+        let allItems = checklist.items
+        
         // Process all items before deleting them
         for item in checklist.items {
             cleanupItemReferences(item)
         }
+        
+        // Add to undo cache using the manager
+        undoManager.addToUndoCache(.deleteItems(items: allItems, indices: IndexSet(0..<allItems.count)))
         
         // Use the direct reference to remove all items
         checklist.removeAllItems()
@@ -305,6 +369,9 @@ final class EasyListViewModel: ObservableObject {
         checklist.addItem(newItem)
         hasUnsavedChanges = true
         
+        // Clear the undo cache when adding items
+        undoManager.clearCache()
+        
         // Check if we've just reached the maximum number of items
         if checklist.items.count == maxItemsPerDay {
             showingImportLimitAlert = true
@@ -348,6 +415,9 @@ final class EasyListViewModel: ObservableObject {
         
         hasUnsavedChanges = true
         
+        // Clear the undo cache when adding items
+        undoManager.clearCache()
+        
         // Check if we've just reached the maximum number of items
         if checklist.items.count == maxItemsPerDay {
             showingImportLimitAlert = true
@@ -358,6 +428,9 @@ final class EasyListViewModel: ObservableObject {
         // Use the collection directly
         checklist.moveItems(from: source, to: destination)
         hasUnsavedChanges = true
+        
+        // Clear the undo cache when moving items
+        undoManager.clearCache()
     }
     
     func saveChecklist() {
@@ -400,6 +473,9 @@ final class EasyListViewModel: ObservableObject {
         
         // Mark changes to save later - consistent with other operations
         hasUnsavedChanges = true
+        
+        // Clear the undo cache when updating item group
+        undoManager.clearCache()
     }
     
     func getGroupForItem(_ item: Models.ChecklistItem) -> Models.ItemGroup? {
@@ -421,6 +497,9 @@ final class EasyListViewModel: ObservableObject {
             // Update notes directly
             checklist.updateNotes(newNotes)
             hasUnsavedChanges = true
+            
+            // Clear the undo cache when updating notes
+            undoManager.clearCache()
         }
     }
     
@@ -467,6 +546,9 @@ final class EasyListViewModel: ObservableObject {
                 return newItem
             }
         
+        // Check if there are actually items to import
+        guard !itemsToImport.isEmpty else { return }
+        
         // Calculate how many items we can import without exceeding the limit
         let currentCount = checklist.items.count
         let availableSlots = maxItemsPerDay - currentCount
@@ -480,6 +562,12 @@ final class EasyListViewModel: ObservableObject {
         // Only import up to the available slots
         let itemsToActuallyImport = itemsToImport.prefix(availableSlots)
         
+        // Check if there are still items to import after truncation
+        guard !itemsToActuallyImport.isEmpty else { return }
+        
+        // Add to undo cache before importing
+        undoManager.addToUndoCache(.importItems(items: Array(itemsToActuallyImport)))
+        
         // Update the checklist by appending the new items directly to the collection
         checklist.itemCollection.items.append(contentsOf: itemsToActuallyImport)
         hasUnsavedChanges = true
@@ -490,6 +578,7 @@ final class EasyListViewModel: ObservableObject {
     // MARK: - Refresh Functionality
     
     func reloadChecklist() {
+        
         // Reload the checklist from persistence
         let reloadedChecklist = persistence.loadChecklist(for: date) ?? Models.Checklist(date: date)
         self.checklist = reloadedChecklist
@@ -507,6 +596,9 @@ final class EasyListViewModel: ObservableObject {
         // Toggle the item's completion state
         checklist.itemCollection.items[itemIndex].isCompleted.toggle()
         
+        // Clear the undo cache when toggling items
+        undoManager.clearCache()
+        
         // Mark changes for later saving
         hasUnsavedChanges = true
     }
@@ -521,6 +613,9 @@ final class EasyListViewModel: ObservableObject {
         
         // Update the sub-item's completion state
         checklist.itemCollection.items[itemIndex].subItemCollection.items[subItemIndex].isCompleted = isCompleted
+        
+        // Clear the undo cache when toggling sub-items
+        undoManager.clearCache()
         
         // Mark changes for later saving
         hasUnsavedChanges = true
@@ -554,6 +649,9 @@ final class EasyListViewModel: ObservableObject {
         
         // Mark changes and save
         hasUnsavedChanges = true
+        
+        // Clear the undo cache when updating item notification
+        undoManager.clearCache()
     }
     
     /// Updates the title for a specific item by ID
@@ -565,5 +663,68 @@ final class EasyListViewModel: ObservableObject {
         
         // Mark changes for later saving
         hasUnsavedChanges = true
+        
+        // Clear the undo cache when updating item title
+        undoManager.clearCache()
+    }
+    
+    // MARK: - Undo Functionality
+    
+    /// Deletes items without adding to undo cache - used for undo operations
+    private func deleteItemsWithoutUndo(at indexSet: IndexSet) {
+        // Process items before deleting them
+        for index in indexSet {
+            if index < checklist.items.count {
+                let item = checklist.items[index]
+                // Remove from any groups and remove notifications in one pass
+                cleanupItemReferences(item)
+            }
+        }
+        
+        // Use the direct reference to delete items
+        checklist.deleteItems(at: indexSet)
+        hasUnsavedChanges = true
+    }
+    
+    func undo() {
+        // Get the next action from the manager
+        guard let action = undoManager.getNextAction() else { return }
+        
+        // Perform the undo operation
+        switch action {
+        case .deleteItems(let items, _):
+            // Check if there are actually items to restore
+            guard !items.isEmpty else { return }
+            
+            // Restore deleted items
+            for item in items {
+                addItem(item, at: 0) // Add items at the beginning
+            }
+            
+        case .importItems(let items):
+            // Check if there are actually items to remove
+            guard !items.isEmpty else { return }
+            
+            // Remove imported items
+            let itemIds = items.map { $0.id }
+            let indicesToRemove = checklist.items.enumerated()
+                .filter { itemIds.contains($0.element.id) }
+                .map { $0.offset }
+            
+            if !indicesToRemove.isEmpty {
+                deleteItemsWithoutUndo(at: IndexSet(indicesToRemove))
+            }
+        }
+        
+        // Save changes
+        saveChecklist()
+        
+        // Force a UI refresh by updating the checklist property
+        // This ensures SwiftUI knows the data has changed
+        let updatedChecklist = checklist
+        checklist = updatedChecklist
+        
+        // Debug log for undo operation
+        debugLog("undo()", "Undo operation completed, UI refreshed")
     }
 } 
