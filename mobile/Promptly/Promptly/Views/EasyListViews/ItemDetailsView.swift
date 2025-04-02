@@ -193,33 +193,48 @@ struct ItemDetailsView: View {
                                     viewModel.moveSubitems(from: indices, to: destination)
                                 })
                                 
-                                NewSubItemRow(
-                                    text: $newSubitemText,
-                                    isFocused: $isSubitemFieldFocused,
-                                    onSubmit: { keepFocus in
-                                        if !newSubitemText.isEmpty {
-                                            viewModel.addSubitem(newSubitemText)
-                                            newSubitemText = ""
-                                            // Only maintain focus if explicitly requested (i.e., from return key)
-                                            isSubitemFieldFocused = keepFocus
-                                            if keepFocus {
-                                                // Scroll to bottom only when keeping focus
-                                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                                    withAnimation {
-                                                        proxy.scrollTo("newSubItemRow", anchor: .bottom)
+                                // Only show the new subitem row if fewer than 50 subitems exist
+                                if viewModel.item.subItems.count < 50 {
+                                    NewSubItemRow(
+                                        text: $newSubitemText,
+                                        isFocused: $isSubitemFieldFocused,
+                                        onSubmit: { keepFocus in
+                                            if !newSubitemText.isEmpty {
+                                                viewModel.addSubitem(newSubitemText)
+                                                newSubitemText = ""
+                                                // Only maintain focus if explicitly requested (i.e., from return key)
+                                                isSubitemFieldFocused = keepFocus
+                                                if keepFocus {
+                                                    // Scroll to bottom only when keeping focus
+                                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                                        withAnimation {
+                                                            proxy.scrollTo("newSubItemRow", anchor: .bottom)
+                                                        }
                                                     }
                                                 }
                                             }
+                                            else {
+                                                isSubitemFieldFocused = false
+                                            }
                                         }
-                                        else {
-                                            isSubitemFieldFocused = false
-                                        }
-                                    }
-                                )
-                                .id("newSubItemRow")
-                                .listRowBackground(Color.clear)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets())
+                                    )
+                                    .id("newSubItemRow")
+                                    .listRowBackground(Color.clear)
+                                    .listRowSeparator(.hidden)
+                                    .listRowInsets(EdgeInsets())
+                                } else {
+                                    // Show message when limit is reached
+                                    Text("Maximum limit of 50 subitems reached.\nRemove some subitems to add more.")
+                                        .font(.footnote)
+                                        .foregroundColor(.white.opacity(0.6))
+                                        .multilineTextAlignment(.center)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                        .id("subitemLimitMessage")
+                                        .listRowBackground(Color.clear)
+                                        .listRowSeparator(.hidden)
+                                        .listRowInsets(EdgeInsets())
+                                }
                                 
                                 Color.clear.frame(height: 44)
                                     .listRowBackground(Color.clear)
@@ -239,7 +254,11 @@ struct ItemDetailsView: View {
                             }
                             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ScrollToNewSubitemRow"))) { _ in
                                 withAnimation(.easeOut(duration: 0.2)) {
-                                    proxy.scrollTo("newSubItemRow", anchor: .bottom)
+                                    if viewModel.item.subItems.count < 50 {
+                                        proxy.scrollTo("newSubItemRow", anchor: .bottom)
+                                    } else {
+                                        proxy.scrollTo("subitemLimitMessage", anchor: .bottom)
+                                    }
                                 }
                             }
                         }
@@ -339,9 +358,8 @@ struct ItemDetailsView: View {
                 .animation(.easeInOut, value: viewModel.item.isCompleted)
             
             // Action buttons
-            if !isSubitemFieldFocused {
-                actionButtons
-            }
+
+            actionButtons
             
             // Menu and close buttons
             menuAndCloseButtons
@@ -398,22 +416,28 @@ struct ItemDetailsView: View {
                     )
                     .presentationCompactAdaptation(.none)
                 }
-            // Add button
-            Button(action: {
-                feedbackGenerator.impactOccurred()
-                isSubitemFieldFocused = true
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("ScrollToNewSubitemRow"),
-                    object: nil
-                )
-            }) {
-                Image(systemName: "plus")
-                    .foregroundColor(.white.opacity(0.6))
-                    .font(.system(size: 20))
-                    .frame(width: 30, height: 30)
-                    .contentShape(Rectangle())
+            
+            // Add button - only show when the new subitem field is not focused
+            if !isSubitemFieldFocused {
+                Button(action: {
+                    feedbackGenerator.impactOccurred()
+                    if viewModel.item.subItems.count < 50 {
+                        isSubitemFieldFocused = true
+                    }
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("ScrollToNewSubitemRow"),
+                        object: nil
+                    )
+                }) {
+                    Image(systemName: "plus")
+                        .foregroundColor(viewModel.item.subItems.count >= 50 ? .white.opacity(0.3) : .white.opacity(0.6))
+                        .font(.system(size: 20))
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.item.subItems.count >= 50)
             }
-            .buttonStyle(.plain)
             
             // Delete button
             Button(action: {
@@ -675,6 +699,11 @@ private struct SubItemView: View {
                     .foregroundColor(.white)
                     .frame(width: deleteWidth)
             }
+            .disabled(!isSwiped && offset >= 0)
+            .contentShape(Rectangle().size(
+                width: isSwiped || offset < 0 ? deleteWidth : 0,
+                height: isSwiped || offset < 0 ? 44 : 0
+            ))
             .offset(x: offset < 0 || isSwiped ? 0 : deleteWidth)
             
             // Main content

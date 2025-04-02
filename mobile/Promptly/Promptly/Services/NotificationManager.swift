@@ -82,7 +82,7 @@ class NotificationManager: NSObject {
         
         // Create the notification content
         let content = UNMutableNotificationContent()
-        content.title = "\(item.title)"
+        content.title = "Alfred: \(item.title)"
         
         // Format the current time for the notification body
         let timeFormatter = DateFormatter()
@@ -143,9 +143,9 @@ class NotificationManager: NSObject {
     }
     
     func processNotificationsForChecklist(_ checklist: Models.Checklist) -> Models.Checklist {
-        let updatedChecklist = checklist
+        var updatedChecklist = checklist
         
-        for (_, item) in checklist.items.enumerated() {
+        for (index, item) in checklist.items.enumerated() {
             if let notification = item.notification {
                 // Remove existing notification
                 removeAllNotificationsForItem(item)
@@ -207,7 +207,7 @@ class NotificationManager: NSObject {
             return
         }
         
-        _ = Date(timeIntervalSince1970: checklistTimestamp)
+        let checklistDate = Date(timeIntervalSince1970: checklistTimestamp)
         
         // Handle the "Complete" action
         if response.actionIdentifier == "COMPLETE_ACTION" {
