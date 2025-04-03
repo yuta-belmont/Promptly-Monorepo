@@ -2,12 +2,16 @@ import SwiftUI
 
 struct AboutView: View {
     @Binding var isPresented: Bool
+    @State private var dragOffset = CGSize.zero // Add drag offset for swipe gesture
     
     var body: some View {
         ZStack {
-            // Background overlay
-            Color.black.opacity(0.75)
-                .ignoresSafeArea()
+            // Semi-transparent backdrop for closing the view
+            Color.black.opacity(0.01)
+                .edgesIgnoringSafeArea(.all)
+                .allowsHitTesting(true)
+                .transition(.opacity)
+                .zIndex(998)
                 .onTapGesture {
                     isPresented = false
                 }
@@ -67,7 +71,31 @@ struct AboutView: View {
                 RoundedRectangle(cornerRadius: 16)
                     .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
             )
-            .padding()
+            .offset(x: dragOffset.width)
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        // Only allow dragging from the left edge (first 88 points) and only to the right
+                        if value.startLocation.x < 88 && value.translation.width > 0 {
+                            dragOffset = value.translation
+                        }
+                    }
+                    .onEnded { value in
+                        // If dragged more than 100 points to the right, dismiss
+                        if value.startLocation.x < 44 && value.translation.width > 100 {
+                            // Use animation to ensure smooth transition
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                isPresented = false
+                            }
+                        }
+                        // If not dragged far enough, animate back to original position
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            dragOffset = .zero
+                        }
+                    }
+            )
+            .transition(.move(edge: .trailing))
+            .zIndex(999)
         }
     }
 }

@@ -196,7 +196,7 @@ struct DayView: View, Hashable {
     }
     
     // Inside DayView struct, add these state variables
-    @State private var isDateHeaderExpanded = true
+    @State private var isDateHeaderExpanded = false
     @State private var weekViewDates: [WeekViewDay] = []
     @State private var weekOffset = 0
     @State private var weekDragOffset = CGSize.zero

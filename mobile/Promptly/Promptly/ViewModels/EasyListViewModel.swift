@@ -10,8 +10,7 @@ private func debugLog(_ source: String, _ action: String) {
 
 // Define undo action types
 enum UndoAction {
-    case deleteItems(items: [Models.ChecklistItem], indices: IndexSet)
-    case importItems(items: [Models.ChecklistItem])
+    case snapshot(items: [Models.ChecklistItem])
 }
 
 // Separate class to manage undo state
@@ -38,6 +37,17 @@ class UndoStateManager: ObservableObject {
         let action = undoCache.removeFirst()
         canUndo = !undoCache.isEmpty
         return action
+    }
+}
+
+// Separate class to manage counter state for the footer
+class CounterStateManager: ObservableObject {
+    @Published var completedCount: Int = 0
+    @Published var totalCount: Int = 0
+    
+    func updateCounts(completed: Int, total: Int) {
+        completedCount = completed
+        totalCount = total
     }
 }
 
@@ -135,6 +145,9 @@ final class EasyListViewModel: ObservableObject {
     let undoManager = UndoStateManager()
     var canUndo: Bool { undoManager.canUndo }
     
+    // Add counter state manager
+    let counterManager = CounterStateManager()
+    
     private let persistence = ChecklistPersistence.shared
     private let notificationManager = NotificationManager.shared
     private let groupStore = GroupStore.shared
@@ -173,6 +186,9 @@ final class EasyListViewModel: ObservableObject {
         if !emptyIndices.isEmpty {
             deleteItems(at: IndexSet(emptyIndices))
         }
+        
+        // Update counter state
+        counterManager.updateCounts(completed: checklist.items.filter { $0.isCompleted }.count, total: checklist.items.count)
         
         // Set loading state to false
         isLoading = false
@@ -280,8 +296,8 @@ final class EasyListViewModel: ObservableObject {
         // Check if there are actually items to delete
         guard !indexSet.isEmpty else { return }
         
-        // Store items before deleting them for undo
-        let itemsToDelete = indexSet.map { checklist.items[$0] }
+        // Capture a snapshot of the entire checklist before deletion
+        let snapshot = checklist.items
         
         // Process items before deleting them
         for index in indexSet {
@@ -292,32 +308,38 @@ final class EasyListViewModel: ObservableObject {
             }
         }
         
-        // Add to undo cache using the manager
-        undoManager.addToUndoCache(.deleteItems(items: itemsToDelete, indices: indexSet))
+        // Add snapshot to undo cache using the manager
+        undoManager.addToUndoCache(.snapshot(items: snapshot))
         
         // Use the direct reference to delete items
         checklist.deleteItems(at: indexSet)
         hasUnsavedChanges = true
+        
+        // Update counter state after deletion
+        counterManager.updateCounts(completed: checklist.items.filter { $0.isCompleted }.count, total: checklist.items.count)
     }
     
     func deleteAllItems() {
         // Check if there are actually items to delete
         guard !checklist.items.isEmpty else { return }
         
-        // Store all items for undo
-        let allItems = checklist.items
+        // Capture a snapshot of the entire checklist before deletion
+        let snapshot = checklist.items
         
         // Process all items before deleting them
         for item in checklist.items {
             cleanupItemReferences(item)
         }
         
-        // Add to undo cache using the manager
-        undoManager.addToUndoCache(.deleteItems(items: allItems, indices: IndexSet(0..<allItems.count)))
+        // Add snapshot to undo cache using the manager
+        undoManager.addToUndoCache(.snapshot(items: snapshot))
         
         // Use the direct reference to remove all items
         checklist.removeAllItems()
         hasUnsavedChanges = true
+        
+        // Update counter state after deletion
+        counterManager.updateCounts(completed: 0, total: 0)
     }
     
     func deleteCompletedItems() {
@@ -565,8 +587,11 @@ final class EasyListViewModel: ObservableObject {
         // Check if there are still items to import after truncation
         guard !itemsToActuallyImport.isEmpty else { return }
         
+        // Capture a snapshot of the entire checklist before import
+        let snapshot = checklist.items
+        
         // Add to undo cache before importing
-        undoManager.addToUndoCache(.importItems(items: Array(itemsToActuallyImport)))
+        undoManager.addToUndoCache(.snapshot(items: snapshot))
         
         // Update the checklist by appending the new items directly to the collection
         checklist.itemCollection.items.append(contentsOf: itemsToActuallyImport)
@@ -585,6 +610,9 @@ final class EasyListViewModel: ObservableObject {
         
         // Process notifications for the loaded checklist
         _ = notificationManager.processNotificationsForChecklist(reloadedChecklist)
+        
+        // Update counter state
+        counterManager.updateCounts(completed: checklist.items.filter { $0.isCompleted }.count, total: checklist.items.count)
     }
     
     // MARK: - Item Toggling
@@ -601,6 +629,9 @@ final class EasyListViewModel: ObservableObject {
         
         // Mark changes for later saving
         hasUnsavedChanges = true
+        
+        // Update counter state
+        counterManager.updateCounts(completed: checklist.items.filter { $0.isCompleted }.count, total: checklist.items.count)
     }
     
     /// Toggles the completion state of a sub-item
@@ -619,6 +650,9 @@ final class EasyListViewModel: ObservableObject {
         
         // Mark changes for later saving
         hasUnsavedChanges = true
+        
+        // Update counter state
+        counterManager.updateCounts(completed: checklist.items.filter { $0.isCompleted }.count, total: checklist.items.count)
     }
     
     // MARK: - Display Data
@@ -684,6 +718,9 @@ final class EasyListViewModel: ObservableObject {
         // Use the direct reference to delete items
         checklist.deleteItems(at: indexSet)
         hasUnsavedChanges = true
+        
+        // Update counter state after deletion
+        counterManager.updateCounts(completed: checklist.items.filter { $0.isCompleted }.count, total: checklist.items.count)
     }
     
     func undo() {
@@ -692,27 +729,16 @@ final class EasyListViewModel: ObservableObject {
         
         // Perform the undo operation
         switch action {
-        case .deleteItems(let items, _):
-            // Check if there are actually items to restore
-            guard !items.isEmpty else { return }
+        case .snapshot(let items):
+            // Save the current state for potential future operations
+            let currentSnapshot = checklist.items
             
-            // Restore deleted items
+            // Remove all current items
+            checklist.removeAllItems()
+            
+            // Add the snapshots items back in their original order
             for item in items {
-                addItem(item, at: 0) // Add items at the beginning
-            }
-            
-        case .importItems(let items):
-            // Check if there are actually items to remove
-            guard !items.isEmpty else { return }
-            
-            // Remove imported items
-            let itemIds = items.map { $0.id }
-            let indicesToRemove = checklist.items.enumerated()
-                .filter { itemIds.contains($0.element.id) }
-                .map { $0.offset }
-            
-            if !indicesToRemove.isEmpty {
-                deleteItemsWithoutUndo(at: IndexSet(indicesToRemove))
+                checklist.itemCollection.items.append(item)
             }
         }
         

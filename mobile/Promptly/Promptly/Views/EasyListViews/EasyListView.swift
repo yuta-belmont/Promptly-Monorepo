@@ -447,12 +447,10 @@ struct ListContent: View {
                 }
             }
             
-            EasyListFooter(
-                completedCount: viewModel.items.filter(\.isCompleted).count,
-                totalCount: viewModel.items.count
-            )
-            .opacity(isEditing ? 0 : 1)
-            .animation(.easeInOut(duration: 0.2), value: isEditing)
+            EasyListFooter()
+                .environmentObject(viewModel.counterManager)
+                .opacity(isEditing ? 0 : 1)
+                .animation(.easeInOut(duration: 0.2), value: isEditing)
         }
         .onChange(of: isEditing) { oldValue, newValue in
             if !newValue {
@@ -542,14 +540,13 @@ struct ListContent: View {
 // MARK: - Footer Component
 
 struct EasyListFooter: View {
-    let completedCount: Int
-    let totalCount: Int
-
+    @EnvironmentObject private var counterManager: CounterStateManager
+    
     var body: some View {
         ZStack {
             // Left side content
             HStack {
-                Text("\(completedCount)/\(totalCount) completed")
+                Text("\(counterManager.completedCount)/\(counterManager.totalCount) completed")
                     .font(.footnote)
                     .foregroundColor(.white.opacity(0.7))
                     .padding(.horizontal, 8)
@@ -564,8 +561,8 @@ struct EasyListFooter: View {
             // Right side content
             HStack {
                 Spacer()
-                if totalCount > 0 {
-                    ProgressView(value: Double(completedCount), total: Double(totalCount))
+                if counterManager.totalCount > 0 {
+                    ProgressView(value: Double(counterManager.completedCount), total: Double(counterManager.totalCount))
                         .progressViewStyle(LinearProgressViewStyle(tint: .green))
                         .frame(width: 80)
                 }
@@ -874,6 +871,7 @@ struct EasyListView: View {
                                 isNotesFocused = false
                             }
                         )
+                        .environmentObject(viewModel.counterManager)
                         // Apply clip shape to ensure content doesn't visually extend beyond boundaries
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                         .contentShape(RoundedRectangle(cornerRadius: 16)) // Add for better hit testing

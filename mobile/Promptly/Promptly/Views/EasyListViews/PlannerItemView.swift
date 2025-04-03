@@ -490,7 +490,7 @@ struct PlannerItemView: View, Equatable {
         onNotificationChange: ((Date?) -> Void)? = nil,
         onGroupChange: ((UUID?) -> Void)? = nil,
         onItemTap: ((UUID) -> Void)? = nil
-    ) {
+    ) {        
         // Store the display data
         self.displayData = displayData
         // Initialize the itemData from displayData
@@ -597,12 +597,7 @@ struct PlannerItemView: View, Equatable {
                 itemData.groupColor = nil
             }
         }
-        .onChange(of: displayData) { oldValue, newValue in
-            // Debug print for displayData changes
-            let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
-            print("\(timestamp) [PlannerItemView] Updating view for item: \(newValue.id.uuidString), title: \(newValue.title), isCompleted: \(newValue.isCompleted)")
-            print("\(timestamp) [PlannerItemView] Old state - isCompleted: \(oldValue.isCompleted), New state - isCompleted: \(newValue.isCompleted)")
-            
+        .onChange(of: displayData) { oldValue, newValue in            
             itemData = MutablePlannerItemData(from: newValue)
         }
     }

@@ -6,12 +6,16 @@ struct ManageGroupsView: View {
     @State private var showingInfoPopover = false
     @FocusState private var isNewGroupFieldFocused: Bool
     @State private var refreshCounter: Int = 0 // Add a counter to force refresh
+    @State private var dragOffset = CGSize.zero // Add drag offset for swipe gesture
     
     var body: some View {
         ZStack {
-            // Background overlay
-            Color.black.opacity(0.75)
-                .ignoresSafeArea()
+            // Semi-transparent backdrop for closing the view
+            Color.black.opacity(0.01)
+                .edgesIgnoringSafeArea(.all)
+                .allowsHitTesting(true)
+                .transition(.opacity)
+                .zIndex(998)
                 .onTapGesture {
                     viewModel.saveNewGroupIfNeeded()
                     isPresented = false
@@ -133,7 +137,31 @@ struct ManageGroupsView: View {
                 RoundedRectangle(cornerRadius: 16)
                     .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
             )
-            .padding()
+            .offset(x: dragOffset.width)
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        // Only allow dragging from the left edge (first 88 points) and only to the right
+                        if value.startLocation.x < 88 && value.translation.width > 0 {
+                            dragOffset = value.translation
+                        }
+                    }
+                    .onEnded { value in
+                        // If dragged more than 100 points to the right, dismiss
+                        if value.startLocation.x < 44 && value.translation.width > 100 {
+                            // Use animation to ensure smooth transition
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                isPresented = false
+                            }
+                        }
+                        // If not dragged far enough, animate back to original position
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            dragOffset = .zero
+                        }
+                    }
+            )
+            .transition(.move(edge: .trailing))
+            .zIndex(999)
             
             // Group details overlay
             if viewModel.selectedGroup != nil {
@@ -154,8 +182,10 @@ struct ManageGroupsView: View {
                         isPresented = false
                     }
                 )
+                .transition(.move(edge: .trailing))
             }
         }
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.selectedGroup)
         .onAppear {
             viewModel.loadGroups()
         }
@@ -328,12 +358,12 @@ struct GroupRow: View {
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: 16)
                 .fill(Color.black.opacity(0.3))
                 .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(.white.opacity(0.1), lineWidth: 0.5)
         )
     }
@@ -344,20 +374,20 @@ struct GroupDetailsView: View {
     @ObservedObject var viewModel: ManageGroupsViewModel
     @Binding var isPresented: Bool
     @State private var colorUpdateCounter: Int = 0 // Add a counter to force view updates
-    @State private var dragOffset: CGFloat = 0 // Track drag gesture offset
-    @State private var rotation = Angle.zero // Track rotation for swipe animation
+    @State private var dragOffset = CGSize.zero // Track drag gesture offset
     let closeAllViews: () -> Void
     
     var body: some View {
         ZStack {
             // Background overlay - only dismiss when tapping directly on it
-            Color.clear
-                .ignoresSafeArea()
+            Color.black.opacity(0.01)
+                .edgesIgnoringSafeArea(.all)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     isPresented = false
                 }
                 .allowsHitTesting(true) // Explicitly allow hit testing on the background
+                .zIndex(1998)
             
             // Main content
             VStack(spacing: 0) {
@@ -434,49 +464,31 @@ struct GroupDetailsView: View {
                 RoundedRectangle(cornerRadius: 16)
                     .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
             )
-            .padding()
-            .contentShape(Rectangle())
-            .onTapGesture {
-                // Consume tap events on the content area to prevent them from reaching the background
-            }
-            .offset(x: dragOffset)
-            .rotationEffect(rotation)
+            .offset(x: dragOffset.width)
             .gesture(
                 DragGesture()
                     .onChanged { value in
-                        // Only allow dragging to the right (positive x values)
-                        if value.translation.width > 0 {
-                            dragOffset = value.translation.width
-                            // Calculate rotation based on horizontal movement (similar to DayView)
-                            let rotationFactor = Double(dragOffset / 40)
-                            rotation = Angle(degrees: rotationFactor)
+                        // Only allow dragging from the left edge (first 88 points) and only to the right
+                        if value.startLocation.x < 88 && value.translation.width > 0 {
+                            dragOffset = value.translation
                         }
                     }
                     .onEnded { value in
-                        // If dragged more than 100 points to the right, dismiss the view
-                        if value.translation.width > 100 {
-                            // Animate the view off screen (similar to DayView)
-                            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                                dragOffset = UIScreen.main.bounds.width * 1.5
-                                rotation = Angle(degrees: 10)
-                            }
-                            
-                            // Dismiss after animation
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        // If dragged more than 100 points to the right, dismiss
+                        if value.startLocation.x < 44 && value.translation.width > 100 {
+                            // Use animation to ensure smooth transition
+                            withAnimation(.easeInOut(duration: 0.25)) {
                                 isPresented = false
-                                // Reset for next time
-                                dragOffset = 0
-                                rotation = .zero
                             }
-                        } else {
-                            // Otherwise, animate back to original position
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
-                                dragOffset = 0
-                                rotation = .zero
-                            }
+                        }
+                        // If not dragged far enough, animate back to original position
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            dragOffset = .zero
                         }
                     }
             )
+            .transition(.move(edge: .trailing))
+            .zIndex(1999)
             
             // Color picker sheet
             if viewModel.showingColorPicker {
@@ -498,7 +510,7 @@ struct GroupDetailsView: View {
                 )
             }
         }
-        .zIndex(1) // Ensure this appears above the main view
+        .zIndex(1000) // Ensure this appears above the main view
         .onAppear {
             // Reset loading state and reload items
             viewModel.isLoadingItems = true
@@ -525,17 +537,8 @@ struct GroupDetailsView: View {
                 if let selectedGroup = viewModel.selectedGroup, 
                    let groupToDelete = viewModel.groupToDelete,
                    selectedGroup.id == groupToDelete.id {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                        dragOffset = UIScreen.main.bounds.width * 1.5
-                        rotation = Angle(degrees: 10)
-                    }
-                    
-                    // Dismiss after animation
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    withAnimation(.easeInOut(duration: 0.25)) {
                         isPresented = false
-                        // Reset for next time
-                        dragOffset = 0
-                        rotation = .zero
                     }
                 }
             }
@@ -589,11 +592,11 @@ struct GroupItemRow: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 16)
                 .fill(Color.black.opacity(0.2))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
         )
     }
@@ -612,6 +615,7 @@ struct ColorPickerView: View {
     @Binding var selectedGreen: Double
     @Binding var selectedBlue: Double
     @Binding var hasColor: Bool
+    @State private var dragOffset = CGSize.zero // Add drag offset for swipe gesture
     let onColorSelected: (Double, Double, Double, Bool) -> Void
     
     // Predefined colors with identifiers
@@ -628,13 +632,15 @@ struct ColorPickerView: View {
     
     var body: some View {
         ZStack {
-            // Background overlay
-            Color.black.opacity(0.75)
+            // Semi-transparent backdrop for closing the view
+            Color.black.opacity(0.01)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture {
                     isPresented = false
                 }
+                .allowsHitTesting(true)
+                .zIndex(2998)
             
             // Color picker content
             VStack(spacing: 12) {
@@ -703,7 +709,7 @@ struct ColorPickerView: View {
                 }
                 .padding(.bottom, 8)
             }
-            .frame(width: 300, height: 300) // More compact height
+            .frame(width: 300)
             .background(
                 Color.clear
                     .background(.ultraThinMaterial)
@@ -713,12 +719,32 @@ struct ColorPickerView: View {
                 RoundedRectangle(cornerRadius: 16)
                     .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
             )
-            .contentShape(Rectangle())
-            .onTapGesture {
-                // Consume tap events on the content area
-            }
+            .offset(x: dragOffset.width)
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        // Only allow dragging from the left edge (first 88 points) and only to the right
+                        if value.startLocation.x < 88 && value.translation.width > 0 {
+                            dragOffset = value.translation
+                        }
+                    }
+                    .onEnded { value in
+                        // If dragged more than 100 points to the right, dismiss
+                        if value.startLocation.x < 44 && value.translation.width > 100 {
+                            // Use animation to ensure smooth transition
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                isPresented = false
+                            }
+                        }
+                        // If not dragged far enough, animate back to original position
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            dragOffset = .zero
+                        }
+                    }
+            )
+            .transition(.move(edge: .trailing))
+            .zIndex(2999)
         }
-        .zIndex(2) // Above the group details view
     }
     
     // Helper function to check if a color is selected

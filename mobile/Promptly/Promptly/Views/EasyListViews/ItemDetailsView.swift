@@ -12,17 +12,9 @@ struct ItemDetailsView: View {
     @State private var isEditingTitle = false
     @State private var editedTitleText = ""
     @FocusState private var isTitleFieldFocused: Bool
-    @State private var editingSubitemId: UUID? = nil {
-        didSet {
-            print("🎨 editingSubitemId changed: \(String(describing: oldValue)) -> \(String(describing: editingSubitemId))")
-        }
-    }
+    @State private var editingSubitemId: UUID? = nil
     @State private var editedSubitemText = ""
-    @FocusState private var focusedSubitemId: UUID? {
-        didSet {
-            print("🎯 focusedSubitemId changed: \(String(describing: oldValue)) -> \(String(describing: focusedSubitemId))")
-        }
-    }
+    @FocusState private var focusedSubitemId: UUID?
     
     // Add focus removal state
     private enum FocusRemovalState {
@@ -43,32 +35,26 @@ struct ItemDetailsView: View {
     
     // Function to remove all focus
     private func removeAllFocus() {
-        print("🔄 Starting focus removal process...")
         focusRemovalState = .saving
         
         // Phase 1: Save all edits
         if isEditingTitle {
-            print("💾 Saving title edit")
             saveTitle()
         }
         if editingSubitemId != nil {
-            print("💾 Saving subitem edit")
             let currentEditingId = editingSubitemId
             editingSubitemId = nil  // Clear editing state first
             
             if let id = currentEditingId {
                 if editedSubitemText.isEmpty {
-                    print("🗑️ Deleting empty subitem")
                     viewModel.deleteSubitem(id)
                 } else {
-                    print("📝 Updating subitem title")
                     viewModel.updateSubitemTitle(id, newTitle: editedSubitemText)
                 }
             }
         }
         
         // Phase 2: Clear focus states
-        print("🎯 Clearing focus states...")
         focusRemovalState = .clearingFocus
         DispatchQueue.main.async {
             withAnimation(.easeOut(duration: 0.2)) {
@@ -77,7 +63,6 @@ struct ItemDetailsView: View {
                 self.focusedSubitemId = nil
                 
                 // Phase 3: Mark as complete
-                print("✅ Focus removal complete")
                 self.focusRemovalState = .completed
                 
                 // Reset state after a brief delay
@@ -306,7 +291,6 @@ struct ItemDetailsView: View {
         }
         .onDisappear {
             // Save any ongoing edits
-            print("🔄 View disappearing - checking for unsaved edits...")
             if isEditingTitle {
                 saveTitle()
             }
@@ -315,9 +299,7 @@ struct ItemDetailsView: View {
             }
             
             // Save changes when view disappears
-            print("💾 About to save all changes...")
             viewModel.saveChanges()
-            print("✨ All changes saved")
             
             // Post notification that item was updated
             NotificationCenter.default.post(
@@ -331,17 +313,12 @@ struct ItemDetailsView: View {
             }
         }
         .onChange(of: focusedSubitemId) { oldValue, newValue in
-            print("🔍 Focus change handler - old: \(String(describing: oldValue)), new: \(String(describing: newValue)), editing: \(String(describing: editingSubitemId)), state: \(String(describing: focusRemovalState))")
             
             // Only handle focus changes if we're not in the middle of focus removal
             if focusRemovalState == nil {
                 if oldValue != nil && newValue == nil && editingSubitemId != nil {
-                    print("📱 Subitem lost focus - saving changes...")
                     saveSubitemEdit()
-                    print("💫 Focus-based save completed")
                 }
-            } else {
-                print("⏭️ Skipping focus change handling during focus removal process")
             }
         }
     }
@@ -633,12 +610,9 @@ extension ItemDetailsView {
     
     // Subitem editing methods
     private func startEditingSubitem(_ subitem: Models.SubItem) {
-        print("📝 startEditingSubitem called for subitem: \(subitem.id)")
-        print("📊 Before change - editing: \(String(describing: editingSubitemId)), focused: \(String(describing: focusedSubitemId))")
         
         // If we have an existing edit, save it first
         if editingSubitemId != nil {
-            print("💾 Saving previous edit before starting new one")
             saveSubitemEdit()
         }
         
@@ -647,18 +621,13 @@ extension ItemDetailsView {
     }
     
     private func saveSubitemEdit() {
-        print("💾 saveSubitemEdit called with editingSubitemId: \(String(describing: editingSubitemId))")
-        print("📋 Current editedSubitemText content: '\(editedSubitemText)'")
         guard let subitemId = editingSubitemId else { return }
         
         if editedSubitemText.isEmpty {
             // Delete the subitem if text is empty
-            print("🗑️ Deleting subitem due to empty text")
             viewModel.deleteSubitem(subitemId)
         } else if editedSubitemText != viewModel.item.subItems.first(where: { $0.id == subitemId })?.title {
-            print("📝 About to save subitem edit. Current text: '\(editedSubitemText)'")
             viewModel.updateSubitemTitle(subitemId, newTitle: editedSubitemText)
-            print("✅ Subitem edit saved with text: '\(editedSubitemText)'")
         }
         self.editingSubitemId = nil
     }

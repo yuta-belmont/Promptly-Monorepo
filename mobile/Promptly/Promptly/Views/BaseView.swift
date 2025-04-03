@@ -16,6 +16,11 @@ struct BaseView: View {
     @State private var showingAboutSheet = false
     @StateObject private var authManager = AuthManager.shared
     
+    // Computed property to check if any menu-launched view is showing
+    private var isShowingMenuLaunchedView: Bool {
+        return showingManageGroups || showingGeneralSheet || showingAboutSheet
+    }
+    
     let date: Date
     var onBack: (() -> Void)?
     
@@ -26,89 +31,92 @@ struct BaseView: View {
     
     var body: some View {
         ZStack(alignment: .trailing) {
-            // Main content area
-            DayView(date: date, showMenu: $showingMenu, onBack: onBack)
-                .environmentObject(focusManager)
-                .zIndex(0)
-            
-            // Darkened background for chat - using a fixed medium opacity level
-            Color.black
-                .opacity(isChatExpanded ? 0.4 : 0)
-                .edgesIgnoringSafeArea(.all)
-                .zIndex(0.5)
-                .allowsHitTesting(false)
-            // Chat overlay
-            VStack {
-                Spacer()
+            // Only show main content and chat if no menu-launched view is showing
+            if !isShowingMenuLaunchedView {
+                // Main content area
+                DayView(date: date, showMenu: $showingMenu, onBack: onBack)
+                    .environmentObject(focusManager)
+                    .zIndex(0)
                 
-                HStack {
-                    // When chat is expanded, use the full width
-                    if isChatExpanded {
-                        ChatView(
-                            viewModel: chatViewModel,
-                            isKeyboardActive: $isKeyboardActive,
-                            isExpanded: $isChatExpanded
-                        )
-                        .environmentObject(focusManager)
-                        .frame(maxWidth: .infinity)
-                        .transition(.asymmetric(
-                            insertion: .scale(scale: 0.8).combined(with: .opacity),
-                            removal: .scale(scale: 0.8).combined(with: .opacity)
-                        ))
-                    } else if !focusManager.isEasyListFocused && authManager.isAuthenticated && !authManager.isGuestUser {
-                        // Only show chat button when:
-                        // 1. EasyListView is not focused
-                        // 2. User is authenticated
-                        // 3. User is NOT a guest user
-                        Spacer()
-                        
-                        Button(action: {
-                            // Remove all focus when opening the chat
-                            focusManager.removeAllFocus()
+                // Darkened background for chat - using a fixed medium opacity level
+                Color.black
+                    .opacity(isChatExpanded ? 0.4 : 0)
+                    .edgesIgnoringSafeArea(.all)
+                    .zIndex(0.5)
+                    .allowsHitTesting(false)
+                // Chat overlay
+                VStack {
+                    Spacer()
+                    
+                    HStack {
+                        // When chat is expanded, use the full width
+                        if isChatExpanded {
+                            ChatView(
+                                viewModel: chatViewModel,
+                                isKeyboardActive: $isKeyboardActive,
+                                isExpanded: $isChatExpanded
+                            )
+                            .environmentObject(focusManager)
+                            .frame(maxWidth: .infinity)
+                            .transition(.asymmetric(
+                                insertion: .scale(scale: 0.8).combined(with: .opacity),
+                                removal: .scale(scale: 0.8).combined(with: .opacity)
+                            ))
+                        } else if !focusManager.isEasyListFocused && authManager.isAuthenticated && !authManager.isGuestUser {
+                            // Only show chat button when:
+                            // 1. EasyListView is not focused
+                            // 2. User is authenticated
+                            // 3. User is NOT a guest user
+                            Spacer()
                             
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                isChatExpanded.toggle()
-                            }
-                        }) {
-                            ZStack {
-                                // Bubble background
-                                Circle()
-                                    .fill(Color.blue)
-                                    .opacity(0.8)
-                                    .frame(width: 56, height: 56)
-                                    .shadow(color: .black.opacity(0.2), radius: 5, x: 0, y: 2)
+                            Button(action: {
+                                // Remove all focus when opening the chat
+                                focusManager.removeAllFocus()
                                 
-                                // Chat icon
-                                Image(systemName: "message.fill")
-                                    .font(.system(size: 24))
-                                    .foregroundColor(.white)
-                                
-                                // Notification badge - positioned as an overlay
-                                if chatViewModel.unreadCount > 0 {
-                                    ZStack {
-                                        Circle()
-                                            .fill(Color.red)
-                                            .frame(width: 22, height: 22)
-                                        
-                                        Text("\(min(chatViewModel.unreadCount, 99))")
-                                            .font(.system(size: 12, weight: .bold))
-                                            .foregroundColor(.white)
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    isChatExpanded.toggle()
+                                }
+                            }) {
+                                ZStack {
+                                    // Bubble background
+                                    Circle()
+                                        .fill(Color.blue)
+                                        .opacity(0.8)
+                                        .frame(width: 56, height: 56)
+                                        .shadow(color: .black.opacity(0.2), radius: 5, x: 0, y: 2)
+                                    
+                                    // Chat icon
+                                    Image(systemName: "message.fill")
+                                        .font(.system(size: 24))
+                                        .foregroundColor(.white)
+                                    
+                                    // Notification badge - positioned as an overlay
+                                    if chatViewModel.unreadCount > 0 {
+                                        ZStack {
+                                            Circle()
+                                                .fill(Color.red)
+                                                .frame(width: 22, height: 22)
+                                            
+                                            Text("\(min(chatViewModel.unreadCount, 99))")
+                                                .font(.system(size: 12, weight: .bold))
+                                                .foregroundColor(.white)
+                                        }
+                                        .frame(width: 22, height: 22)
+                                        .offset(x: 22, y: -22) // Position at top-right of the chat icon
                                     }
-                                    .frame(width: 22, height: 22)
-                                    .offset(x: 22, y: -22) // Position at top-right of the chat icon
                                 }
                             }
+                            .padding(.trailing, 16)
+                            .padding(.bottom, 30) // Increased bottom padding to move the bubble up
+                            .transition(.scale(scale: 0.8).combined(with: .opacity))
                         }
-                        .padding(.trailing, 16)
-                        .padding(.bottom, 30) // Increased bottom padding to move the bubble up
-                        .transition(.scale(scale: 0.8).combined(with: .opacity))
                     }
+                    .frame(maxWidth: .infinity) // Ensure HStack uses full width
                 }
-                .frame(maxWidth: .infinity) // Ensure HStack uses full width
+                .frame(maxWidth: .infinity) // Ensure VStack uses full width
+                .zIndex(1)
+                .animation(.easeInOut(duration: 0.2), value: focusManager.isEasyListFocused) // Animate based on focus state
             }
-            .frame(maxWidth: .infinity) // Ensure VStack uses full width
-            .zIndex(1)
-            .animation(.easeInOut(duration: 0.2), value: focusManager.isEasyListFocused) // Animate based on focus state
             
             // Menu overlay with background
             ZStack(alignment: .trailing) {
@@ -142,19 +150,19 @@ struct BaseView: View {
             // Overlays
             if showingManageGroups {
                 ManageGroupsView(isPresented: $showingManageGroups)
-                    .transition(.opacity)
+                    .transition(.move(edge: .trailing))
                     .zIndex(3)
             }
             
             if showingGeneralSheet {
                 GeneralSettingsView(isPresented: $showingGeneralSheet)
-                    .transition(.opacity)
+                    .transition(.move(edge: .trailing))
                     .zIndex(3)
             }
             
             if showingAboutSheet {
                 AboutView(isPresented: $showingAboutSheet)
-                    .transition(.opacity)
+                    .transition(.move(edge: .trailing))
                     .zIndex(3)
             }
         }
