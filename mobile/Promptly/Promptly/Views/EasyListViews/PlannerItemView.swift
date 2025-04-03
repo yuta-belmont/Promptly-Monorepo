@@ -280,9 +280,10 @@ private struct ExpandCollapseButton: View {
 // MARK: - Metadata row component
 private struct MetadataRow: View {
     @Binding var itemData: MutablePlannerItemData
+    let groupInfo: (title: String?, color: Color?)
     
     private var hasValidGroup: Bool {
-        return itemData.groupTitle != nil
+        return groupInfo.title != nil
     }
     
     var body: some View {
@@ -296,11 +297,12 @@ private struct MetadataRow: View {
                 Spacer()
                     .frame(width: 30)
                 
-                if hasGroup, let groupTitle = itemData.groupTitle {
+                if hasGroup, let groupTitle = groupInfo.title {
                     Text(groupTitle)
                         .font(.footnote)
                         .foregroundColor(.white.opacity(0.5))
                         .lineLimit(1)
+                        .truncationMode(.tail)
                 }
                 
                 if let notificationTime = itemData.notification, hasNotification {
@@ -313,6 +315,7 @@ private struct MetadataRow: View {
                             .font(.footnote)
                             .foregroundColor(isPastDue ? .red.opacity(0.5) : .white.opacity(0.5))
                             .strikethrough(itemData.isCompletedLocally, color: .gray)
+                            .lineLimit(1)  // Add line limit to prevent wrapping
                     }
                     .foregroundColor(notificationTime < Date() ? .red.opacity(0.5) : .white.opacity(0.5))
                 }
@@ -437,6 +440,7 @@ struct PlannerItemView: View, Equatable {
     // Single mutable state source that combines displayData and localState
     @State private var itemData: MutablePlannerItemData
     @State private var isGlowing: Bool = false
+    @State private var showOutline: Bool = false  // New state for outline
     
     // Store the display data to observe changes
     let displayData: PlannerItemDisplayData
@@ -519,7 +523,8 @@ struct PlannerItemView: View, Equatable {
             )
             
             MetadataRow(
-                itemData: $itemData
+                itemData: $itemData,
+                groupInfo: groupInfo
             )
             
             SubItemsSection(
@@ -551,16 +556,31 @@ struct PlannerItemView: View, Equatable {
                 }
             }
         )
+        .overlay(
+            Group {
+                // Default outline
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(.white.opacity(0.05), lineWidth: 0.5)
+                
+                // Animated outline that appears with the glow for main tap
+                if showOutline {
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(.white.opacity(0.5), lineWidth: 0.5)
+                }
+            }
+        )
         .opacity(itemData.opacity)
         .padding(.horizontal, 4)
         .padding(.vertical, 2)
         .contentShape(Rectangle()) // Make the entire view tappable
         .onTapGesture {
-            // Trigger tap glow animation
+            // Trigger tap glow animation and outline
             isGlowing = true
+            showOutline = true
             DispatchQueue.main.asyncAfter(deadline: .now()) {
                 withAnimation(.easeInOut(duration: 0.5)) {
                     isGlowing = false
+                    showOutline = false
                 }
             }
             onItemTap?(itemData.id)
@@ -569,7 +589,7 @@ struct PlannerItemView: View, Equatable {
         // Watch for local completed state changes to trigger animations
         .onChange(of: itemData.isCompletedLocally) { _, isCompleted in
             if isCompleted {
-                // Trigger glow animation
+                // Trigger glow animation only (no outline)
                 isGlowing = true
                 // Glow effect eases in then out immediately
                 DispatchQueue.main.asyncAfter(deadline: .now()) {

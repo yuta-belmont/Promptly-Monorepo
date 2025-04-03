@@ -64,6 +64,14 @@ struct DayView: View, Hashable {
     var animationID: Namespace.ID? = nil
     var onBack: (() -> Void)? = nil
     
+    // Date formatter for consistent logging
+    private let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+    
     private let calendar = Calendar.current
     private var isToday: Bool {
         calendar.isDateInToday(currentDate)
@@ -92,6 +100,7 @@ struct DayView: View, Hashable {
     }
     
     init(date: Date = Date(), showMenu: Binding<Bool> = .constant(false), animationID: Namespace.ID? = nil, onBack: (() -> Void)? = nil) {
+        print("[DayView] Initializing with date: \(DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short))")
         self.date = date
         self._currentDate = State(initialValue: date)
         self._showMenu = showMenu
@@ -252,8 +261,8 @@ struct DayView: View, Hashable {
                             if let onBack = onBack {
                                 onBack()
                             } else {
-                                NavigationUtil.navigationPath.removeLast()
-                                NavigationUtil.navigationPath.append(CalendarView(initialDate: currentDate))
+                                // Fallback to dismiss if no onBack provided
+                                dismiss()
                             }
                         }) {
                             Image(systemName: "calendar")
@@ -529,6 +538,9 @@ struct DayView: View, Hashable {
                     }
                 }
                 .onAppear {
+                    print("[DayView] onAppear with currentDate: \(dateFormatter.string(from: currentDate))")
+                    print("[DayView] date property: \(dateFormatter.string(from: date))")
+                    
                     // Prepare all haptic feedback generators
                     feedbackGenerator.prepare()
                     dateHeaderFeedbackGenerator.prepare()
@@ -536,6 +548,7 @@ struct DayView: View, Hashable {
                     
                     // Load data after the view has appeared and layout is complete
                     DispatchQueue.main.async {
+                        print("[DayView] About to load data for: \(self.dateFormatter.string(from: self.currentDate))")
                         easyListViewModel.loadData()
                     }
                 }

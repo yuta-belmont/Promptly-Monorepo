@@ -7,24 +7,20 @@ struct ManageGroupsView: View {
     @FocusState private var isNewGroupFieldFocused: Bool
     @State private var refreshCounter: Int = 0 // Add a counter to force refresh
     @State private var dragOffset = CGSize.zero // Add drag offset for swipe gesture
+    var onNavigateToDate: ((Date) -> Void)? = nil
     
     var body: some View {
         ZStack {
-            // Semi-transparent backdrop for closing the view
-            Color.black.opacity(0.01)
-                .edgesIgnoringSafeArea(.all)
-                .allowsHitTesting(true)
-                .transition(.opacity)
-                .zIndex(998)
-                .onTapGesture {
-                    viewModel.saveNewGroupIfNeeded()
-                    isPresented = false
-                }
-            
             // Main content
             VStack(spacing: 0) {
                 // Header
                 HStack {
+                    // Add folder icon
+                    Image(systemName: "folder")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding(.trailing, 4)
+                    
                     Text("Manage Groups")
                         .font(.headline)
                         .foregroundColor(.white)
@@ -53,7 +49,9 @@ struct ManageGroupsView: View {
                     
                     Button("Done") {
                         viewModel.saveNewGroupIfNeeded()
-                        isPresented = false
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            isPresented = false
+                        }
                     }
                 }
                 .padding()
@@ -70,15 +68,6 @@ struct ManageGroupsView: View {
                                 .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                                 .listRowSeparator(.hidden)
                                 .id("\(group.id)-\(refreshCounter)") // Force refresh when counter changes
-                                .swipeActions(edge: .trailing) {
-                                    Button {
-                                        viewModel.confirmDeleteGroup(group)
-                                    }
-                                    label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                    .tint(.red)
-                                }
                         } else {
                             // This is a placeholder that will get removed with animation
                             // when groupIdToRemove is set
@@ -141,21 +130,21 @@ struct ManageGroupsView: View {
             .gesture(
                 DragGesture()
                     .onChanged { value in
-                        // Only allow dragging from the left edge (first 88 points) and only to the right
-                        if value.startLocation.x < 88 && value.translation.width > 0 {
+                        // Only allow dragging to the right
+                        if value.translation.width > 0 {
                             dragOffset = value.translation
                         }
                     }
                     .onEnded { value in
                         // If dragged more than 100 points to the right, dismiss
-                        if value.startLocation.x < 44 && value.translation.width > 100 {
+                        if value.translation.width > 100 {
                             // Use animation to ensure smooth transition
-                            withAnimation(.easeInOut(duration: 0.25)) {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                 isPresented = false
                             }
                         }
                         // If not dragged far enough, animate back to original position
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             dragOffset = .zero
                         }
                     }
@@ -179,7 +168,21 @@ struct ManageGroupsView: View {
                         // This will close both the details view and the manage groups view
                         viewModel.selectedGroup = nil
                         viewModel.saveNewGroupIfNeeded()
-                        isPresented = false
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            isPresented = false
+                        }
+                    },
+                    onNavigateToDate: { date in
+                        // First close this view and then navigate
+                        viewModel.selectedGroup = nil
+                        viewModel.saveNewGroupIfNeeded()
+                        
+                        // Use async to ensure views are properly cleaned up first
+                        DispatchQueue.main.async {
+                            if let parentNavigate = onNavigateToDate {
+                                parentNavigate(date)
+                            }
+                        }
                     }
                 )
                 .transition(.move(edge: .trailing))
@@ -220,74 +223,153 @@ struct GroupOptionsMenu: View {
     @ObservedObject var viewModel: ManageGroupsViewModel
     let group: Models.ItemGroup
     @ObservedObject private var groupStore = GroupStore.shared
+    @State private var showingPopover = false
+    private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
     var body: some View {
-        Menu {
-            Button(action: {
-                // If this group isn't already selected, select it first
-                if viewModel.selectedGroup?.id != group.id {
-                    viewModel.selectGroup(group)
-                    
-                    // Give time for selection to complete and update currentGroupTitle
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        // Now use the currentGroupTitle which will be updated with the selected group
-                        viewModel.editingGroupName = viewModel.currentGroupTitle
-                        viewModel.showingEditNameAlert = true
-                    }
-                } else {
-                    // Group is already selected, use the currentGroupTitle directly
-                    viewModel.editingGroupName = viewModel.currentGroupTitle
-                    viewModel.showingEditNameAlert = true
-                }
-            }) {
-                Label("Edit Group Name", systemImage: "pencil")
-            }
-            
-            Button(action: {
-                // If this group isn't already selected, select it first
-                if viewModel.selectedGroup?.id != group.id {
-                    viewModel.selectGroup(group)
-                    
-                    // Give time for selection to complete and update currentGroupTitle
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        viewModel.showingColorPicker = true
-                    }
-                } else {
-                    // Group is already selected, show color picker directly
-                    viewModel.showingColorPicker = true
-                }
-            }) {
-                Label("Set Group Color", systemImage: "paintpalette")
-            }
-            
-            Button(role: .destructive, action: {
-                // If this group isn't already selected, select it first
-                if viewModel.selectedGroup?.id != group.id {
-                    viewModel.selectGroup(group)
-                    
-                    // Give time for selection to complete and load items
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        viewModel.showingDeleteAllAlert = true
-                    }
-                } else {
-                    // Group is already selected, show delete alert directly
-                    viewModel.showingDeleteAllAlert = true
-                }
-            }) {
-                Label("Delete All Items", systemImage: "trash")
-            }
-            
-            Button(role: .destructive, action: {
-                // This works the same way regardless of whether the group is selected
-                viewModel.confirmDeleteGroup(group)
-            }) {
-                Label("Delete Group (Keep Items)", systemImage: "folder.badge.minus")
-            }
-        } label: {
+        Button(action: {
+            showingPopover = true
+        }) {
             Image(systemName: "ellipsis.circle")
                 .foregroundColor(.white)
                 .font(.system(size: 18))
                 .frame(width: 44, height: 36)
+        }
+        .popover(isPresented: $showingPopover,
+                attachmentAnchor: .point(.center),
+                arrowEdge: .trailing) {
+            VStack(spacing: 0) {
+                // Edit Group Name option
+                Button(action: {
+                    feedbackGenerator.impactOccurred()
+                    showingPopover = false
+                    
+                    // If this group isn't already selected, select it first
+                    if viewModel.selectedGroup?.id != group.id {
+                        viewModel.selectGroup(group)
+                        
+                        // Give time for selection to complete and update currentGroupTitle
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            // Now use the currentGroupTitle which will be updated with the selected group
+                            viewModel.editingGroupName = viewModel.currentGroupTitle
+                            viewModel.showingEditNameAlert = true
+                        }
+                    } else {
+                        // Group is already selected, use the currentGroupTitle directly
+                        viewModel.editingGroupName = viewModel.currentGroupTitle
+                        viewModel.showingEditNameAlert = true
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "pencil")
+                            .frame(width: 24)
+                        Text("Edit Group Name")
+                        Spacer()
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                
+                Divider()
+                    .background(Color.white.opacity(0.2))
+                
+                // Set Group Color option
+                Button(action: {
+                    feedbackGenerator.impactOccurred()
+                    showingPopover = false
+                    
+                    // If this group isn't already selected, select it first
+                    if viewModel.selectedGroup?.id != group.id {
+                        viewModel.selectGroup(group)
+                        
+                        // Give time for selection to complete
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            viewModel.showingColorPicker = true
+                        }
+                    } else {
+                        // Group is already selected, show color picker directly
+                        viewModel.showingColorPicker = true
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "paintpalette")
+                            .frame(width: 24)
+                        Text("Set Group Color")
+                        Spacer()
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                
+                Divider()
+                    .background(Color.white.opacity(0.2))
+                
+                // Delete All Items option
+                Button(action: {
+                    feedbackGenerator.impactOccurred()
+                    showingPopover = false
+                    
+                    // If this group isn't already selected, select it first
+                    if viewModel.selectedGroup?.id != group.id {
+                        viewModel.selectGroup(group)
+                        
+                        // Give time for selection to complete and load items
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            viewModel.showingDeleteAllAlert = true
+                        }
+                    } else {
+                        // Group is already selected, show delete alert directly
+                        viewModel.showingDeleteAllAlert = true
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "trash")
+                            .frame(width: 24)
+                        Text("Delete All Items")
+                        Spacer()
+                    }
+                    .foregroundColor(.red)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                
+                Divider()
+                    .background(Color.white.opacity(0.2))
+                
+                // Delete Group (Keep Items) option
+                Button(action: {
+                    feedbackGenerator.impactOccurred()
+                    showingPopover = false
+                    viewModel.confirmDeleteGroup(group)
+                }) {
+                    HStack {
+                        Image(systemName: "folder.badge.minus")
+                            .frame(width: 24)
+                        Text("Delete Group (Keep Items)")
+                        Spacer()
+                    }
+                    .foregroundColor(.red)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(width: 200)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .presentationCompactAdaptation(.none)
+            .onAppear {
+                feedbackGenerator.prepare()
+            }
         }
         .contentShape(Rectangle())
     }
@@ -298,6 +380,8 @@ struct GroupRow: View {
     let group: Models.ItemGroup
     @ObservedObject private var viewModel: ManageGroupsViewModel
     @ObservedObject private var groupStore = GroupStore.shared
+    @State private var isGlowing: Bool = false
+    private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
     init(group: Models.ItemGroup, viewModel: ManageGroupsViewModel) {
         self.group = group
@@ -311,6 +395,18 @@ struct GroupRow: View {
         HStack(spacing: 12) {
             // Main content with navigation
             Button(action: {
+                // Trigger haptic feedback
+                feedbackGenerator.impactOccurred()
+                
+                // Start the glow animation
+                isGlowing = true
+                DispatchQueue.main.asyncAfter(deadline: .now()) {
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        isGlowing = false
+                    }
+                }
+                
+                // Select the group
                 viewModel.selectGroup(currentGroup)
             }) {
                 HStack {
@@ -351,6 +447,10 @@ struct GroupRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(PlainButtonStyle())
+            .onAppear {
+                // Prepare the feedback generator when the view appears
+                feedbackGenerator.prepare()
+            }
             
             // Menu - completely separate from navigation area
             GroupOptionsMenu(viewModel: viewModel, group: currentGroup)
@@ -358,13 +458,32 @@ struct GroupRow: View {
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.black.opacity(0.3))
-                .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+            ZStack {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.black.opacity(0.3))
+                    .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+                
+                // Glow effect - exactly like in PlannerItemView
+                if isGlowing {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.white)
+                        .blur(radius: 8)
+                        .opacity(0.15)
+                }
+            }
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(.white.opacity(0.1), lineWidth: 0.5)
+            Group {
+                // Default outline
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(.white.opacity(0.1), lineWidth: 0.5)
+                
+                // Animated outline that appears with the glow
+                if isGlowing {
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(.white.opacity(0.5), lineWidth: 0.5)
+                }
+            }
         )
     }
 }
@@ -376,25 +495,18 @@ struct GroupDetailsView: View {
     @State private var colorUpdateCounter: Int = 0 // Add a counter to force view updates
     @State private var dragOffset = CGSize.zero // Track drag gesture offset
     let closeAllViews: () -> Void
+    let onNavigateToDate: ((Date) -> Void)?
     
     var body: some View {
         ZStack {
-            // Background overlay - only dismiss when tapping directly on it
-            Color.black.opacity(0.01)
-                .edgesIgnoringSafeArea(.all)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    isPresented = false
-                }
-                .allowsHitTesting(true) // Explicitly allow hit testing on the background
-                .zIndex(1998)
-            
             // Main content
             VStack(spacing: 0) {
                 // Header with group color indicator
                 HStack {
                     Button(action: {
-                        isPresented = false
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            isPresented = false
+                        }
                     }) {
                         Image(systemName: "chevron.left")
                             .foregroundColor(.white)
@@ -442,9 +554,9 @@ struct GroupDetailsView: View {
                 } else {
                     List {
                         ForEach(viewModel.groupItems) { item in
-                            GroupItemRow(item: item)
+                            GroupItemRow(item: item, viewModel: viewModel, onNavigateToDate: onNavigateToDate)
                                 .listRowBackground(Color.clear)
-                                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                                .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
                                 .listRowSeparator(.hidden)
                         }
                     }
@@ -468,49 +580,29 @@ struct GroupDetailsView: View {
             .gesture(
                 DragGesture()
                     .onChanged { value in
-                        // Only allow dragging from the left edge (first 88 points) and only to the right
-                        if value.startLocation.x < 88 && value.translation.width > 0 {
+                        // Only allow dragging to the right
+                        if value.translation.width > 0 {
                             dragOffset = value.translation
                         }
                     }
                     .onEnded { value in
                         // If dragged more than 100 points to the right, dismiss
-                        if value.startLocation.x < 44 && value.translation.width > 100 {
+                        if value.translation.width > 100 {
                             // Use animation to ensure smooth transition
-                            withAnimation(.easeInOut(duration: 0.25)) {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                 isPresented = false
                             }
                         }
                         // If not dragged far enough, animate back to original position
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             dragOffset = .zero
                         }
                     }
             )
             .transition(.move(edge: .trailing))
             .zIndex(1999)
-            
-            // Color picker sheet
-            if viewModel.showingColorPicker {
-                ColorPickerView(
-                    isPresented: $viewModel.showingColorPicker,
-                    selectedRed: $viewModel.selectedColorRed,
-                    selectedGreen: $viewModel.selectedColorGreen,
-                    selectedBlue: $viewModel.selectedColorBlue,
-                    hasColor: $viewModel.selectedColorHasColor,
-                    onColorSelected: { red, green, blue, hasColor in
-                        if hasColor {
-                            viewModel.updateGroupColor(red: red, green: green, blue: blue)
-                        } else {
-                            viewModel.removeGroupColor()
-                        }
-                        // Increment counter to force UI refresh
-                        colorUpdateCounter += 1
-                    }
-                )
-            }
         }
-        .zIndex(1000) // Ensure this appears above the main view
+        .zIndex(3999) // Ensure this appears above the managegroupsview
         .onAppear {
             // Reset loading state and reload items
             viewModel.isLoadingItems = true
@@ -537,7 +629,7 @@ struct GroupDetailsView: View {
                 if let selectedGroup = viewModel.selectedGroup, 
                    let groupToDelete = viewModel.groupToDelete,
                    selectedGroup.id == groupToDelete.id {
-                    withAnimation(.easeInOut(duration: 0.25)) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         isPresented = false
                     }
                 }
@@ -562,24 +654,53 @@ struct GroupDetailsView: View {
         } message: {
             Text("Enter a new name for this group")
         }
+        
+        // Color picker sheet - moved outside the ZStack for proper z-index context
+        if viewModel.showingColorPicker {
+            ColorPickerView(
+                isPresented: $viewModel.showingColorPicker,
+                selectedRed: $viewModel.selectedColorRed,
+                selectedGreen: $viewModel.selectedColorGreen,
+                selectedBlue: $viewModel.selectedColorBlue,
+                hasColor: $viewModel.selectedColorHasColor,
+                onColorSelected: { red, green, blue, hasColor in
+                    if hasColor {
+                        viewModel.updateGroupColor(red: red, green: green, blue: blue)
+                    } else {
+                        viewModel.removeGroupColor()
+                    }
+                    // Increment counter to force UI refresh
+                    colorUpdateCounter += 1
+                }
+            )
+            .zIndex(9999) // Ensure this is higher than GroupDetailsView's zIndex
+        }
     }
 }
 
 struct GroupItemRow: View {
     let item: Models.ChecklistItem
+    @ObservedObject private var viewModel: ManageGroupsViewModel
+    @State private var showingPopover = false
+    private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
+    let onNavigateToDate: ((Date) -> Void)?
+    
+    init(item: Models.ChecklistItem, viewModel: ManageGroupsViewModel, onNavigateToDate: ((Date) -> Void)? = nil) {
+        self.item = item
+        self.viewModel = viewModel
+        self.onNavigateToDate = onNavigateToDate
+    }
     
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
-                .foregroundColor(item.isCompleted ? .green : .gray)
-                .font(.system(size: 18))
-            
+            // Item title and date
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.title)
                     .foregroundColor(.white)
                     .font(.system(size: 15))
                     .strikethrough(item.isCompleted)
                     .lineLimit(1)
+                    .truncationMode(.tail)
                 
                 // Format the date
                 Text(formattedDate(item.date))
@@ -588,23 +709,181 @@ struct GroupItemRow: View {
             }
             
             Spacer()
+            
+            // Menu button
+            Button(action: {
+                feedbackGenerator.impactOccurred()
+                showingPopover = true
+            }) {
+                Image(systemName: "ellipsis")
+                    .rotationEffect(.degrees(90))
+                    .foregroundColor(.white.opacity(0.6))
+                    .font(.system(size: 16))
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showingPopover,
+                     attachmentAnchor: .point(.center),
+                     arrowEdge: .trailing) {
+                GroupItemPopoverView(
+                    item: item,
+                    group: viewModel.selectedGroup ?? viewModel.groups[0],
+                    viewModel: viewModel,
+                    onNavigateToDate: onNavigateToDate
+                )
+                .presentationCompactAdaptation(.none)
+            }
         }
-        .padding(.vertical, 8)
         .padding(.horizontal, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.black.opacity(0.2))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
-        )
+        .padding(.vertical, 8)
+        .background(Color.black.opacity(0.3))
+        .cornerRadius(16)
+        .onAppear {
+            feedbackGenerator.prepare()
+        }
     }
     
     private func formattedDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         return formatter.string(from: date)
+    }
+}
+
+// Custom PopoverView for GroupItemRow
+struct GroupItemPopoverView: View {
+    let item: Models.ChecklistItem
+    let group: Models.ItemGroup
+    @ObservedObject private var viewModel: ManageGroupsViewModel
+    @State private var removeConfirmationActive = false
+    @State private var deleteConfirmationActive = false
+    @State private var removeTimer: Timer?
+    @State private var deleteTimer: Timer?
+    private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
+    @Environment(\.dismiss) private var dismiss
+    let onNavigateToDate: ((Date) -> Void)?
+    
+    init(item: Models.ChecklistItem, group: Models.ItemGroup, viewModel: ManageGroupsViewModel, onNavigateToDate: ((Date) -> Void)? = nil) {
+        self.item = item
+        self.group = group
+        self.viewModel = viewModel
+        self.onNavigateToDate = onNavigateToDate
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Go To Button
+            Button(action: {
+                feedbackGenerator.impactOccurred()
+                dismiss()
+                if let onNavigateToDate = onNavigateToDate {
+                    DispatchQueue.main.async {
+                        onNavigateToDate(item.date)
+                    }
+                }
+            }) {
+                HStack {
+                    Image(systemName: "calendar")
+                        .frame(width: 24)
+                    Text("Go To")
+                    Spacer()
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
+            Divider()
+                .background(Color.white.opacity(0.2))
+            
+            // Remove from Group Button
+            Button(action: {
+                feedbackGenerator.impactOccurred()
+                
+                if removeConfirmationActive {
+                    // Second tap - perform remove
+                    removeTimer?.invalidate()
+                    removeTimer = nil
+                    removeConfirmationActive = false
+                    viewModel.removeItemFromGroup(item, group: group)
+                    dismiss()
+                } else {
+                    // First tap - start confirmation timer
+                    removeConfirmationActive = true
+                    removeTimer?.invalidate()
+                    removeTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { _ in
+                        removeConfirmationActive = false
+                    }
+                }
+            }) {
+                HStack {
+                    Image(systemName: "folder.badge.minus")
+                        .frame(width: 24)
+                    Text(removeConfirmationActive ? "Confirm" : "Remove from Group")
+                    Spacer()
+                }
+                .foregroundColor(.red)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
+            Divider()
+                .background(Color.white.opacity(0.2))
+            
+            // Delete Button
+            Button(action: {
+                feedbackGenerator.impactOccurred()
+                
+                if deleteConfirmationActive {
+                    // Second tap - perform delete
+                    deleteTimer?.invalidate()
+                    deleteTimer = nil
+                    deleteConfirmationActive = false
+                    viewModel.deleteItem(item)
+                    dismiss()
+                } else {
+                    // First tap - start confirmation timer
+                    deleteConfirmationActive = true
+                    deleteTimer?.invalidate()
+                    deleteTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { _ in
+                        deleteConfirmationActive = false
+                    }
+                }
+            }) {
+                HStack {
+                    Image(systemName: "trash")
+                        .frame(width: 24)
+                    Text(deleteConfirmationActive ? "Confirm" : "Delete")
+                    Spacer()
+                }
+                .foregroundColor(.red)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 180)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .onAppear {
+            // Prepare haptic feedback when view appears
+            feedbackGenerator.prepare()
+        }
+        .onDisappear {
+            // Clean up timers when view disappears
+            removeTimer?.invalidate()
+            removeTimer = nil
+            deleteTimer?.invalidate()
+            deleteTimer = nil
+            removeConfirmationActive = false
+            deleteConfirmationActive = false
+        }
     }
 }
 
@@ -633,14 +912,16 @@ struct ColorPickerView: View {
     var body: some View {
         ZStack {
             // Semi-transparent backdrop for closing the view
-            Color.black.opacity(0.01)
+            Color.black.opacity(0.6)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    isPresented = false
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        isPresented = false
+                    }
                 }
                 .allowsHitTesting(true)
-                .zIndex(2998)
+                .zIndex(9998)
             
             // Color picker content
             VStack(spacing: 12) {
@@ -653,7 +934,9 @@ struct ColorPickerView: View {
                     Spacer()
                     
                     Button("Done") {
-                        isPresented = false
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            isPresented = false
+                        }
                     }
                 }
                 .padding(.horizontal)
@@ -723,27 +1006,27 @@ struct ColorPickerView: View {
             .gesture(
                 DragGesture()
                     .onChanged { value in
-                        // Only allow dragging from the left edge (first 88 points) and only to the right
-                        if value.startLocation.x < 88 && value.translation.width > 0 {
+                        // Only allow dragging to the right
+                        if value.translation.width > 0 {
                             dragOffset = value.translation
                         }
                     }
                     .onEnded { value in
                         // If dragged more than 100 points to the right, dismiss
-                        if value.startLocation.x < 44 && value.translation.width > 100 {
+                        if value.translation.width > 100 {
                             // Use animation to ensure smooth transition
-                            withAnimation(.easeInOut(duration: 0.25)) {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                 isPresented = false
                             }
                         }
                         // If not dragged far enough, animate back to original position
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             dragOffset = .zero
                         }
                     }
             )
             .transition(.move(edge: .trailing))
-            .zIndex(2999)
+            .zIndex(9999)
         }
     }
     

@@ -291,4 +291,82 @@ final class ManageGroupsViewModel: ObservableObject {
             }
         }
     }
+    
+    func removeItemFromGroup(_ item: Models.ChecklistItem, group: Models.ItemGroup) {
+        // Load the checklist for this specific date
+        if let checklist = persistence.loadChecklist(for: item.date) {
+            // Find the item with this ID and remove its group association
+            var updatedChecklist = checklist
+            if let index = updatedChecklist.items.firstIndex(where: { $0.id == item.id }) {
+                var updatedItem = updatedChecklist.items[index]
+                updatedItem.updateGroup(nil)
+                updatedChecklist.items[index] = updatedItem
+                persistence.saveChecklist(updatedChecklist)
+                
+                // Update the group store
+                groupStore.removeItemFromGroup(itemId: item.id, groupId: group.id) { [weak self] in
+                    guard let self = self else { return }
+                    
+                    // Reload the groups to ensure we have the latest data
+                    self.loadGroups()
+                    
+                    // Update UI
+                    // Update the selected group reference
+                    if let updatedGroup = self.groups.first(where: { $0.id == group.id }) {
+                        self.selectedGroup = updatedGroup
+                    }
+                    
+                    // Update the groupItems array by removing the item
+                    if let itemIndex = self.groupItems.firstIndex(where: { $0.id == item.id }) {
+                        self.groupItems.remove(at: itemIndex)
+                    }
+                    
+                    // Notify that the item was removed from the group
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("ItemRemovedFromGroup"),
+                        object: item.id
+                    )
+                }
+            }
+        }
+    }
+    
+    func deleteItem(_ item: Models.ChecklistItem) {
+        // Load the checklist for this specific date
+        if let checklist = persistence.loadChecklist(for: item.date) {
+            // Find and remove the item
+            var updatedChecklist = checklist
+            if let index = updatedChecklist.items.firstIndex(where: { $0.id == item.id }) {
+                updatedChecklist.items.remove(at: index)
+                persistence.saveChecklist(updatedChecklist)
+                
+                // Update the group store
+                groupStore.removeItemFromAllGroups(itemId: item.id) { [weak self] in
+                    guard let self = self else { return }
+                    
+                    // Reload the groups to ensure we have the latest data
+                    self.loadGroups()
+                    
+                    // Update UI
+                    // Update the selected group reference
+                    if let group = self.selectedGroup {
+                        if let updatedGroup = self.groups.first(where: { $0.id == group.id }) {
+                            self.selectedGroup = updatedGroup
+                        }
+                    }
+                    
+                    // Update the groupItems array by removing the item
+                    if let itemIndex = self.groupItems.firstIndex(where: { $0.id == item.id }) {
+                        self.groupItems.remove(at: itemIndex)
+                    }
+                    
+                    // Notify that the item was deleted
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("ItemDeleted"),
+                        object: item.id
+                    )
+                }
+            }
+        }
+    }
 } 

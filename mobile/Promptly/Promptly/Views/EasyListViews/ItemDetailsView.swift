@@ -372,6 +372,7 @@ struct ItemDetailsView: View {
                         .frame(width: 30, height: 30)
                         .contentShape(Rectangle())
                 }
+                .padding(.horizontal, 4)
                 .buttonStyle(.plain)
                 .popover(isPresented: $showingPopover,
                          attachmentAnchor: .point(.center),
@@ -412,6 +413,7 @@ struct ItemDetailsView: View {
                         .frame(width: 30, height: 30)
                         .contentShape(Rectangle())
                 }
+                .padding(.horizontal, 4)
                 .buttonStyle(.plain)
                 .disabled(viewModel.item.subItems.count >= 50)
             }
@@ -427,6 +429,7 @@ struct ItemDetailsView: View {
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())
             }
+            .padding(.horizontal, 4)
             .buttonStyle(.plain)
             .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .top) {
                 SubitemDeleteConfirmationView(
@@ -472,6 +475,7 @@ struct ItemDetailsView: View {
                         .font(.system(size: 18, weight: .medium))
                         .padding(6)
                 }
+                .padding(.horizontal, 4)
             }
         }
     }
@@ -492,35 +496,39 @@ private struct MetadataRowCompact: View {
     }
     
     var body: some View {
-        HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             if hasGroup, let groupTitle = groupName {
-                Text(groupTitle)
-                    .font(.footnote)
-                    .foregroundColor(.white.opacity(0.5))
-                    .lineLimit(1)
-            }
-            
-            if let notification = item.notification {
-                if hasGroup {
-                    Divider()
-                        .frame(height: 14)
-                        .background(Color.white.opacity(0.3))
+                HStack(spacing: 2) {
+                    Image(systemName: "folder")
+                        .font(.caption2)
+                        .opacity(0.6)
+                    Text(groupTitle)
+                        .font(.footnote)
+                        .foregroundColor(.white.opacity(0.5))
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                
+            }
+            if let notification = item.notification {
                 HStack(spacing: 2) {
                     Image(systemName: "bell.fill")
-                        .font(.footnote)
+                        .font(.caption2)
+                        .padding(.horizontal, 1)
                     
                     let isPastDue = notification < Date()
                     Text(formatNotificationTime(notification))
-                        .font(.footnote)
+                        .font(.caption)
                         .foregroundColor(isPastDue ? .red.opacity(0.5) : .white.opacity(0.5))
                         .strikethrough(item.isCompleted, color: .gray)
+                        .lineLimit(1)
+                        .layoutPriority(1)
                         .animation(.easeInOut(duration: 0.2), value: item.isCompleted)
                 }
                 .foregroundColor(notification < Date() ? .red.opacity(0.5) : .white.opacity(0.5))
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
     
     // Format notification time
@@ -555,6 +563,7 @@ private struct MetadataRow: View {
                         .font(.footnote)
                         .foregroundColor(.white.opacity(0.5))
                         .lineLimit(1)
+                        .truncationMode(.tail)
                 }
                 
                 if let notification = item.notification {
@@ -567,6 +576,8 @@ private struct MetadataRow: View {
                             .font(.footnote)
                             .foregroundColor(isPastDue ? .red.opacity(0.5) : .white.opacity(0.5))
                             .strikethrough(item.isCompleted, color: .gray)
+                            .lineLimit(1)  // Prevent notification time from wrapping
+                            .layoutPriority(1)  // Add layout priority to ensure notification time gets space
                             .animation(.easeInOut(duration: 0.2), value: item.isCompleted)
                     }
                     .foregroundColor(notification < Date() ? .red.opacity(0.5) : .white.opacity(0.5))

@@ -4,14 +4,7 @@ import SwiftUI
 extension Models {
     struct ItemGroup: Identifiable, Codable, Equatable {
         let id: UUID
-        private(set) var title: String {
-            didSet {
-                // Ensure title doesn't exceed 20 characters
-                if title.count > 20 {
-                    title = String(title.prefix(20))
-                }
-            }
-        }
+        private(set) var title: String
         private(set) var items: [UUID: ChecklistItem]  // Store direct references to ChecklistItem objects
         
         // Color properties
@@ -22,7 +15,7 @@ extension Models {
         
         init(id: UUID = UUID(), title: String, items: [UUID: ChecklistItem] = [:], colorRed: Double = 0, colorGreen: Double = 0, colorBlue: Double = 0, hasColor: Bool = false) {
             self.id = id
-            self.title = String(title.prefix(20))  // Enforce 20 char limit on init
+            self.title = String(title.prefix(200))  // Safety limit of 200 characters
             self.items = items
             self.colorRed = max(0, min(1, colorRed))       // Clamp between 0 and 1
             self.colorGreen = max(0, min(1, colorGreen))   // Clamp between 0 and 1
@@ -82,7 +75,7 @@ extension Models {
         }
         
         mutating func updateTitle(_ newTitle: String) {
-            title = String(newTitle.prefix(20))
+            title = String(newTitle.prefix(200))  // Safety limit of 200 characters
         }
         
         // MARK: - Query Methods

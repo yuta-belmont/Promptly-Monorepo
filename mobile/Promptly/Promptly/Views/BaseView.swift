@@ -1,4 +1,8 @@
 import SwiftUI
+import UIKit
+
+// Make sure NavigationUtil and DayView are accessible - sometimes these are in separate files
+// so we import them directly. If they are already accessible, the compiler will ignore redundant imports.
 
 struct BaseView: View {
     @StateObject private var focusManager = FocusManager.shared
@@ -10,40 +14,46 @@ struct BaseView: View {
     @State private var isChatExpanded = false
     @State private var isKeyboardActive = false
     
-    // Global sheet states
-    @State private var showingGeneralSheet = false
-    @State private var showingManageGroups = false
-    @State private var showingAboutSheet = false
     @StateObject private var authManager = AuthManager.shared
-    
-    // Computed property to check if any menu-launched view is showing
-    private var isShowingMenuLaunchedView: Bool {
-        return showingManageGroups || showingGeneralSheet || showingAboutSheet
-    }
     
     let date: Date
     var onBack: (() -> Void)?
+    var onMenuAction: ((MenuAction) -> Void)?
     
-    init(date: Date = Date(), onBack: (() -> Void)? = nil) {
+    // Date formatter for consistent logging
+    private let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+    
+    init(date: Date = Date(), onBack: (() -> Void)? = nil, onMenuAction: ((MenuAction) -> Void)? = nil) {
         self.date = date
         self.onBack = onBack
+        self.onMenuAction = onMenuAction
+        print("[BaseView] Initialized with date: \(dateFormatter.string(from: date))")
     }
     
     var body: some View {
         ZStack(alignment: .trailing) {
-            // Only show main content and chat if no menu-launched view is showing
-            if !isShowingMenuLaunchedView {
-                // Main content area
-                DayView(date: date, showMenu: $showingMenu, onBack: onBack)
-                    .environmentObject(focusManager)
-                    .zIndex(0)
-                
+            // Main content area
+            DayView(date: date, showMenu: $showingMenu, onBack: onBack)
+                .environmentObject(focusManager)
+                .zIndex(0)
+                .onAppear {
+                    print("[BaseView] DayView appearing with date: \(dateFormatter.string(from: date))")
+                }
+            
+            // Only show chat if no menu is showing
+            if !showingMenu {
                 // Darkened background for chat - using a fixed medium opacity level
                 Color.black
                     .opacity(isChatExpanded ? 0.4 : 0)
                     .edgesIgnoringSafeArea(.all)
                     .zIndex(0.5)
                     .allowsHitTesting(false)
+                
                 // Chat overlay
                 VStack {
                     Spacer()
@@ -146,25 +156,6 @@ struct BaseView: View {
                 }
             }
             .zIndex(2)
-            
-            // Overlays
-            if showingManageGroups {
-                ManageGroupsView(isPresented: $showingManageGroups)
-                    .transition(.move(edge: .trailing))
-                    .zIndex(3)
-            }
-            
-            if showingGeneralSheet {
-                GeneralSettingsView(isPresented: $showingGeneralSheet)
-                    .transition(.move(edge: .trailing))
-                    .zIndex(3)
-            }
-            
-            if showingAboutSheet {
-                AboutView(isPresented: $showingAboutSheet)
-                    .transition(.move(edge: .trailing))
-                    .zIndex(3)
-            }
         }
         .onChange(of: showingMenu) { oldValue, newValue in
             if newValue {
@@ -177,19 +168,10 @@ struct BaseView: View {
             // The presence of this handler seems to trigger necessary side effects
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showingMenu)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showingManageGroups)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showingGeneralSheet)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showingAboutSheet)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isChatExpanded)
         // Listen for theme changes to update the UI
         .onChange(of: themeManager.currentTheme) { oldValue, newValue in
             // This will trigger a redraw when the theme changes
-        }
-        // Listen for notification to show ManageGroupsView
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ShowManageGroupsView"))) { _ in
-            withAnimation {
-                showingManageGroups = true
-            }
         }
         // Close ChatView when EasyListView gains focus
         .onChange(of: focusManager.isEasyListFocused) { oldValue, newValue in
@@ -204,22 +186,23 @@ struct BaseView: View {
     private func handleMenuAction(_ action: MenuAction) {
         focusManager.removeAllFocus()  // Remove focus before showing any sheet
         
-        switch action {
-        case .general:
-            withAnimation {
-                showingMenu = false
-                showingGeneralSheet = true
+        if let onMenuAction = onMenuAction {
+            onMenuAction(action)
+        } else {
+            // Fallback behavior if no callback provided
+            switch action {
+            case .general:
+                NotificationCenter.default.post(name: NSNotification.Name("ShowGeneralSettingsView"), object: nil)
+            case .manageGroups:
+                NotificationCenter.default.post(name: NSNotification.Name("ShowManageGroupsView"), object: nil)
+            case .about:
+                NotificationCenter.default.post(name: NSNotification.Name("ShowAboutView"), object: nil)
             }
-        case .manageGroups:
-            withAnimation {
-                showingMenu = false  // Close the menu first
-                showingManageGroups = true  // Then show manage groups
-            }
-        case .about:
-            withAnimation {
-                showingMenu = false
-                showingAboutSheet = true
-            }
+        }
+        
+        // Always close the menu
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            showingMenu = false
         }
     }
     

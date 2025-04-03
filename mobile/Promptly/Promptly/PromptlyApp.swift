@@ -104,12 +104,53 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
 struct RootView: View {
     @Namespace private var animation
-    @State private var showingDayView = true
-    @State private var selectedDate = Date()
+    @State private var viewState: ViewState = .dayView(date: Date())
     @State private var navigationPath = NavigationPath()
     @State private var showLoadingScreen = false // Set to true to enable loading screen
     @StateObject private var themeManager = ThemeManager.shared
     @StateObject private var authManager = AuthManager.shared
+    
+    // Define view states
+    enum ViewState: Equatable {
+        case calendar
+        case dayView(date: Date)
+        case manageGroups
+        case generalSettings
+        case about
+        
+        static func == (lhs: ViewState, rhs: ViewState) -> Bool {
+            switch (lhs, rhs) {
+            case (.calendar, .calendar):
+                return true
+            case (.manageGroups, .manageGroups):
+                return true
+            case (.generalSettings, .generalSettings):
+                return true
+            case (.about, .about):
+                return true
+            case (.dayView(let date1), .dayView(let date2)):
+                return Calendar.current.isDate(date1, inSameDayAs: date2)
+            default:
+                return false
+            }
+        }
+    }
+    
+    // Helper to extract the current date
+    private var currentDate: Date {
+        if case .dayView(let date) = viewState {
+            return date
+        }
+        return Date() // Fallback
+    }
+    
+    // Date formatter for logging
+    private let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
     
     var body: some View {
         ZStack {
@@ -121,37 +162,93 @@ struct RootView: View {
                         themeManager.currentTheme.backgroundView()
                             .ignoresSafeArea()
                         
-                        // Content ZStack
-                        ZStack {
-                            // Calendar view
-                            if !showingDayView {
-                                CalendarView(autoNavigateToToday: false, todayID: animation, onDateSelected: { date in
-                                    selectedDate = date
+                        // Main content based on current view state
+                        switch viewState {
+                        case .calendar:
+                            CalendarView(
+                                autoNavigateToToday: false, 
+                                todayID: animation,
+                                onDateSelected: { date in
+                                    print("[RootView] Calendar selected date: \(dateFormatter.string(from: date))")
                                     withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-                                        showingDayView = true
+                                        viewState = .dayView(date: date)
                                     }
-                                })
-                                .transition(.opacity)
-                                .zIndex(1)
-                            }
+                                }
+                            )
+                            .transition(.opacity)
+                            .zIndex(1)
                             
-                            // BaseView instead of DayView
-                            if showingDayView {
-                                BaseView(date: selectedDate, onBack: {
+                        case .dayView(let date):
+                            BaseView(
+                                date: date,
+                                onBack: {
+                                    print("[RootView] DayView back button pressed")
                                     withAnimation(.easeInOut(duration: 0.2)) {
-                                        showingDayView = false
+                                        viewState = .calendar
                                     }
-                                })
-                                .transition(.opacity)
-                                .zIndex(2)
-                            }
+                                },
+                                onMenuAction: handleMenuAction
+                            )
+                            .transition(.opacity)
+                            .zIndex(2)
+                            
+                        case .manageGroups:
+                            ManageGroupsView(
+                                isPresented: Binding(
+                                    get: { viewState == .manageGroups },
+                                    set: { if !$0 { 
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                            viewState = .dayView(date: currentDate)
+                                        }
+                                    }}
+                                ),
+                                onNavigateToDate: { date in
+                                    print("[RootView] ManageGroups navigating to date: \(dateFormatter.string(from: date))")
+                                    withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                                        viewState = .dayView(date: date)
+                                    }
+                                }
+                            )
+                            .transition(.move(edge: .trailing))
+                            .zIndex(3)
+                            
+                        case .generalSettings:
+                            GeneralSettingsView(
+                                isPresented: Binding(
+                                    get: { viewState == .generalSettings },
+                                    set: { if !$0 { 
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                            viewState = .dayView(date: currentDate)
+                                        }
+                                    }}
+                                )
+                            )
+                            .transition(.move(edge: .trailing))
+                            .zIndex(3)
+                            
+                        case .about:
+                            AboutView(
+                                isPresented: Binding(
+                                    get: { viewState == .about },
+                                    set: { if !$0 { 
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                            viewState = .dayView(date: currentDate)
+                                        }
+                                    }}
+                                )
+                            )
+                            .transition(.move(edge: .trailing))
+                            .zIndex(3)
                         }
                     }
                     .navigationDestination(for: DayView.self) { dayView in
-                        BaseView(date: dayView.date)
+                        // Create a simple DayViewDestination that will update the viewState
+                        DayViewDestination(date: dayView.date) { date in
+                            viewState = .dayView(date: date)
+                        }
                     }
                     .onAppear {
-                        // Process notifications for the next 7 days
+                        // Setup code...
                         let notificationManager = NotificationManager.shared
                         _ = ChecklistPersistence.shared
                         
@@ -194,22 +291,93 @@ struct RootView: View {
         }
     }
     
+    private func handleMenuAction(_ action: MenuAction) {
+        print("[RootView] Handling menu action: \(action)")
+        switch action {
+        case .general:
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                viewState = .generalSettings
+            }
+        case .manageGroups:
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                viewState = .manageGroups
+            }
+        case .about:
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                viewState = .about
+            }
+        }
+    }
+    
     // Set up notification observer to handle navigation from notifications
     private func setupNotificationObserver() {
+        // Listen for NavigateToDayView notification
         NotificationCenter.default.addObserver(
             forName: Notification.Name("NavigateToDayView"),
             object: nil,
             queue: .main
         ) { notification in
             if let date = notification.userInfo?["date"] as? Date {
-                // Update the selected date
-                selectedDate = date
+                print("[RootView] Received NavigateToDayView notification with date: \(DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short))")
                 
-                // Ensure we're showing the day view
+                // Update the view state to show day view with the correct date
                 withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-                    showingDayView = true
+                    viewState = .dayView(date: date)
                 }
             }
         }
+        
+        // Also listen for ShowManageGroupsView notification
+        NotificationCenter.default.addObserver(
+            forName: Notification.Name("ShowManageGroupsView"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                viewState = .manageGroups
+            }
+        }
+        
+        // Listen for ShowGeneralSettingsView notification
+        NotificationCenter.default.addObserver(
+            forName: Notification.Name("ShowGeneralSettingsView"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                viewState = .generalSettings
+            }
+        }
+        
+        // Listen for ShowAboutView notification
+        NotificationCenter.default.addObserver(
+            forName: Notification.Name("ShowAboutView"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                viewState = .about
+            }
+        }
+    }
+}
+
+// Helper view for navigation destination
+struct DayViewDestination: View {
+    let date: Date
+    let onAppear: (Date) -> Void
+    
+    var body: some View {
+        Color.clear
+            .onAppear {
+                print("[DayViewDestination] Appearing with date: \(DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short))")
+                
+                // Use DispatchQueue to avoid any potential view update conflicts
+                DispatchQueue.main.async {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        onAppear(date)
+                    }
+                }
+            }
     }
 }

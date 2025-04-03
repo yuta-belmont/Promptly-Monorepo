@@ -167,6 +167,7 @@ final class EasyListViewModel: ObservableObject {
     }
     
     init(date: Date = Date()) {
+        print("[EasyListViewModel] Initializing with date: \(DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short))")
         self.date = date
         // Initialize with empty checklist instead of loading data immediately
         self.checklist = Models.Checklist(date: date)
@@ -175,6 +176,7 @@ final class EasyListViewModel: ObservableObject {
     
     // New method to load data - this will be called from the view's onAppear
     func loadData() {
+        print("[EasyListViewModel] loadData called for date: \(DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short))")
         // Set loading state to true
         isLoading = true
         
@@ -192,6 +194,7 @@ final class EasyListViewModel: ObservableObject {
         
         // Set loading state to false
         isLoading = false
+        print("[EasyListViewModel] Loaded checklist for date: \(DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short)), items: \(checklist.items.count)")
     }
     
     // New method to update the date without recreating the view model
@@ -199,6 +202,8 @@ final class EasyListViewModel: ObservableObject {
         // Skip if it's the same day (using calendar comparison)
         let calendar = Calendar.current
         guard !calendar.isDate(date, inSameDayAs: newDate) else { return }
+        
+        print("[EasyListViewModel] updateToDate from: \(DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short)) to: \(DateFormatter.localizedString(from: newDate, dateStyle: .medium, timeStyle: .short))")
         
         // If we have unsaved changes, save them before switching dates
         if hasUnsavedChanges {

@@ -7,16 +7,6 @@ struct GeneralSettingsView: View {
     
     var body: some View {
         ZStack {
-            // Semi-transparent backdrop for closing the view
-            Color.black.opacity(0.01)
-                .edgesIgnoringSafeArea(.all)
-                .allowsHitTesting(true)
-                .transition(.opacity)
-                .zIndex(998)
-                .onTapGesture {
-                    isPresented = false
-                }
-            
             // Main content
             VStack(spacing: 0) {
                 // Header
@@ -28,7 +18,9 @@ struct GeneralSettingsView: View {
                     Spacer()
                     
                     Button("Done") {
-                        isPresented = false
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            isPresented = false
+                        }
                     }
                 }
                 .padding()
@@ -82,21 +74,21 @@ struct GeneralSettingsView: View {
             .gesture(
                 DragGesture()
                     .onChanged { value in
-                        // Only allow dragging from the left edge (first 88 points) and only to the right
-                        if value.startLocation.x < 88 && value.translation.width > 0 {
+                        // Only allow dragging to the right
+                        if value.translation.width > 0 {
                             dragOffset = value.translation
                         }
                     }
                     .onEnded { value in
                         // If dragged more than 100 points to the right, dismiss
-                        if value.startLocation.x < 44 && value.translation.width > 100 {
+                        if value.translation.width > 100 {
                             // Use animation to ensure smooth transition
-                            withAnimation(.easeInOut(duration: 0.25)) {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                 isPresented = false
                             }
                         }
                         // If not dragged far enough, animate back to original position
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             dragOffset = .zero
                         }
                     }
