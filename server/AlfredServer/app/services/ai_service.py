@@ -5,6 +5,54 @@ from typing import Optional, List, Dict, Any, Tuple, Union
 from openai import OpenAI
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
+import logging
+import uuid
+
+# Set up logging
+logger = logging.getLogger(__name__)
+
+class LogBuffer:
+    def __init__(self):
+        self.buffer = []
+        self.current_section = None
+        self.request_id = None
+        
+    def start_request(self, request_id: str):
+        self.request_id = request_id
+        self.buffer.append(f"\n=== REQUEST {request_id} ===")
+        
+    def start_section(self, section_name: str):
+        self.current_section = section_name
+        self.buffer.append(f"=== AGENT: {section_name} ===")
+        
+    def add(self, message: str):
+        if self.current_section:
+            self.buffer.append(message)
+            
+    def end_section(self):
+        if self.current_section:
+            self.buffer.append("=" * len(f"=== AGENT: {self.current_section} ==="))
+            self.current_section = None
+            
+    def end_request(self):
+        if self.request_id:
+            self.buffer.append(f"=== END REQUEST {self.request_id} ===\n")
+            self.flush()
+            self.request_id = None
+            
+    def flush(self):
+        if self.buffer:
+            for line in self.buffer:
+                logger.info(line)
+            self.buffer = []
+            
+    def clear(self):
+        self.buffer = []
+        self.current_section = None
+        self.request_id = None
+
+# Create a global log buffer instance
+log_buffer = LogBuffer()
 
 # =============================================================================
 # AGENT INSTRUCTIONS - Centralized for easy editing
@@ -22,15 +70,12 @@ Respond with ONLY one word: either 'simple' or 'complex'."""
 # -------------------------------------------------------------------------
 # Checklist Classifier Agent - Determines if a checklist should be generated
 # -------------------------------------------------------------------------
-CHECKLIST_CLASSIFIER_INSTRUCTIONS = """You are a classifier agent who helps determine if a user wants to add items to a digital planner/calendar/checklist.
-The current date and time is {current_date} at {current_time}.
-
-Your one job is to answer this question:
-Has the conversation made it explicity clear that the user wants to add tasks/reminders to their planner/calendar/checklist?
-
-Respond with ONLY one word: 'yes' or 'no'.
-'yes': If the user DEFINITELY wants us to generate planner/calendar/checklist/reminder content.
-'no': It is not clear that the user wants us to add items to their planner/calendar/checklist.
+CHECKLIST_CLASSIFIER_INSTRUCTIONS = """
+You are a chat classifier inside a planner application that determines if a user wants to create a plan, task, reminder, or checklist of any kind.
+Answer the following based on the user's most recent message:
+YES: the user wants to add tasks, reminders, or plans to their planner.
+NO: the user does not want to add tasks, reminders, or plans to their planner.
+Respond with ONLY ONE word: either ‘yes’, or ‘no’
 """
 
 # -------------------------------------------------------------------------
@@ -38,25 +83,10 @@ Respond with ONLY one word: 'yes' or 'no'.
 # -------------------------------------------------------------------------
 CHECKLIST_INQUIRY_INSTRUCTIONS = """You are an inquiry classifier that determines if we have enough information to create a meaningful checklist.
 The current date and time is {current_date} at {current_time}.
-We are in the process of updating the user's planner/calendar/checklist.
+We are in the process of updating the user's planner/calendar/checklist but we need to know when and what they want to add.
 
 Based on the context, can we infer the task(s) and on what day(s) the tasks on are?
 Respond with ONLY one word: 'more' or 'enough'.
-
-'more':
-1. We don't know the day(s) the task(s) are on.
-2. We don't know what the task is.
-3. The user implies they want feedback on the task.
-4. We are uncertain about specific details pertaining to complex tasks or long term plans.
-5. They need to be notified of something at a specific yet unspecified time.
-'enough': 
-1. The user if frustrated with us not creating the task yet.
-2. The user has already been asked for more information and assumes the agent will figure it out for them.
-3. We can infer the day (and time if its a reminder) and the task.
-4. If we've been directed to make a plan for them.
-5. The task is simple.
-
-Enough supercedes more.
 """
 
 # -------------------------------------------------------------------------
@@ -115,33 +145,51 @@ You only exist to ask questions and gather information, NEVER make any statement
 
 CHECKLIST_FORMAT_INSTRUCTIONS = """Please format your response as a JSON object with the following structure:
 {
-    "checklists": {
-        "YYYY-MM-DD": {
-            "notes": "Notes summarizing the day's tasks or null",
-            "items": [
-            {
-                "title": "Task description",
-                "notification": "HH:MM or null"
+    "checklist_data": {
+        "group1": {
+            "name": "Optional group name or null",
+            "dates": {
+                "YYYY-MM-DD": {
+                    "notes": "Optional notes for this date or null",
+                    "items": [
+                        {
+                            "title": "Task description",
+                            "notification": "HH:MM or null",
+                            "subitems": [
+                                {
+                                    "title": "Subtask description"
+                                }
+                            ]
+                        }
+                    ]
+                }
             }
-            ]
         }
     }
 }
 
-Use the date in YYYY-MM-DD format as the key in the checklists object."""
+Groups can have any name as their key. Each group can contain multiple dates."""
 
 # Pydantic models for structured responses
+class ChecklistSubItem(BaseModel):
+    title: str
+
 class ChecklistItem(BaseModel):
     title: str
     notification: Optional[str]
+    subitems: Optional[List[ChecklistSubItem]] = []
 
-class ChecklistDay(BaseModel):
-    notes: str
+class ChecklistDate(BaseModel):
+    notes: Optional[str]
     items: List[ChecklistItem]
+
+class ChecklistGroup(BaseModel):
+    name: Optional[str]
+    dates: Dict[str, ChecklistDate]
 
 class AlfredResponse(BaseModel):
     message: str
-    checklists: Optional[Dict[str, ChecklistDay]]
+    checklist_data: Optional[Dict[str, ChecklistGroup]]
 
 class AIService:
     def __init__(self):
@@ -193,8 +241,8 @@ class AIService:
         Complex: Reasoning, planning, updating checklists, multi-step tasks
         """
         try:
-            print("=== AGENT: Query Classifier ===")
-            print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
+            log_buffer.start_section("Query Classifier")
+            log_buffer.add(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
             
             # Use the provided time or default to current time
             if now is None:
@@ -218,9 +266,6 @@ class AIService:
             if context_messages:
                 classification_messages.extend(context_messages)
             
-            # Add the current message
-            classification_messages.append({"role": "user", "content": message})
-            
             # Use GPT-4o-mini for classification - faster and still accurate for this task
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini-2024-07-18",  # Updated model name
@@ -238,19 +283,21 @@ class AIService:
             else:
                 result = "simple"  # Default to 'simple' for any other response
             
-            print(f"Query classified as: {result}")
-            print(f"Raw: {result}")
-            print(f"Context msgs: {len(context_messages)}")
-            print(f"Model: gpt-4o-mini-2024-07-18")
-            print("=============================\n")
+            log_buffer.add(f"Query classified as: {result}")
+            log_buffer.add(f"Raw: {result}")
+            log_buffer.add(f"Context msgs: {len(context_messages)}")
+            log_buffer.add(f"Model: gpt-4o-mini-2024-07-18")
+            log_buffer.end_section()
+            log_buffer.flush()
             
             return result
                 
         except Exception as e:
-            print(f"Error classifying query: {e}")
+            logger.error(f"Error classifying query: {e}")
             # Default to 'complex' on error to ensure better responses
-            print("Output: Defaulting to 'complex' due to error")
-            print("=============================\n")
+            log_buffer.add("Output: Defaulting to 'complex' due to error")
+            log_buffer.end_section()
+            log_buffer.flush()
             return "complex"
     
     async def should_generate_checklist(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, now: Optional[datetime] = None) -> bool:
@@ -260,20 +307,11 @@ class AIService:
         Returns True if the user's query is related to tasks, todos, or checklists
         """
         try:
-            print("=== AGENT: Checklist Classifier ===")
-            print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
-            
-            # Get current date and time if needed
-            if now is None:
-                now = datetime.now()
-            current_date = now.strftime("%A, %B %d, %Y")
-            current_time = now.strftime("%I:%M %p")
+            log_buffer.start_section("Checklist Classifier")
+            log_buffer.add(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
             
             # Create a specialized system message for checklist classification
-            classification_prompt = CHECKLIST_CLASSIFIER_INSTRUCTIONS.format(
-                current_date=current_date,
-                current_time=current_time
-            )
+            classification_prompt = CHECKLIST_CLASSIFIER_INSTRUCTIONS
             
             # Prepare context from message history using the standardized method
             # Limit to only the last 10 messages
@@ -287,16 +325,13 @@ class AIService:
             # Add context messages if available
             if context_messages:
                 classification_messages.extend(context_messages)
-            
-            # Add the current message
-            classification_messages.append({"role": "user", "content": message})
-            
+
             # Use GPT-4o-mini for classification - faster and still accurate for this task
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini-2024-07-18",  # Updated model name
                 messages=classification_messages,
                 temperature=0.3,  # Lower temperature for more consistent classification
-                max_tokens=5  # We only need a single word response
+                max_tokens=1  # We only need a single word response
             )
             
             # Get the classification result
@@ -305,21 +340,21 @@ class AIService:
             # Determine the final result
             needs_checklist = 'yes' in result
 
-            print("Raw:", result)
+            log_buffer.add(f"Raw: {result}")
+            log_buffer.add(f"Output: Needs checklist: {needs_checklist}")
+            log_buffer.add(f"Context msgs: {len(context_messages)}")
+            log_buffer.add(f"Model: gpt-4o-mini-2024-07-18")
+            log_buffer.end_section()
+            log_buffer.flush()
             
-            print(f"Output: Needs checklist: {needs_checklist}")
-            print(f"Context msgs: {len(context_messages)}")
-            print(f"Model: gpt-4o-mini-2024-07-18")
-            print("====================================\n")
-            
-            # Return True if the result contains 'yes'
             return needs_checklist
                 
         except Exception as e:
-            print(f"Error classifying for checklist generation: {e}")
+            logger.error(f"Error classifying for checklist generation: {e}")
             # Default to False on error
-            print("Output: Defaulting to FALSE due to error")
-            print("====================================\n")
+            log_buffer.add("Output: Defaulting to FALSE due to error")
+            log_buffer.end_section()
+            log_buffer.flush()
             return False
             
     async def should_inquire_further(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, now: Optional[datetime] = None) -> bool:
@@ -329,8 +364,8 @@ class AIService:
         Returns True if we need more details from the user, False if we have enough information.
         """
         try:
-            print("=== AGENT: Checklist Inquiry Classifier ===")
-            print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
+            logger.info("=== AGENT: Checklist Inquiry Classifier ===")
+            logger.info(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
             
             # Get current date and time
             if now is None:
@@ -374,19 +409,19 @@ class AIService:
             # Determine the final result
             needs_more_info = 'more' in result
             
-            print(f"Output: Needs more information: {needs_more_info}")
-            print(f"Context msgs: {len(context_messages)}")
-            print(f"Model: gpt-4o-mini-2024-07-18")
-            print("===========================================\n")
+            logger.info(f"Output: Needs more information: {needs_more_info}")
+            logger.debug(f"Context msgs: {len(context_messages)}")
+            logger.debug(f"Model: gpt-4o-mini-2024-07-18")
+            logger.info("===========================================")
             
             # Return True if the result contains 'insufficient'
             return needs_more_info
                 
         except Exception as e:
-            print(f"Error in checklist inquiry classification: {e}")
+            logger.error(f"Error in checklist inquiry classification: {e}")
             # Default to True on error (safer to ask for more info than to generate a bad checklist)
-            print("Output: Defaulting to TRUE due to error")
-            print("===========================================\n")
+            logger.info("Output: Defaulting to TRUE due to error")
+            logger.info("===========================================")
             return True
         
     async def generate_inquiry_response(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, user_full_name: Optional[str] = None, now: Optional[datetime] = None) -> str:
@@ -396,8 +431,8 @@ class AIService:
         This is used when the checklist_inquiry_agent determines we need more information.
         """
         try:
-            print("=== AGENT: Inquiry Response Generator ===")
-            print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
+            logger.info("=== AGENT: Inquiry Response Generator ===")
+            logger.info(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
             
             # Get current date and time
             if now is None:
@@ -438,19 +473,19 @@ class AIService:
             
             inquiry_response = response.choices[0].message.content
             
-            print(f"Output: \"{inquiry_response[:75]}{'...' if len(inquiry_response) > 75 else ''}\"")
-            print(f"Context msgs: {len(context_messages)}")
-            print(f"Model: gpt-4o-mini-2024-07-18")
-            print("========================================\n")
+            logger.info(f"Output: \"{inquiry_response[:75]}{'...' if len(inquiry_response) > 75 else ''}\"")
+            logger.debug(f"Context msgs: {len(context_messages)}")
+            logger.debug(f"Model: gpt-4o-mini-2024-07-18")
+            logger.info("========================================")
             
             return inquiry_response
                 
         except Exception as e:
-            print(f"Error generating inquiry response: {e}")
+            logger.error(f"Error generating inquiry response: {e}")
             # Provide a fallback response
             fallback = f"I'd be happy to help with that. Could you provide a bit more detail about what specific tasks you'd like me to track and any relevant timeframes?"
-            print(f"Output: Using fallback response due to error")
-            print("========================================\n")
+            logger.info(f"Output: Using fallback response due to error")
+            logger.info("========================================")
             return fallback
     
     async def generate_checklist(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, now: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
@@ -467,8 +502,8 @@ class AIService:
             Optional[Dict[str, Any]]: A dictionary of checklist data, or None if generation fails
         """
         try:
-            print("=== AGENT: Checklist Generator ===")
-            print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
+            logger.info("=== AGENT: Checklist Generator ===")
+            logger.info(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
             
             # Get current date and time
             if now is None:
@@ -519,32 +554,32 @@ class AIService:
             # Try to parse the checklist JSON
             try:
                 checklist_json = json.loads(checklist_content)
-                checklist_data = checklist_json.get("checklists", {})
+                checklist_data = checklist_json.get("checklist_data", {})
                 
                 # Log a sample of the checklist data
                 data_preview = json.dumps(checklist_data, indent=2)[:200] + "..." if len(json.dumps(checklist_data, indent=2)) > 200 else json.dumps(checklist_data, indent=2)
-                print(f"Output: Generated checklist with {len(checklist_data)} date(s)")
-                print(f"Context msgs: {len(context_messages)}")
-                print(f"Model: gpt-4o-2024-11-20")
-                print("====================================\n")
+                logger.info(f"Output: Generated checklist with {len(checklist_data)} date(s)")
+                logger.debug(f"Context msgs: {len(context_messages)}")
+                logger.debug(f"Model: gpt-4o-2024-11-20")
+                logger.info("=====================================")
                 
                 return checklist_data
                 
             except json.JSONDecodeError as e:
-                print(f"Error parsing checklist JSON: {e}")
-                print(f"Output: Failed to parse JSON response")
-                print(f"Context msgs: {len(context_messages)}")
-                print(f"Model: gpt-4o-2024-11-20")
-                print("====================================\n")
+                logger.error(f"Error parsing checklist JSON: {e}")
+                logger.info(f"Output: Failed to parse JSON response")
+                logger.debug(f"Context msgs: {len(context_messages)}")
+                logger.debug(f"Model: gpt-4o-2024-11-20")
+                logger.info("=====================================")
                 # Return None if parsing fails
                 return None
                 
         except Exception as e:
-            print(f"Error generating checklist: {e}")
-            print(f"Output: Failed to generate checklist due to exception")
-            print(f"Context msgs: 0")
-            print(f"Model: failed call")
-            print("====================================\n")
+            logger.error(f"Error generating checklist: {e}")
+            logger.info(f"Output: Failed to generate checklist due to exception")
+            logger.debug(f"Context msgs: 0")
+            logger.debug(f"Model: failed call")
+            logger.info("=====================================")
             # Return None on error
             return None
     
@@ -613,24 +648,24 @@ class AIService:
             acknowledgment = response.choices[0].message.content
             
             # Log the response
-            print("=== AGENT: Checklist Acknowledgment Generator ===")
-            print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
-            print(f"Output: \"{acknowledgment[:75]}{'...' if len(acknowledgment) > 75 else ''}\"")
-            print(f"Context msgs: {len(context_messages)}")
-            print(f"Model: gpt-4o-mini-2024-07-18")
-            print("=======================================\n")
+            logger.info("=== AGENT: Checklist Acknowledgment Generator ===")
+            logger.info(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
+            logger.info(f"Output: \"{acknowledgment[:75]}{'...' if len(acknowledgment) > 75 else ''}\"")
+            logger.debug(f"Context msgs: {len(context_messages)}")
+            logger.debug(f"Model: gpt-4o-mini-2024-07-18")
+            logger.info("=======================================")
             
             return acknowledgment
             
         except Exception as e:
-            print(f"Error generating checklist acknowledgment: {e}")
+            logger.error(f"Error generating checklist acknowledgment: {e}")
             # Return a simple hardcoded acknowledgment
             greeting = f"{user_full_name.split()[0] if user_full_name else 'there'}"
             fallback = f"I'll update your planner with those items."
             
             # Log the fallback
-            print(f"Output: Using fallback acknowledgment: \"{fallback}\"")
-            print("=======================================\n")
+            logger.info(f"Output: Using fallback acknowledgment: \"{fallback}\"")
+            logger.info("=======================================")
             
             return fallback
     
@@ -694,18 +729,18 @@ class AIService:
                 conversation_response = response.choices[0].message.content
                 
                 # Log the response
-                print("=== AGENT: Standard Response Generator ===")
-                print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
-                print(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
-                print(f"Context msgs: {len(context_messages)}")
-                print(f"Model: {message_model}")
-                print("===============================\n")
+                logger.info("=== AGENT: Standard Response Generator ===")
+                logger.info(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
+                logger.info(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
+                logger.debug(f"Context msgs: {len(context_messages)}")
+                logger.debug(f"Model: {message_model}")
+                logger.info("===============================")
                 
                 return conversation_response
                 
             except Exception as e:
                 # If we hit a rate limit or quota error, try falling back to GPT-4o-mini
-                print(f"Error with {message_model}, falling back to gpt-4o-mini-2024-07-18: {e}")
+                logger.info(f"Error with {message_model}, falling back to gpt-4o-mini-2024-07-18: {e}")
                 try:
                     # Try with the fallback model
                     response = self.client.chat.completions.create(
@@ -716,33 +751,33 @@ class AIService:
                     
                     conversation_response = response.choices[0].message.content
                     
-                    print(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
-                    print(f"Context msgs: {len(context_messages)}")
-                    print(f"Model: gpt-4o-mini-2024-07-18 (fallback)")
-                    print("===============================\n")
+                    logger.info(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
+                    logger.debug(f"Context msgs: {len(context_messages)}")
+                    logger.debug(f"Model: gpt-4o-mini-2024-07-18 (fallback)")
+                    logger.info("===============================")
                     
                     return conversation_response
                     
                 except Exception as fallback_error:
                     # If even the fallback fails, provide a hardcoded response
-                    print(f"Fallback model also failed: {fallback_error}")
+                    logger.error(f"Fallback model also failed: {fallback_error}")
                     fallback_message = self._generate_fallback_response(message, user_full_name)
                     
-                    print(f"Output: \"{fallback_message[:75]}{'...' if len(fallback_message) > 75 else ''}\"")
-                    print(f"Context msgs: {len(context_messages)}")
-                    print(f"Model: hardcoded fallback")
-                    print("===============================\n")
+                    logger.info(f"Output: \"{fallback_message[:75]}{'...' if len(fallback_message) > 75 else ''}\"")
+                    logger.debug(f"Context msgs: {len(context_messages)}")
+                    logger.debug(f"Model: hardcoded fallback")
+                    logger.info("===============================")
                     
                     return fallback_message
         except Exception as e:
-            print(f"Error in _generate_standard_response: {e}")
+            logger.error(f"Error in _generate_standard_response: {e}")
             # Provide a fallback response
             fallback_message = self._generate_fallback_response(message, user_full_name)
             
-            print(f"Output: \"{fallback_message[:75]}{'...' if len(fallback_message) > 75 else ''}\"")
-            print(f"Context msgs: 0")
-            print(f"Model: hardcoded fallback (error)")
-            print("===============================\n")
+            logger.info(f"Output: \"{fallback_message[:75]}{'...' if len(fallback_message) > 75 else ''}\"")
+            logger.debug(f"Context msgs: 0")
+            logger.debug(f"Model: hardcoded fallback (error)")
+            logger.info("===============================")
             
             return fallback_message
     
@@ -775,15 +810,19 @@ class AIService:
         }
         
         try:
+            # Generate a unique request ID for this interaction
+            request_id = str(uuid.uuid4())[:8]
+            log_buffer.start_request(request_id)
+            
             # Parse client time if provided for more accurate time-based responses
             client_datetime = None
             if client_time:
                 try:
                     # Parse ISO 8601 format (2023-09-15T14:30:00Z)
                     client_datetime = datetime.fromisoformat(client_time.replace('Z', '+00:00'))
-                    print(f"Using client time: {client_datetime}")
+                    log_buffer.add(f"Using client time: {client_datetime}")
                 except (ValueError, TypeError) as e:
-                    print(f"Error parsing client time: {e}. Using server time instead.")
+                    log_buffer.add(f"Error parsing client time: {e}. Using server time instead.")
             
             # Get current date and time (from client or server)
             now = client_datetime or datetime.now()
@@ -817,19 +856,118 @@ class AIService:
                     message, result['query_type'], message_history, user_full_name, now
                 )
             
+            # End the request and flush all logs
+            log_buffer.end_request()
             return result
             
         except Exception as e:
-            print(f"Error in generate_optimized_response: {e}")
+            logger.error(f"Error in generate_optimized_response: {e}")
             # Provide a fallback response
             result['response_text'] = self._generate_fallback_response(message, user_full_name)
             
             # Log the error fallback
-            print("=== AGENT: Optimized Response (Error) ===")
-            print(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
-            print(f"Output: \"{result['response_text'][:75]}{'...' if len(result['response_text']) > 75 else ''}\"")
-            print(f"Context msgs: 0")
-            print(f"Model: hardcoded fallback")
-            print("===============================\n")
+            log_buffer.add("=== AGENT: Optimized Response (Error) ===")
+            log_buffer.add(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
+            log_buffer.add(f"Output: \"{result['response_text'][:75]}{'...' if len(result['response_text']) > 75 else ''}\"")
+            log_buffer.add(f"Context msgs: 0")
+            log_buffer.add(f"Model: hardcoded fallback")
+            log_buffer.add("===============================")
             
+            # End the request and flush all logs
+            log_buffer.end_request()
             return result 
+
+    def convertFirebaseChecklistToModel(self, checklistData: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
+        logger.info("CHECKLIST DEBUG: Converting Firebase checklist data to model: %s", checklistData)
+        
+        # Verify we have data to process
+        if not checklistData:
+            logger.warning("CHECKLIST DEBUG: Empty checklist data received")
+            return None
+        
+        # Create an array to hold all checklists
+        allChecklists: List[Dict[str, Any]] = []
+        dateFormatter = datetime.strptime("%Y-%m-%d", "%Y-%m-%d")
+        
+        # Process each group in the checklist data
+        for groupKey, groupData in checklistData.items():
+            logger.debug("CHECKLIST DEBUG: Processing group: %s", groupKey)
+            
+            # Get the group name if available
+            groupName = groupData.get("name")
+            group = {"name": groupName, "dates": {}} if groupName and groupName.strip() != "" else None
+            
+            # Process dates within the group
+            if "dates" in groupData:
+                for dateString, dateData in groupData["dates"].items():
+                    # Skip any keys that aren't date strings
+                    if not re.match(r"^\d{4}-\d{2}-\d{2}$", dateString):
+                        logger.debug("CHECKLIST DEBUG: Skipping non-date key: %s", dateString)
+                        continue
+                    
+                    # Parse the date
+                    try:
+                        date = dateFormatter.parse(dateString)
+                    except ValueError:
+                        logger.warning("CHECKLIST DEBUG: Failed to parse date: %s", dateString)
+                        continue
+                    
+                    # Get the notes from the checklist
+                    notes = dateData.get("notes", "")
+                    
+                    # Parse the items array
+                    checklistItems: List[Dict[str, Any]] = []
+                    if "items" in dateData:
+                        for itemData in dateData["items"]:
+                            if "title" in itemData:
+                                # Parse notification time if present
+                                notificationDate = None
+                                if "notification" in itemData and itemData["notification"] != "null":
+                                    logger.debug("CHECKLIST DEBUG: Processing notification time: %s", itemData["notification"])
+                                    # Combine the date with the time
+                                    timeFormatter = datetime.strptime("%I:%M %p", "%I:%M %p")
+                                    try:
+                                        time = timeFormatter.parse(itemData["notification"])
+                                        notificationDate = date.replace(hour=time.hour, minute=time.minute, second=0)
+                                        
+                                        logger.debug("CHECKLIST DEBUG: Parsed time %s to components - hour: %d, minute: %d", 
+                                                    itemData["notification"], time.hour, time.minute)
+                                        logger.debug("CHECKLIST DEBUG: Created notification date: %s", notificationDate)
+                                    except ValueError:
+                                        logger.warning("CHECKLIST DEBUG: Failed to parse time format: %s", itemData["notification"])
+                                
+                                # Parse subitems if present
+                                subitems: List[Dict[str, Any]] = []
+                                if "subitems" in itemData:
+                                    for subitemData in itemData["subitems"]:
+                                        if "title" in subitemData:
+                                            subitems.append({"title": subitemData["title"], "isCompleted": False})
+                                
+                                # Create the checklist item
+                                checklistItems.append({
+                                    "title": itemData["title"],
+                                    "date": date,
+                                    "isCompleted": False,
+                                    "notification": notificationDate,
+                                    "group": group,
+                                    "subItems": subitems
+                                })
+                                
+                                logger.debug("CHECKLIST DEBUG: Added item: %s", itemData["title"])
+                            else:
+                                logger.warning("CHECKLIST DEBUG: Skipping item without title: %s", itemData)
+                    
+                    # Create and add the checklist
+                    checklist = {
+                        "id": str(uuid.uuid4()),
+                        "date": date,
+                        "items": checklistItems,
+                        "notes": notes
+                    }
+                    
+                    allChecklists.append(checklist)
+                    logger.info("CHECKLIST DEBUG: Created checklist for %s with %d items and notes: %s", 
+                              dateString, len(checklistItems), notes)
+        
+        logger.info("CHECKLIST DEBUG: Processed %d checklists in total", len(allChecklists))
+        return None if not allChecklists else allChecklists 

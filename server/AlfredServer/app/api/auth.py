@@ -23,16 +23,13 @@ def login_access_token(
     """
     OAuth2 compatible token login, get an access token for future requests
     """
-    print(f"[AUTH LOG] Login attempt for username: {form_data.username}")
     
     user = crud.user.authenticate(
         db, email=form_data.username, password=form_data.password
     )
     if not user:
-        print(f"[AUTH LOG] Authentication failed for username: {form_data.username}")
         raise HTTPException(status_code=400, detail="Incorrect email or password")
     elif not crud.user.is_active(user):
-        print(f"[AUTH LOG] Inactive user attempted login: {form_data.username}")
         raise HTTPException(status_code=400, detail="Inactive user")
         
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)

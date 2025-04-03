@@ -23,7 +23,6 @@ def get_current_user(
 ) -> User:
     # Log token validation attempt (only first 10 chars for security)
     token_prefix = token[:10] + "..." if len(token) > 10 else token
-    print(f"[AUTH LOG] Token validation attempt: {token_prefix} at {time.time()}")
     
     try:
         payload = jwt.decode(
@@ -39,7 +38,6 @@ def get_current_user(
             raise ExpiredSignatureError("Token expired")
             
         # Log successful decode
-        print(f"[AUTH LOG] Token successfully decoded for subject: {token_data.sub}")
         
     except ExpiredSignatureError as e:
         print(f"[AUTH LOG] Token expired error: {str(e)}")
@@ -60,7 +58,6 @@ def get_current_user(
         raise HTTPException(status_code=404, detail="User not found")
         
     # Log successful authentication
-    print(f"[AUTH LOG] Authentication successful for user ID: {user.id}, email: {user.email}")
     return user
 
 

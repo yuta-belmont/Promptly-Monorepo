@@ -4,7 +4,7 @@ import json
 import asyncio
 import logging
 import time
-from typing import Dict, Any, List, Set, Tuple
+from typing import Dict, Any, List, Set, Tuple, Optional
 from datetime import datetime
 
 # Add the project root to the path so we can import app modules
@@ -24,29 +24,25 @@ logger = logging.getLogger(__name__)
 
 # Maximum time for processing a single task
 MAX_TASK_PROCESSING_TIME = 30  # 30 seconds per task
-MAX_CONCURRENT_TASKS = 50  # Total concurrent tasks across both types
 
 class UnifiedWorker:
     """
-    Unified worker for processing both message and checklist tasks from Firestore.
-    Uses a stateless architecture that doesn't rely on database models.
+    Unified worker that handles both message and checklist tasks.
+    Each worker runs in its own thread with a limited number of concurrent tasks.
     """
     
-    def __init__(self):
-        """Initialize the worker with Firebase and AI services."""
+    def __init__(self, worker_id: str = "default", max_concurrent_tasks: int = 10):
+        """Initialize the worker with thread-specific settings."""
+        self.worker_id = worker_id
         self.firebase_service = FirebaseService()
         self.ai_service = AIService()
-        
-        # Track active tasks separately by type
         self.active_message_tasks: Set[str] = set()
         self.active_checklist_tasks: Set[str] = set()
-        
-        # Single semaphore to limit overall concurrency
-        self.semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
+        self.semaphore = asyncio.Semaphore(max_concurrent_tasks)  # Thread-specific limit
     
     @property
     def total_active_tasks(self) -> int:
-        """Get the total number of active tasks across all types."""
+        """Get the total number of active tasks across both types."""
         return len(self.active_message_tasks) + len(self.active_checklist_tasks)
     
     async def process_tasks(self, max_runtime=None):
@@ -80,93 +76,38 @@ class UnifiedWorker:
                 logger.debug(f"Active tasks: {total_active} (message: {len(self.active_message_tasks)}, checklist: {len(self.active_checklist_tasks)})")
                 
                 # Calculate available capacity
-                available_capacity = MAX_CONCURRENT_TASKS - total_active
+                available_capacity = self.semaphore._value - total_active
                 
                 # First process message tasks (priority) if capacity available
                 if available_capacity > 0:
-                    # Get pending message tasks up to available capacity
-                    fetch_limit = min(available_capacity, 10)  # Fetch at most 10 at a time
-                    message_tasks = self.firebase_service.get_pending_tasks('message_tasks', limit=fetch_limit)
+                    message_tasks = self.firebase_service.get_pending_tasks(
+                        collection='message_tasks',
+                        limit=available_capacity
+                    )
                     
-                    if message_tasks:
-                        logger.info(f"Found {len(message_tasks)} pending message tasks")
+                    for task in message_tasks:
+                        task_id = task['id']  # Access id from dictionary
+                        task_data = task  # Task is already a dictionary
                         
-                        # Start processing new message tasks concurrently
-                        for task in message_tasks:
-                            task_id = task['id']
-                            
-                            # Skip if task is already being processed
-                            if task_id in self.active_message_tasks:
-                                logger.warning(f"Message task {task_id} is already being processed, skipping")
-                                continue
-                                
-                            # Update status to processing
-                            self.firebase_service.update_task_status(
-                                collection='message_tasks',
-                                task_id=task_id,
-                                status='processing'
-                            )
-                            
-                            # Add to active tasks
-                            self.active_message_tasks.add(task_id)
-                            
-                            # Create and start task coroutine with timeout
-                            task_coroutine = self.process_message_task_with_tracking(task_id, task)
-                            task_future = asyncio.create_task(task_coroutine)
-                            
-                            # Add to pending tasks
-                            pending_tasks.append(task_future)
-                            
-                            # Update available capacity
-                            available_capacity -= 1
-                            if available_capacity <= 0:
-                                break
+                        # Process the task
+                        await self.process_message_task(task_id, task_data)
                 
-                # Then process checklist tasks with remaining capacity
+                # Then process checklist tasks if capacity available
                 if available_capacity > 0:
-                    # Get pending checklist tasks up to remaining capacity
-                    fetch_limit = min(available_capacity, 10)  # Fetch at most 10 at a time
-                    checklist_tasks = self.firebase_service.get_pending_tasks('checklist_tasks', limit=fetch_limit)
+                    checklist_tasks = self.firebase_service.get_pending_tasks(
+                        collection='checklist_tasks',
+                        limit=available_capacity
+                    )
                     
-                    if checklist_tasks:
-                        logger.info(f"Found {len(checklist_tasks)} pending checklist tasks")
+                    for task in checklist_tasks:
+                        task_id = task['id']  # Access id from dictionary
+                        task_data = task  # Task is already a dictionary
                         
-                        # Start processing new checklist tasks concurrently
-                        for task in checklist_tasks:
-                            task_id = task['id']
-                            
-                            # Skip if task is already being processed
-                            if task_id in self.active_checklist_tasks:
-                                logger.warning(f"Checklist task {task_id} is already being processed, skipping")
-                                continue
-                                
-                            # Update status to processing
-                            self.firebase_service.update_task_status(
-                                collection='checklist_tasks',
-                                task_id=task_id,
-                                status='processing'
-                            )
-                            
-                            # Add to active tasks
-                            self.active_checklist_tasks.add(task_id)
-                            
-                            # Create and start task coroutine with timeout
-                            task_coroutine = self.process_checklist_task_with_tracking(task_id, task)
-                            task_future = asyncio.create_task(task_coroutine)
-                            
-                            # Add to pending tasks
-                            pending_tasks.append(task_future)
-                            
-                            # Update available capacity
-                            available_capacity -= 1
-                            if available_capacity <= 0:
-                                break
-                
-                # Clean up completed tasks
-                pending_tasks = [task for task in pending_tasks if not task.done()]
+                        # Process the task
+                        await self.process_checklist_task(task_id, task_data)
                 
                 # If no tasks were found, sleep for a second before polling again
-                if available_capacity == MAX_CONCURRENT_TASKS:
+                if available_capacity == self.semaphore._value:
                     await asyncio.sleep(1.0)
                 else:
                     # Brief sleep to prevent tight polling loop
@@ -377,15 +318,14 @@ class UnifiedWorker:
             
             # Process checklist if needed
             checklist_task_id = None
-            checklist_data = None
             
             if needs_checklist and not needs_more_info:
-                # Create a checklist task directly in "processing" state
+                # Create a checklist task in "pending" state
                 checklist_task_data = {
                     'user_id': user_id,
                     'message_content': message_content,
                     'message_history': message_history,
-                    'status': 'processing',
+                    'status': 'pending',
                     'created_at': firestore.SERVER_TIMESTAMP,
                     'updated_at': firestore.SERVER_TIMESTAMP
                 }
@@ -398,73 +338,9 @@ class UnifiedWorker:
                 task_ref = self.firebase_service.db.collection('checklist_tasks').document()
                 task_ref.set(checklist_task_data)
                 checklist_task_id = task_ref.id
-                logger.info(f"Created stateless checklist task {checklist_task_id} from message task {task_id}")
-                
-                try:
-                    # Add to active tasks
-                    self.active_checklist_tasks.add(checklist_task_id)
-                    
-                    # Parse client time if provided
-                    client_datetime = None
-                    if 'client_time' in task_data:
-                        try:
-                            client_time = task_data.get('client_time')
-                            client_datetime = datetime.fromisoformat(client_time.replace('Z', '+00:00'))
-                            logger.info(f"Using client time for checklist generation: {client_datetime}")
-                        except (ValueError, TypeError) as e:
-                            logger.warning(f"Error parsing client time: {e}. Using server time instead.")
-                    
-                    # Generate the checklist directly
-                    checklist_data = await self.ai_service.generate_checklist(
-                        message=message_content,
-                        message_history=message_history,
-                        now=client_datetime
-                    )
-                    
-                    if checklist_data:
-                        # Store the checklist in Firestore using the date-sharded method
-                        self.firebase_service.store_checklist(
-                            user_id=user_id,
-                            checklist_content=checklist_data
-                        )
-                        
-                        # Update checklist task status to completed
-                        self.firebase_service.update_task_status(
-                            collection='checklist_tasks',
-                            task_id=checklist_task_id,
-                            status='completed',
-                            data={
-                                'checklist_data': checklist_data
-                            }
-                        )
-                        logger.info(f"Directly processed stateless checklist task {checklist_task_id}")
-                    else:
-                        # Update task status to failed if no checklist data
-                        logger.warning(f"Task {checklist_task_id}: No checklist data generated")
-                        self.firebase_service.update_task_status(
-                            collection='checklist_tasks',
-                            task_id=checklist_task_id,
-                            status='failed',
-                            data={
-                                'error': 'No checklist data generated'
-                            }
-                        )
-                except Exception as checklist_e:
-                    logger.error(f"Error during stateless checklist processing for task {checklist_task_id}: {checklist_e}")
-                    # Update task status to failed
-                    self.firebase_service.update_task_status(
-                        collection='checklist_tasks',
-                        task_id=checklist_task_id,
-                        status='failed',
-                        data={
-                            'error': str(checklist_e)
-                        }
-                    )
-                finally:
-                    # Remove from active tasks
-                    self.active_checklist_tasks.discard(checklist_task_id)
+                logger.info(f"Created checklist task {checklist_task_id} from message task {task_id}")
             
-            # Create the final response
+            # Create the initial response with checklist task ID if applicable
             final_message_content = ai_response
             if checklist_task_id:
                 # Include checklist task ID in the response
@@ -473,32 +349,20 @@ class UnifiedWorker:
                     "checklist_task_id": checklist_task_id
                 })
             
-            # Update the task with the completed response
-            update_data = {
-                'response': final_message_content,
-                'needs_checklist': needs_checklist,
-                'needs_more_info': needs_more_info
-            }
-            
-            # Add checklist task ID if applicable
-            if checklist_task_id:
-                update_data['checklist_task_id'] = checklist_task_id
-                
-            # Add checklist data if available (prevents needing a separate call)
-            if checklist_data:
-                update_data['checklist_data'] = checklist_data
-            
-            # Update task status to completed
+            # Update message task status to completed immediately
             self.firebase_service.update_task_status(
                 collection='message_tasks',
                 task_id=task_id,
                 status='completed',
-                data=update_data
+                data={
+                    'response': final_message_content,
+                    'checklist_task_id': checklist_task_id
+                }
             )
             
-            logger.info(f"Completed stateless message task {task_id}")
+            logger.info(f"Completed message task {task_id} with initial response")
             return True
-        
+            
         except Exception as e:
             logger.error(f"Error processing stateless message task {task_id}: {e}")
             # Update task status to failed

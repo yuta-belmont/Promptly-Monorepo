@@ -15,6 +15,25 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 firebase_service = FirebaseService()
 ai_service = AIService()
 
+class ChecklistSubItem(BaseModel):
+    title: str
+
+class ChecklistItem(BaseModel):
+    title: str
+    notification: Optional[str] = None
+    subitems: Optional[List[ChecklistSubItem]] = []
+
+class ChecklistDate(BaseModel):
+    notes: Optional[str] = None
+    items: List[ChecklistItem]
+
+class ChecklistGroup(BaseModel):
+    name: Optional[str] = None
+    dates: Dict[str, ChecklistDate]
+
+class ChecklistData(BaseModel):
+    checklist_data: Dict[str, ChecklistGroup]
+
 # Schema with context support for stateless messages
 class MessageWithContextCreate(BaseModel):
     message: str

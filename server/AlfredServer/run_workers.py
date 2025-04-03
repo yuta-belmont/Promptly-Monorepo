@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
 Script to run the background workers.
-This script starts the unified worker process for handling both message and checklist tasks.
+This script starts multiple worker threads for handling tasks.
 """
 
 import os
 import sys
 import asyncio
 import logging
-import multiprocessing
+import threading
 import signal
 import time
 import random
+from typing import List
 
 # Add the project root to the path so we can import app modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -31,65 +32,75 @@ logger = logging.getLogger(__name__)
 # Global flag to signal workers to shut down
 shutdown_flag = False
 
-# Store worker processes
-worker_processes = []
-
 # Worker configuration
-MAX_RUNTIME = 30  # 30 seconds max time allowed for processing a single task
-POLL_INTERVAL = 0.1  # 100ms between cycles
-POLL_FREQUENCY = 1.0  # 1 second between polling Firebase when no tasks are found
+MAX_TASKS_PER_THREAD = 10  # Each thread handles up to 10 tasks
+NUM_WORKER_THREADS = 5     # Number of worker threads
+POLL_INTERVAL = 0.1        # 100ms between cycles
+POLL_FREQUENCY = 1.0       # 1 second between polling Firebase when no tasks are found
 
-# Counter to track which worker is being started
-worker_count = 0
-
-async def run_unified_worker(worker_id=0):
-    """
-    Run the unified worker that handles both message and checklist tasks.
+class WorkerThread:
+    """Thread that runs a worker with its own event loop."""
     
-    Args:
-        worker_id: ID of this worker instance, used for jitter calculation
-    """
-    worker = UnifiedWorker()
+    def __init__(self, thread_id: int, worker_id: str):
+        self.thread_id = thread_id
+        self.worker_id = worker_id
+        self.thread = None
+        self.loop = None
+        self.worker = None
+        self.running = False
+        # Add initial delay based on thread index (0-4)
+        self.initial_delay = thread_id * 0.2  # Stagger by 200ms per thread
     
-    # Modify the loop to check for shutdown flag
-    while not shutdown_flag:
+    async def _run_worker(self):
+        """Run the worker in this thread's event loop."""
         try:
-            # Check for tasks with short max_runtime to enable more frequent polling
-            # But process each task with the full MAX_RUNTIME limit
-            start_time = time.time()
+            # Add initial staggered delay
+            if self.initial_delay > 0:
+                logger.info(f"Thread {self.thread_id} waiting {self.initial_delay:.1f}s before starting")
+                await asyncio.sleep(self.initial_delay)
             
-            # Process tasks, but only poll for POLL_FREQUENCY seconds
-            await worker.process_tasks(max_runtime=POLL_FREQUENCY)
+            self.worker = UnifiedWorker(
+                worker_id=f"worker-{self.worker_id}-{self.thread_id}",
+                max_concurrent_tasks=MAX_TASKS_PER_THREAD
+            )
             
-            # Calculate how much time we have left in our desired polling interval
-            elapsed = time.time() - start_time
-            remaining_sleep = max(0, POLL_FREQUENCY - elapsed)
-            
-            # Check shutdown flag
-            if shutdown_flag:
-                logger.info(f"Unified worker {worker_id} received shutdown signal")
-                break
-                
-            # Sleep for any remaining time to maintain our polling frequency
-            if remaining_sleep > 0:
-                logger.debug(f"Worker {worker_id} sleeping for {remaining_sleep:.2f}s to maintain polling frequency")
-                await asyncio.sleep(remaining_sleep)
+            # Run the worker until shutdown
+            while not shutdown_flag:
+                try:
+                    # Process tasks with a timeout to allow for graceful shutdown
+                    await self.worker.process_tasks(max_runtime=POLL_FREQUENCY)
+                except Exception as e:
+                    logger.error(f"Error in worker thread {self.thread_id}: {e}")
+                    if not shutdown_flag:
+                        await asyncio.sleep(POLL_FREQUENCY)  # Wait before retrying
+                        
+            logger.info(f"Worker thread {self.thread_id} shutting down")
             
         except Exception as e:
-            logger.error(f"Error in unified worker {worker_id}: {e}")
-            if not shutdown_flag:
-                await asyncio.sleep(POLL_FREQUENCY)  # Wait before retrying
-    
-    logger.info(f"Unified worker {worker_id} shutting down gracefully")
+            logger.error(f"Worker thread {self.thread_id} error: {e}")
+            raise
 
-def start_unified_worker(worker_id=0):
-    """
-    Start the unified worker in a separate process.
+class WorkerManager:
+    """Manages multiple worker threads."""
     
-    Args:
-        worker_id: ID of this worker instance, passed to run_unified_worker
-    """
-    asyncio.run(run_unified_worker(worker_id))
+    def __init__(self):
+        """Initialize the worker manager."""
+        self.worker_threads: List[WorkerThread] = []
+        
+    def start(self):
+        """Start all worker threads."""
+        logger.info(f"Starting {NUM_WORKER_THREADS} worker threads")
+        for i in range(NUM_WORKER_THREADS):
+            worker = WorkerThread(i, f"thread-{i}")
+            asyncio.run(worker._run_worker())
+            self.worker_threads.append(worker)
+            
+    def stop(self):
+        """Stop all worker threads."""
+        logger.info("Stopping all worker threads")
+        for worker in self.worker_threads:
+            if worker.thread:
+                worker.thread.join(timeout=5.0)
 
 def signal_handler(sig, frame):
     """Handle termination signals to gracefully shut down workers."""
@@ -100,19 +111,11 @@ def signal_handler(sig, frame):
     # Give workers time to shut down gracefully
     time.sleep(2)
     
-    # Terminate any remaining processes
-    for process in worker_processes:
-        if process.is_alive():
-            logger.info(f"Terminating worker process {process.pid}")
-            process.terminate()
-    
     logger.info("All workers shut down")
     sys.exit(0)
 
 def main():
     """Main entry point for the script."""
-    global worker_count
-    
     # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -123,37 +126,32 @@ def main():
         f.write(str(pid))
     logger.info(f"Worker manager started with PID {pid}")
     
-    # Start unified worker
-    logger.info("Starting unified worker process")
-    unified_process = multiprocessing.Process(target=start_unified_worker, args=(worker_count,))
-    unified_process.start()
-    worker_processes.append(unified_process)
-    worker_count += 1
+    # Start worker manager
+    manager = WorkerManager()
+    manager.start()
     
     try:
         # Keep the main process running to handle signals
         while not shutdown_flag:
             time.sleep(1)
             
-            # Check if workers are still alive and restart them if needed
-            for i, process in enumerate(worker_processes[:]):
-                if not process.is_alive() and not shutdown_flag:
-                    logger.warning(f"Unified worker died unexpectedly, restarting...")
-                    worker_id = i  # Use the original index as the worker_id
-                    new_process = multiprocessing.Process(target=start_unified_worker, args=(worker_id,))
-                    new_process.start()
-                    
-                    # Replace the dead process in our list
-                    worker_processes[i] = new_process
+            # Check if any threads died and restart them if needed
+            for i, worker in enumerate(manager.worker_threads[:]):
+                if not worker.thread.is_alive() and not shutdown_flag:
+                    logger.warning(f"Worker thread {i} died unexpectedly, restarting...")
+                    new_worker = WorkerThread(i, f"thread-{i}")
+                    asyncio.run(new_worker._run_worker())
+                    manager.worker_threads[i] = new_worker
     
     except KeyboardInterrupt:
         # This will be caught by the signal handler
         pass
     
     finally:
-        # Clean up PID file
+        # Clean up
+        manager.stop()
         if os.path.exists("worker.pid"):
             os.remove("worker.pid")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main() 

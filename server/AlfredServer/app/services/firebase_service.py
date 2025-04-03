@@ -328,7 +328,7 @@ class FirebaseService:
         
         Args:
             user_id: The ID of the user
-            checklist_content: The generated checklist content
+            checklist_content: The generated checklist content with groups and dates
             chat_id: The ID of the chat (optional in stateless mode)
             message_id: The ID of the message (optional in stateless mode)
         """
@@ -339,7 +339,7 @@ class FirebaseService:
             # Set the task data
             task_data = {
                 'user_id': user_id,
-                'generated_content': json.dumps(checklist_content),
+                'checklist_data': checklist_content,  # Store the entire checklist data structure
                 'created_at': firestore.SERVER_TIMESTAMP,
                 'updated_at': firestore.SERVER_TIMESTAMP,
                 'status': 'completed'
