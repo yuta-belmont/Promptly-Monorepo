@@ -7,13 +7,11 @@ struct NavigationUtil {
     
     // Reset the navigation stack
     static func popToRoot() {
-        print("[NavigationUtil] Clearing navigation path")
         navigationPath = NavigationPath()
     }
     
     // Navigate to a specific view
     static func navigate<T: Hashable>(to destination: T) {
-        print("[NavigationUtil] Navigating to: \(String(describing: type(of: destination)))")
         navigationPath.append(destination)
     }
 }

@@ -45,7 +45,8 @@ struct ChatView: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
+        
+        return GeometryReader { geometry in
             let availableHeight = geometry.size.height
             let maxHeight = availableHeight -  20
             

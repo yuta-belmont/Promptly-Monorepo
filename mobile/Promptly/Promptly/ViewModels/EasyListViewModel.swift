@@ -2,12 +2,6 @@ import Foundation
 import SwiftUI
 import Combine
 
-// Add debug helper function at the top
-private func debugLog(_ source: String, _ action: String) {
-    let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
-    print("\(timestamp) [EasyListViewModel]: \(source) - \(action)")
-}
-
 // Define undo action types
 enum UndoAction {
     case snapshot(items: [Models.ChecklistItem])
@@ -167,7 +161,6 @@ final class EasyListViewModel: ObservableObject {
     }
     
     init(date: Date = Date()) {
-        print("[EasyListViewModel] Initializing with date: \(DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short))")
         self.date = date
         // Initialize with empty checklist instead of loading data immediately
         self.checklist = Models.Checklist(date: date)
@@ -176,7 +169,6 @@ final class EasyListViewModel: ObservableObject {
     
     // New method to load data - this will be called from the view's onAppear
     func loadData() {
-        print("[EasyListViewModel] loadData called for date: \(DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short))")
         // Set loading state to true
         isLoading = true
         
@@ -194,7 +186,6 @@ final class EasyListViewModel: ObservableObject {
         
         // Set loading state to false
         isLoading = false
-        print("[EasyListViewModel] Loaded checklist for date: \(DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short)), items: \(checklist.items.count)")
     }
     
     // New method to update the date without recreating the view model
@@ -203,7 +194,6 @@ final class EasyListViewModel: ObservableObject {
         let calendar = Calendar.current
         guard !calendar.isDate(date, inSameDayAs: newDate) else { return }
         
-        print("[EasyListViewModel] updateToDate from: \(DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short)) to: \(DateFormatter.localizedString(from: newDate, dateStyle: .medium, timeStyle: .short))")
         
         // If we have unsaved changes, save them before switching dates
         if hasUnsavedChanges {
@@ -213,7 +203,6 @@ final class EasyListViewModel: ObservableObject {
         
         let oldDateString = DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short)
         let newDateString = DateFormatter.localizedString(from: newDate, dateStyle: .medium, timeStyle: .short)
-        debugLog("updateToDate", "Switching from \(oldDateString) to \(newDateString)")
         
         let startTime = CFAbsoluteTimeGetCurrent()
         
@@ -230,7 +219,6 @@ final class EasyListViewModel: ObservableObject {
         loadData()
         
         let duration = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        debugLog("updateToDate", "Checklist loaded in \(String(format: "%.2f", duration))ms")
     }
     
     // MARK: - Date Formatting
@@ -392,8 +380,8 @@ final class EasyListViewModel: ObservableObject {
             group: nil
         )
         
-        // Add the item directly to the collection
-        checklist.addItem(newItem)
+        // Insert the item at the beginning of the collection (index 0) instead of appending
+        checklist.addItemAtBeginning(newItem)
         hasUnsavedChanges = true
         
         // Clear the undo cache when adding items
@@ -462,7 +450,6 @@ final class EasyListViewModel: ObservableObject {
     
     func saveChecklist() {
         if hasUnsavedChanges {
-            debugLog("saveChecklist()", "Saving checklist")
             persistence.saveChecklist(checklist)
         }
         hasUnsavedChanges = false
@@ -676,7 +663,6 @@ final class EasyListViewModel: ObservableObject {
     
     /// Updates the notification for a specific item by ID
     func updateItemNotification(itemId: UUID, with notification: Date?) {
-        print("UPDATE ITEM NOTIFICATION called with date: \(String(describing: notification))")
         guard let itemIndex = checklist.itemCollection.items.firstIndex(where: { $0.id == itemId }) else { return }
         
         // Directly update the notification in the collection
@@ -754,8 +740,5 @@ final class EasyListViewModel: ObservableObject {
         // This ensures SwiftUI knows the data has changed
         let updatedChecklist = checklist
         checklist = updatedChecklist
-        
-        // Debug log for undo operation
-        debugLog("undo()", "Undo operation completed, UI refreshed")
     }
 } 

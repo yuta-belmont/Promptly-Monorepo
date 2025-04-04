@@ -3,11 +3,6 @@ import SwiftUI
 import Combine
 
 // Add debug helper function at the top
-private func debugLog(_ source: String, _ action: String) {
-    return
-    let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
-    print("\(timestamp) [ItemDetailsViewModel]: \(source) - \(action)")
-}
 
 @MainActor
 final class ItemDetailsViewModel: ObservableObject {
@@ -43,7 +38,6 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Add a new subitem to the item
     func addSubitem(_ title: String) {
-        debugLog("addSubitem", "called with title: \(title)")
         // Create a new subitem
         let newSubitem = Models.SubItem(
             id: UUID(),
@@ -51,14 +45,20 @@ final class ItemDetailsViewModel: ObservableObject {
             isCompleted: false
         )
         
-        // Directly add the subitem to the item's collection
-        item.addSubItem(newSubitem)
+        // Create a mutable copy of the item
+        var mutableItem = item
+        
+        // Insert the subitem at the beginning of the array instead of appending
+        mutableItem.subItems.insert(newSubitem, at: 0)
         
         // If the parent item was previously completed, mark it incomplete
         // since we've added a new incomplete subitem
-        if item.isCompleted {
-            item.isCompleted = false
+        if mutableItem.isCompleted {
+            mutableItem.isCompleted = false
         }
+        
+        // Update the published item
+        item = mutableItem
         
         // Save to persistence
         saveItem()
@@ -67,16 +67,13 @@ final class ItemDetailsViewModel: ObservableObject {
     // Public method to save changes when view disappears
     func saveChanges()
     {
-        debugLog("saveChanges", "saving item state on view disappear")
         saveItem()
     }
     
     // Save the updated item to persistence
     private func saveItem() {
-        debugLog("saveItem", "called")
         // Load the current checklist for the item's date
         guard var checklist = persistence.loadChecklist(for: item.date) else {
-            debugLog("saveItem", "no existing checklist found, creating new")
             // If no checklist exists for this date, create a new one
             var newChecklist = Models.Checklist(date: item.date)
             newChecklist.addItem(item)
@@ -85,7 +82,6 @@ final class ItemDetailsViewModel: ObservableObject {
         }
         item.lastModified = Date()
 
-        debugLog("saveItem", "updating item in existing checklist")
         // Find the item in the checklist and update it
         if let itemIndex = checklist.itemCollection.items.firstIndex(where: { $0.id == item.id }) {
             // The item exists in the checklist, directly update it
@@ -107,28 +103,20 @@ final class ItemDetailsViewModel: ObservableObject {
                let freshItem = checklist.items.first(where: { $0.id == item.id }) {
                 // Update our item with the fresh data if found
                 self.item = freshItem
-                debugLog("loadFreshItemData", "loaded fresh item during initialization")
-            } else {
-                debugLog("loadFreshItemData", "no fresh item found during initialization, keeping passed item")
             }
         }
     }
     
     // Load the latest version of the item from persistence
     func loadDetails() {
-        debugLog("loadDetails", "called for item ID: \(item.id.uuidString.prefix(8))")
         isLoading = true
         
         // Get the latest checklist for the item's date
         if let checklist = persistence.loadChecklist(for: item.date) {
             // Find the latest version of the item in the checklist
             if let freshItem = checklist.items.first(where: { $0.id == item.id }) {
-                debugLog("loadDetails", "found fresh item with group ID: \(String(describing: freshItem.groupId?.uuidString.prefix(8)))")
-                
                 // Update the item with the latest data
                 self.item = freshItem
-            } else {
-                debugLog("loadDetails", "item not found in checklist, keeping current version")
             }
         }
         
@@ -140,8 +128,6 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Update notification for the item
     func updateNotification(_ newNotification: Date?) {
-        debugLog("updateNotification", "called with date: \(String(describing: newNotification))")
-        
         // Cancel existing notification if there is one
         if let _ = item.notification {
             // Use the correct method to remove notifications
@@ -173,7 +159,6 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Update group for the item
     func updateGroup(_ newGroupId: UUID?) {
-        debugLog("updateGroup", "called with group ID: \(String(describing: newGroupId?.uuidString.prefix(8)))")
         
         // Create a mutable copy of the item
         var mutableItem = item
@@ -183,16 +168,13 @@ final class ItemDetailsViewModel: ObservableObject {
             if let group = groupStore.getGroup(by: newGroupId) {
                 // Use the updateGroup method to set the group reference
                 mutableItem.updateGroup(group)
-                debugLog("updateGroup", "set group: \(group.title)")
             } else {
                 // Group not found, clear the group
                 mutableItem.updateGroup(nil)
-                debugLog("updateGroup", "group not found, setting to nil")
             }
         } else {
             // Clear the group if newGroupId is nil
             mutableItem.updateGroup(nil)
-            debugLog("updateGroup", "clearing group (nil)")
         }
         
         // Update the published item
@@ -204,7 +186,6 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Toggle the completed state of the item
     func toggleCompleted() {
-        debugLog("toggleCompleted", "toggling isCompleted from \(item.isCompleted) to \(!item.isCompleted)")
         
         // Create a mutable copy of the item
         var mutableItem = item
@@ -234,8 +215,6 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Toggle the completion state of a subitem
     func toggleSubitemCompleted(subitemId: UUID) {
-        debugLog("toggleSubitemCompleted", "toggling subitem with ID: \(subitemId.uuidString.prefix(8))")
-        
         // Create a mutable copy of the item
         var mutableItem = item
         
@@ -253,8 +232,6 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Update the title of the item
     func updateTitle(_ newTitle: String) {
-        debugLog("updateTitle", "updating title to: \(newTitle)")
-        
         // Create a mutable copy of the item
         var mutableItem = item
         
@@ -270,8 +247,6 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Update the title of a subitem
     func updateSubitemTitle(_ subitemId: UUID, newTitle: String) {
-        debugLog("updateSubitemTitle", "updating subitem \(subitemId.uuidString.prefix(8)) title to: \(newTitle)")
-        
         // Create a mutable copy of the item
         var mutableItem = item
         
@@ -290,15 +265,12 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Move a subitem (for drag and drop reordering)
     func moveSubitem(from sourceId: UUID, to destinationId: UUID) {
-        debugLog("moveSubitem", "moving subitem from \(sourceId.uuidString.prefix(8)) to \(destinationId.uuidString.prefix(8))")
-        
         // Create a mutable copy of the item
         var mutableItem = item
         
         // Get indices for the source and destination items
         guard let sourceIndex = mutableItem.subItems.firstIndex(where: { $0.id == sourceId }),
               let destinationIndex = mutableItem.subItems.firstIndex(where: { $0.id == destinationId }) else {
-            debugLog("moveSubitem", "couldn't find indices for source or destination")
             return
         }
         
@@ -323,14 +295,12 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Move a subitem to the end of the list
     func moveSubitemToEnd(_ sourceId: UUID) {
-        debugLog("moveSubitemToEnd", "moving subitem \(sourceId.uuidString.prefix(8)) to end of list")
         
         // Create a mutable copy of the item
         var mutableItem = item
         
         // Get index for the source item
         guard let sourceIndex = mutableItem.subItems.firstIndex(where: { $0.id == sourceId }) else {
-            debugLog("moveSubitemToEnd", "couldn't find index for source")
             return
         }
         
@@ -347,7 +317,6 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Handle standard SwiftUI List move operations
     func moveSubitems(from source: IndexSet, to destination: Int) {
-        debugLog("moveSubitems", "moving from indices \(source) to position \(destination)")
         
         // Create a mutable copy of the item
         var mutableItem = item
@@ -364,7 +333,6 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Delete a subitem by ID
     func deleteSubitem(_ subitemId: UUID) {
-        debugLog("deleteSubitem", "deleting subitem with ID: \(subitemId.uuidString.prefix(8))")
         
         // Create a mutable copy of the item
         var mutableItem = item
@@ -381,8 +349,6 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Delete all subitems
     func deleteAllSubitems() {
-        debugLog("deleteAllSubitems", "deleting all subitems")
-        
         // Create a mutable copy of the item
         var mutableItem = item
         
@@ -398,8 +364,6 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Delete completed subitems
     func deleteCompletedSubitems() {
-        debugLog("deleteCompletedSubitems", "deleting completed subitems")
-        
         // Create a mutable copy of the item
         var mutableItem = item
         
@@ -414,9 +378,7 @@ final class ItemDetailsViewModel: ObservableObject {
     }
     
     // Delete incomplete subitems
-    func deleteIncompleteSubitems() {
-        debugLog("deleteIncompleteSubitems", "deleting incomplete subitems")
-        
+    func deleteIncompleteSubitems() {        
         // Create a mutable copy of the item
         var mutableItem = item
         

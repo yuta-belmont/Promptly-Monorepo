@@ -185,6 +185,7 @@ struct EasyListHeader: View {
     let onUndo: () -> Void
     let canUndo: Bool
     let currentDate: Date
+    let onAddItem: () -> Void
     @EnvironmentObject private var undoManager: UndoStateManager
     
     @State private var showingDeleteConfirmation = false
@@ -212,6 +213,16 @@ struct EasyListHeader: View {
                                 .foregroundColor(.white)
                                 .padding(.bottom, 2)
                         }
+                    }
+                    
+                    // Add item button
+                    Button(action: {
+                        feedbackGenerator.impactOccurred()
+                        onAddItem()
+                    }) {
+                        Image(systemName: "plus")
+                            .foregroundColor(.white)
+                            .padding(.bottom, 2)
                     }
                     
                     Button(action: {
@@ -303,6 +314,7 @@ struct NewItemRow: View {
     @Binding var text: String
     let isFocused: FocusState<Bool>.Binding
     let onSubmit: () -> Void
+    @Binding var isListEmpty: Bool
     
     var body: some View {
         HStack {
@@ -314,23 +326,21 @@ struct NewItemRow: View {
             CustomTextField(
                 text: $text,
                 textColor: isFocused.wrappedValue ? .white : .gray,
-                placeholder: isFocused.wrappedValue ? "New item" : "Add new item...",
-                placeholderColor: .gray,
+                placeholder: "New item",
                 onReturn: {
                     if !text.isEmpty {
                         onSubmit()
                     } else {
+                        print("NewItemRow onSubmit: Setting local focus to false (empty text)")
                         isFocused.wrappedValue = false
                     }
                 }
             )
-            .foregroundColor(isFocused.wrappedValue ? .white : .gray)
             .focused(isFocused)
             .frame(width: UIScreen.main.bounds.width * 0.80, alignment: .topTrailing)
             .clipped(antialiased: true)
             .padding(.leading, 4)
             .zIndex(1)
-            // Make sure the text field has higher priority for keyboard focus
             .accessibilityAddTraits(.isKeyboardKey)
         }
         .listRowBackground(Color.clear)
@@ -340,6 +350,9 @@ struct NewItemRow: View {
         .padding(.leading, 16)
         // Add a minimum height to ensure it's always fully visible
         .frame(minHeight: 44)
+        // Only hide when not focused AND list is not empty
+        .opacity((isFocused.wrappedValue || isListEmpty) ? 1 : 0)
+        .frame(height: (isFocused.wrappedValue || isListEmpty) ? nil : 0)
     }
 }
 
@@ -355,17 +368,23 @@ struct ListContent: View {
     let availableHeight: CGFloat
     let removeAllFocus: () -> Void
     
+    // Computed property to check if list is empty
+    private var isListEmpty: Bool {
+        return viewModel.items.isEmpty
+    }
+    
     // Haptic feedback generator for item toggling
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
     // Consolidated scroll helper function
     private func scrollToNewItem(_ proxy: ScrollViewProxy) {
-         // Delay the first scroll by 0.1 seconds, then animate for 0.1 seconds
-         DispatchQueue.main.asyncAfter(deadline: .now()) {
-             withAnimation(.easeInOut(duration: 0.1)) {
-                 proxy.scrollTo("newItemRow", anchor: .center)
-         
-             }
+        
+        // Scroll immediately with a short animation
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                // Try scrolling to the test element at the bottom of the list
+                proxy.scrollTo("newItemRow", anchor: .top)
+            }
         }
     }
     
@@ -374,8 +393,8 @@ struct ListContent: View {
             viewModel.addItem(newItemText)
             newItemText = ""
             if !viewModel.isItemLimitReached {
+                print("ListContent handleNewItemSubmit: Setting isNewItemFocused = true")
                 isNewItemFocused = true
-                scrollToNewItem(proxy)
             }
         }
     }
@@ -388,6 +407,22 @@ struct ListContent: View {
         ZStack(alignment: .bottom) {
             ScrollViewReader { proxy in
                 List {
+                    // Always include the NewItemRow but it will be hidden when not focused,
+                    // unless the list is empty
+                    if !viewModel.isItemLimitReached {
+                        NewItemRow(
+                            text: $newItemText,
+                            isFocused: $isNewItemFocused,
+                            onSubmit: { handleNewItemSubmit(proxy: proxy) },
+                            isListEmpty: Binding(
+                                get: { viewModel.items.isEmpty },
+                                set: { _ in }
+                            )
+                        )
+                        .id("newItemRow")
+                        .listRowSeparator(.hidden)
+                    }
+                    
                     ForEach(viewModel.items, id: \.id) { item in
                         makePlannerItemView(for: item)
                             .id("item-\(item.id.uuidString)-\(item.isCompleted)-\(item.title.hashValue)-\(item.notification?.timeIntervalSince1970 ?? 0)-\(item.subItems.count)")
@@ -401,21 +436,6 @@ struct ListContent: View {
                         handleMoveItems(from: from, to: to)
                     }
                     .id("items-\(viewModel.date.timeIntervalSince1970)-\(viewModel.items.count)")
-                    
-                    if !viewModel.isItemLimitReached {
-                        NewItemRow(
-                            text: $newItemText,
-                            isFocused: $isNewItemFocused,
-                            onSubmit: { handleNewItemSubmit(proxy: proxy) }
-                        )
-                        .id("newItemRow")
-                        .listRowSeparator(.hidden)
-                    }
-                    
-                    Color.clear.frame(height: 44)
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets())
-                        .listRowSeparator(.hidden)
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
@@ -425,9 +445,11 @@ struct ListContent: View {
                 .animation(.easeInOut(duration: 0.2), value: viewModel.items.count)
                 .environment(\.defaultMinListRowHeight, 0) // Minimize row height calculations
                 .onChange(of: isNewItemFocused) { oldValue, newValue in
+                    print("NewItemRow focus changed: \(oldValue) -> \(newValue)")
                     // Only handle focus management
                     if newValue && !viewModel.isItemLimitReached {
                         focusManager.requestFocus(for: .easyList)
+                        // Scroll to the new item field when it gets focused
                     }
                     
                     // Handle saving when losing focus
@@ -439,42 +461,16 @@ struct ListContent: View {
                     // Update editing state
                     updateEditingState()
                 }
-                .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidChangeFrameNotification)) { _ in
-                    //Only scroll when the keyboard has completely finished appearing
-                    if isNewItemFocused {
-                        scrollToNewItem(proxy)
-                    }
+                .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ScrollToAddItem"))) { _ in
+                    // Scroll to the top of the list when the notification is received
+                    // This happens before focus is set
+                    scrollToNewItem(proxy)
                 }
             }
             
             EasyListFooter()
                 .environmentObject(viewModel.counterManager)
-                .opacity(isEditing ? 0 : 1)
-                .animation(.easeInOut(duration: 0.2), value: isEditing)
         }
-        .onChange(of: isEditing) { oldValue, newValue in
-            if !newValue {
-                let emptyItems = viewModel.items.enumerated().filter { $0.element.title.isEmpty }
-                if !emptyItems.isEmpty {
-                    viewModel.deleteItems(at: IndexSet(emptyItems.map { $0.offset }))
-                }
-                focusManager.isEasyListFocused = newValue
-            }
-        }
-        .onChange(of: focusManager.currentFocusedView) { oldValue, newValue in
-            if newValue != .easyList {
-                finishEditing()
-            }
-        }
-        .manageFocus(for: .easyList)
-    }
-    
-    func finishEditing() {
-        if !newItemText.isEmpty {
-            viewModel.addItem(newItemText)
-            newItemText = ""
-        }
-        isNewItemFocused = false
     }
     
     private func updateEditingState() {
@@ -497,7 +493,6 @@ struct ListContent: View {
                 // Directly update the item in the EasyListViewModel by ID
                 viewModel.toggleItemCompletion(itemId: itemId)
                 // No need to post notification - view handles its own state
-                //print("EasyListView - onToggleItem - updating notification with: item.date=\(item.date), //item.notification=\(String(describing: item.notification))")
                 viewModel.updateItemNotification(itemId: itemId, with: itemNotification)
             },
             onToggleSubItem: { mainItemId, subItemId, isCompleted in
@@ -520,6 +515,7 @@ struct ListContent: View {
             },
             onItemTap: { itemId in
                 // Remove any focus first
+                print("PlannerItemView onItemTap: Setting isNewItemFocused = false")
                 isNewItemFocused = false
                 
                 // Save checklist before opening details view
@@ -811,13 +807,16 @@ struct EasyListView: View {
                 isEditing: isEditing,
                 showingNotes: viewModel.isShowingNotes,
                 onDone: {
+                    print("onDone called - clearing all focus states")
                     // Remove focus
+                    print("onDone: Setting isEditing = false, isNewItemFocused = false, isNotesFocused = false")
                     isEditing = false
                     isNewItemFocused = false
                     isNotesFocused = false
                 },
                 onNotesToggle: {
                     // Remove focus
+                    print("onNotesToggle: Setting isEditing = false, isNewItemFocused = false, isNotesFocused = false")
                     isEditing = false
                     isNewItemFocused = false
                     isNotesFocused = false
@@ -843,7 +842,20 @@ struct EasyListView: View {
                     viewModel.undo()
                 },
                 canUndo: viewModel.canUndo,
-                currentDate: viewModel.date
+                currentDate: viewModel.date,
+                onAddItem: {
+                    print("onAddItem called - setting newItemFocused to true")
+                    // Set focus first
+                    print("onAddItem: Setting isNewItemFocused = true")
+                    isNewItemFocused = true
+                    focusManager.requestFocus(for: .easyList)
+                    
+                    // Then trigger scroll notification after a tiny delay
+                    // to ensure focus state has been processed
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        NotificationCenter.default.post(name: Notification.Name("ScrollToAddItem"), object: nil)
+                    }
+                }
             )
             .environmentObject(viewModel.undoManager)
             
@@ -909,6 +921,7 @@ struct EasyListView: View {
         )
         .preference(key: IsEditingPreferenceKey.self, value: isEditing)
         .onChange(of: isEditing) { oldValue, newValue in
+            print("EasyList editing state changed: \(oldValue) -> \(newValue)")
             if newValue {
                 focusManager.requestFocus(for: .easyList)
             }
@@ -919,7 +932,9 @@ struct EasyListView: View {
             }
         }
         .onChange(of: focusManager.currentFocusedView) { oldValue, newValue in
+            print("FocusManager view changed: \(oldValue) -> \(newValue), will clear newItemFocus: \(newValue != .easyList)")
             if newValue != .easyList {
+                print("FocusManager onChange: Setting isEditing = false, isNewItemFocused = false, isNotesFocused = false")
                 isEditing = false
                 isNewItemFocused = false
                 isNotesFocused = false
@@ -955,9 +970,6 @@ struct EasyListView: View {
             if calendar.isDate(newChecklistDate, inSameDayAs: viewModel.date) {
                 viewModel.reloadChecklist()
             }
-        }
-        .onAppear() {
-           // viewModel.reloadChecklist()
         }
     }
 }

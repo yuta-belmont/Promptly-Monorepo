@@ -71,9 +71,7 @@ class FirestoreService {
         if messageListeners["message_task_\(taskId)"] != nil {
             removeMessageListener(for: "message_task_\(taskId)")
         }
-        
-        print("MESSAGE DEBUG: Setting up listener for message task: \(taskId)")
-        
+                
         let listener = db.collection("message_tasks").document(taskId)
             .addSnapshotListener { snapshot, error in
                 if let error = error {
@@ -137,9 +135,7 @@ class FirestoreService {
             print("CHECKLIST DEBUG: Removing stale listener for checklist task: \(taskId)")
             removeMessageListener(for: "checklist_task_\(taskId)")
         }
-        
-        print("CHECKLIST DEBUG: Setting up listener for checklist task: \(taskId)")
-        
+                
         let listener = db.collection("checklist_tasks").document(taskId)
             .addSnapshotListener { snapshot, error in
                 if let error = error {

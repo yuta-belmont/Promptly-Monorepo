@@ -61,6 +61,10 @@ extension Models {
             itemCollection.items.append(item)
         }
         
+        mutating func addItemAtBeginning(_ item: ChecklistItem) {
+            itemCollection.items.insert(item, at: 0)
+        }
+        
         mutating func updateItem(_ item: ChecklistItem) {
             if let index = itemCollection.items.firstIndex(where: { $0.id == item.id }) {
                 itemCollection.items[index] = item

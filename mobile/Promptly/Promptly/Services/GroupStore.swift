@@ -103,6 +103,82 @@ final class GroupStore: ObservableObject {
         }
     }
     
+    // Create a group with a specific ID
+    func createGroupWithID(id: UUID, title: String, red: Double = 0, green: Double = 0, blue: Double = 0, hasColor: Bool = false, completion: (() -> Void)? = nil) -> Models.ItemGroup {
+        let context = persistenceController.container.viewContext
+        
+        // First check if a group with this ID already exists
+        let fetchRequest: NSFetchRequest<ItemGroup> = ItemGroup.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        
+        do {
+            let results = try context.fetch(fetchRequest)
+            
+            if let existingGroup = results.first {
+                // Group already exists, update it if needed
+                if existingGroup.title != title {
+                    existingGroup.title = title
+                    try context.save()
+                }
+                
+                // Return the existing group
+                let structRepresentation = existingGroup.toStruct()
+                
+                // Still refresh group store
+                DispatchQueue.main.async {
+                    self.loadGroups {
+                        self.lastGroupUpdateTimestamp = Date()
+                        completion?()
+                    }
+                }
+                
+                return structRepresentation
+            }
+        } catch {
+            print("Error checking for existing group: \(error)")
+        }
+        
+        // Create a new struct model with the specific ID
+        let newStructGroup = Models.ItemGroup(
+            id: id,
+            title: title,
+            items: [:],
+            colorRed: red,
+            colorGreen: green,
+            colorBlue: blue,
+            hasColor: hasColor
+        )
+        
+        // Create a Core Data model from the struct
+        let newGroup = ItemGroup.create(from: newStructGroup, context: context)
+        let structRepresentation = newGroup.toStruct()
+        
+        do {
+            try context.save()
+            
+            // Reload groups to ensure we have the latest data
+            DispatchQueue.main.async {
+                self.loadGroups {
+                    self.lastGroupUpdateTimestamp = Date()
+                    completion?()
+                }
+            }
+            
+            // Return the struct representation
+            return structRepresentation
+        } catch {
+            print("Failed to save new group with specific ID: \(error)")
+            
+            // Still call completion even if there's an error
+            DispatchQueue.main.async {
+                completion?()
+            }
+            
+            // Return the struct model even if saving failed
+            return newStructGroup
+        }
+    }
+    
     func deleteGroup(_ group: Models.ItemGroup, completion: (() -> Void)? = nil) {
         let context = persistenceController.container.viewContext
         

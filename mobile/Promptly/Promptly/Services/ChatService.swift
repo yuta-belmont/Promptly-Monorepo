@@ -827,107 +827,135 @@ final class ChatService {
             return nil
         }
         
+        // First, create a dictionary to store the group information
+        var groupsByKey: [String: (UUID, String)] = [:]
+        
         // Create an array to hold all checklists
         var allChecklists: [Models.Checklist] = []
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         
-        // Process each group in the checklist data
+        // PHASE 1: Extract group information from checklist data
         for (groupKey, groupData) in checklistData {
             print("CHECKLIST DEBUG: Processing group: \(groupKey)")
             
             // Get the group name if available
-            let groupName = (groupData as? [String: Any])?["name"] as? String
-            let group: Models.ItemGroup? = groupName?.isEmpty == false ? Models.ItemGroup(id: UUID(), title: groupName!, items: [:]) : nil
-            
-            // Process dates within the group
-            if let dates = (groupData as? [String: Any])?["dates"] as? [String: [String: Any]] {
-                for (dateString, dateData) in dates {
-                    // Skip any keys that aren't date strings
-                    guard dateFormatter.date(from: dateString) != nil else {
-                        print("CHECKLIST DEBUG: Skipping non-date key: \(dateString)")
-                        continue
-                    }
-                    
-                    // Parse the date
-                    guard let date = dateFormatter.date(from: dateString) else {
-                        print("CHECKLIST DEBUG: Failed to parse date: \(dateString)")
-                        continue
-                    }
-                    
-                    // Get the notes from the checklist
-                    let notes = (dateData["notes"] as? String) ?? ""
-                    
-                    // Parse the items array
-                    var checklistItems: [Models.ChecklistItem] = []
-                    if let items = dateData["items"] as? [[String: Any]] {
-                        for itemData in items {
-                            if let title = itemData["title"] as? String {
-                                // Parse notification time if present
-                                var notificationDate: Date? = nil
-                                if let notificationTime = itemData["notification"] as? String, notificationTime != "null" {
-                                    print("CHECKLIST DEBUG: Processing notification time: \(notificationTime)")
-                                    // Combine the date with the time
-                                    let timeFormatter = DateFormatter()
-                                    timeFormatter.dateFormat = "HH:mm"
-                                    if let time = timeFormatter.date(from: notificationTime) {
-                                        let calendar = Calendar.current
-                                        let timeComponents = calendar.dateComponents([.hour, .minute], from: time)
-                                        let hour = timeComponents.hour ?? 0
-                                        let minute = timeComponents.minute ?? 0
-                                        
-                                        notificationDate = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: date)
-                                        
-                                        print("CHECKLIST DEBUG: Parsed time \(notificationTime) to components - hour: \(hour), minute: \(minute)")
-                                        print("CHECKLIST DEBUG: Created notification date: \(notificationDate?.description ?? "nil")")
-                                    } else {
-                                        print("CHECKLIST DEBUG: Failed to parse time format: \(notificationTime)")
-                                    }
-                                }
-                                
-                                // Parse subitems if present
-                                var subitems: [Models.SubItem] = []
-                                if let subitemsData = itemData["subitems"] as? [[String: Any]] {
-                                    for subitemData in subitemsData {
-                                        if let subitemTitle = subitemData["title"] as? String {
-                                            subitems.append(Models.SubItem(
-                                                title: subitemTitle,
-                                                isCompleted: false
-                                            ))
+            if let groupData = groupData as? [String: Any],
+               let groupName = groupData["name"] as? String,
+               !groupName.isEmpty {
+                
+                // Create a UUID for the group
+                let groupId = UUID()
+                
+                // Store group info for later use - we'll create the actual group later
+                groupsByKey[groupKey] = (groupId, groupName)
+                
+                print("GROUP DEBUG: Prepared group info - Key: \(groupKey), ID: \(groupId), Title: \(groupName)")
+            }
+        }
+        
+        // PHASE 2: Create checklists and items, using the group info
+        for (groupKey, groupData) in checklistData {
+            if let groupData = groupData as? [String: Any] {
+                // Find the corresponding group info
+                let groupInfo = groupsByKey[groupKey]
+                var group: Models.ItemGroup? = nil
+                
+                if let (groupId, groupTitle) = groupInfo {
+                    // Create a temporary group object for item creation
+                    // We'll handle the actual GroupStore registration separately
+                    group = Models.ItemGroup(id: groupId, title: groupTitle, items: [:])
+                    print("GROUP DEBUG: Using group info for items - Key: \(groupKey), ID: \(groupId), Title: \(groupTitle)")
+                }
+                
+                // Process dates within the group
+                if let dates = groupData["dates"] as? [String: [String: Any]] {
+                    for (dateString, dateData) in dates {
+                        // Skip any keys that aren't date strings
+                        guard dateFormatter.date(from: dateString) != nil else {
+                            print("CHECKLIST DEBUG: Skipping non-date key: \(dateString)")
+                            continue
+                        }
+                        
+                        // Parse the date
+                        guard let date = dateFormatter.date(from: dateString) else {
+                            print("CHECKLIST DEBUG: Failed to parse date: \(dateString)")
+                            continue
+                        }
+                        
+                        // Get the notes from the checklist
+                        let notes = (dateData["notes"] as? String) ?? ""
+                        
+                        // Parse the items array
+                        var checklistItems: [Models.ChecklistItem] = []
+                        if let items = dateData["items"] as? [[String: Any]] {
+                            for itemData in items {
+                                if let title = itemData["title"] as? String {
+                                    // Parse notification time if present
+                                    var notificationDate: Date? = nil
+                                    if let notificationTime = itemData["notification"] as? String, notificationTime != "null" {
+                                        // Combine the date with the time
+                                        let timeFormatter = DateFormatter()
+                                        timeFormatter.dateFormat = "HH:mm"
+                                        if let time = timeFormatter.date(from: notificationTime) {
+                                            let calendar = Calendar.current
+                                            let timeComponents = calendar.dateComponents([.hour, .minute], from: time)
+                                            let hour = timeComponents.hour ?? 0
+                                            let minute = timeComponents.minute ?? 0
+                                            
+                                            notificationDate = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: date)
                                         }
                                     }
+                                    
+                                    // Parse subitems if present
+                                    var subitems: [Models.SubItem] = []
+                                    if let subitemsData = itemData["subitems"] as? [[String: Any]] {
+                                        for subitemData in subitemsData {
+                                            if let subitemTitle = subitemData["title"] as? String {
+                                                subitems.append(Models.SubItem(
+                                                    title: subitemTitle,
+                                                    isCompleted: false
+                                                ))
+                                            }
+                                        }
+                                    }
+                                    
+                                    // Create the checklist item with the group
+                                    checklistItems.append(Models.ChecklistItem(
+                                        title: title,
+                                        date: date,
+                                        isCompleted: false,
+                                        notification: notificationDate,
+                                        group: group,
+                                        subItems: subitems
+                                    ))
+                                    
+                                    print("CHECKLIST DEBUG: Added item: \(title)" + (group != nil ? " with group: \(group!.title) (ID: \(group!.id))" : " without group"))
                                 }
-                                
-                                // Create the checklist item
-                                checklistItems.append(Models.ChecklistItem(
-                                    title: title,
-                                    date: date,
-                                    isCompleted: false,
-                                    notification: notificationDate,
-                                    group: group,
-                                    subItems: subitems
-                                ))
-                                
-                                print("CHECKLIST DEBUG: Added item: \(title)")
                             }
                         }
+                        
+                        // Create and add the checklist
+                        let checklist = Models.Checklist(
+                            id: UUID(),
+                            date: date,
+                            items: checklistItems,
+                            notes: notes
+                        )
+                        
+                        allChecklists.append(checklist)
+                        print("CHECKLIST DEBUG: Created checklist for \(dateString) with \(checklistItems.count) items" + (checklistItems.filter { $0.group != nil }.count > 0 ? " (\(checklistItems.filter { $0.group != nil }.count) with groups)" : "") + " and notes: \(notes)")
                     }
-                    
-                    // Create and add the checklist
-                    let checklist = Models.Checklist(
-                        id: UUID(),
-                        date: date,
-                        items: checklistItems,
-                        notes: notes
-                    )
-                    
-                    allChecklists.append(checklist)
-                    print("CHECKLIST DEBUG: Created checklist for \(dateString) with \(checklistItems.count) items and notes: \(notes)")
                 }
             }
         }
         
-        print("CHECKLIST DEBUG: Processed \(allChecklists.count) checklists in total")
+        // PHASE 3: Create all groups in GroupStore on the main actor
+        // We'll do this in saveOrAppendChecklists which is already @MainActor isolated
+        
+        print("CHECKLIST DEBUG: Processed \(allChecklists.count) checklists in total with \(groupsByKey.count) groups")
+        
+        // Store group info for later use in saveOrAppendChecklists
         return allChecklists.isEmpty ? nil : allChecklists
     }
 
@@ -1010,9 +1038,32 @@ final class ChatService {
     @MainActor
     private func saveOrAppendChecklists(_ checklists: [Models.Checklist]) {
         let persistence = ChecklistPersistence.shared
+        let groupStore = GroupStore.shared
         var updatedDates: [Date] = []
         var totalItemsAdded = 0
         
+        // STEP 1: Create all required groups in GroupStore
+        var groupsToCreate: [UUID: String] = [:]
+        
+        // Extract all unique groups from items
+        for checklist in checklists {
+            for item in checklist.items {
+                if let group = item.group {
+                    groupsToCreate[group.id] = group.title
+                }
+            }
+        }
+        
+        // Create all groups first (using @MainActor-isolated GroupStore)
+        for (groupId, groupTitle) in groupsToCreate {
+            print("GROUP DEBUG: Creating group in GroupStore - ID: \(groupId), Title: \(groupTitle)")
+            
+            // Use the new method to create a group with a specific ID
+            let createdGroup = groupStore.createGroupWithID(id: groupId, title: groupTitle)
+            print("GROUP DEBUG: Group created/retrieved in GroupStore - ID: \(createdGroup.id), Title: \(createdGroup.title)")
+        }
+        
+        // STEP 2: Save all the checklists
         for checklist in checklists {
             // Check if a checklist already exists for this date
             if let existingChecklist = persistence.loadChecklist(for: checklist.date) {
@@ -1045,9 +1096,6 @@ final class ChatService {
                 
                 updatedDates.append(checklist.date)
             }
-            
-            // Notify the UI that a checklist was updated
-            NotificationCenter.default.post(name: Notification.Name("NewChecklistAvailable"), object: checklist.date)
         }
         
         // Sort dates to display them in order
@@ -1071,16 +1119,24 @@ final class ChatService {
             message = "Added items to \(formattedDates.count) different dates in your calendar."
         }
         
-        // Send the detailed message using the onMessageUpdate callback
-        self.onMessageUpdate?("""
-        {"message": "\(message)"}
-        """)
-        
-        // After a short delay, add the simple "Done." message properly to the chat
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            Task { @MainActor in
-                // Properly add the confirmation message to chat history
-                self.addAssistantMessage("Done.")
+        // Ensure GroupStore is up-to-date before notifying UI
+        groupStore.loadGroups {
+            // Now that groups are loaded, send notifications for each date
+            for date in updatedDates {
+                NotificationCenter.default.post(name: Notification.Name("NewChecklistAvailable"), object: date)
+            }
+            
+            // Send the detailed message using the onMessageUpdate callback
+            self.onMessageUpdate?("""
+            {"message": "\(message)"}
+            """)
+            
+            // After a short delay, add the simple "Done." message properly to the chat
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                Task { @MainActor in
+                    // Properly add the confirmation message to chat history
+                    self.addAssistantMessage("Done.")
+                }
             }
         }
     }

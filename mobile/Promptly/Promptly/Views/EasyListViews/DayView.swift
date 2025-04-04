@@ -100,7 +100,9 @@ struct DayView: View, Hashable {
     }
     
     init(date: Date = Date(), showMenu: Binding<Bool> = .constant(false), animationID: Namespace.ID? = nil, onBack: (() -> Void)? = nil) {
-        print("[DayView] Initializing with date: \(DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short))")
+        let now = Date()
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
         self.date = date
         self._currentDate = State(initialValue: date)
         self._showMenu = showMenu
@@ -538,9 +540,6 @@ struct DayView: View, Hashable {
                     }
                 }
                 .onAppear {
-                    print("[DayView] onAppear with currentDate: \(dateFormatter.string(from: currentDate))")
-                    print("[DayView] date property: \(dateFormatter.string(from: date))")
-                    
                     // Prepare all haptic feedback generators
                     feedbackGenerator.prepare()
                     dateHeaderFeedbackGenerator.prepare()
@@ -548,7 +547,6 @@ struct DayView: View, Hashable {
                     
                     // Load data after the view has appeared and layout is complete
                     DispatchQueue.main.async {
-                        print("[DayView] About to load data for: \(self.dateFormatter.string(from: self.currentDate))")
                         easyListViewModel.loadData()
                     }
                 }
@@ -613,6 +611,7 @@ struct DayView: View, Hashable {
             }
             .navigationBarBackButtonHidden(true)
             .preference(key: RemoveFocusPreferenceKey.self, value: FocusRemovalAction(removeAllFocus: removeAllFocus))
+            .ignoresSafeArea(.keyboard) // Ignore keyboard safe area to prevent view from shifting up
             
             // ItemDetails overlay
             if showingItemDetails, let item = selectedItem {

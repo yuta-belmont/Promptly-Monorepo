@@ -156,17 +156,34 @@ final class ChecklistPersistence {
             if let existingGroup = results.first {
                 // Update existing group
                 existingGroup.update(from: structGroup, context: context)
+                print("GROUP DEBUG: ChecklistPersistence found existing group - ID: \(structGroup.id), Title: \(structGroup.title)")
                 return existingGroup
             } else {
                 // Create new group
+                print("GROUP DEBUG: ChecklistPersistence creating new group - ID: \(structGroup.id), Title: \(structGroup.title)")
                 let newGroup = ItemGroup.create(from: structGroup, context: context)
+                
+                // Ensure GroupStore is updated about this new group
+                Task { @MainActor in
+                    // Use the new createGroupWithID method to ensure consistency
+                    let _ = GroupStore.shared.createGroupWithID(id: structGroup.id, title: structGroup.title)
+                }
+                
                 return newGroup
             }
         } catch {
             print("Error finding/creating group: \(error)")
             
             // Create new group as fallback
+            print("GROUP DEBUG: ChecklistPersistence creating fallback group - ID: \(structGroup.id), Title: \(structGroup.title)")
             let newGroup = ItemGroup.create(from: structGroup, context: context)
+            
+            // Ensure GroupStore is updated about this new group
+            Task { @MainActor in
+                // Use the new createGroupWithID method to ensure consistency
+                let _ = GroupStore.shared.createGroupWithID(id: structGroup.id, title: structGroup.title)
+            }
+            
             return newGroup
         }
     }

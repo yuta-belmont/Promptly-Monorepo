@@ -32,18 +32,15 @@ struct BaseView: View {
         self.date = date
         self.onBack = onBack
         self.onMenuAction = onMenuAction
-        print("[BaseView] Initialized with date: \(dateFormatter.string(from: date))")
     }
     
     var body: some View {
+        
         ZStack(alignment: .trailing) {
             // Main content area
             DayView(date: date, showMenu: $showingMenu, onBack: onBack)
                 .environmentObject(focusManager)
                 .zIndex(0)
-                .onAppear {
-                    print("[BaseView] DayView appearing with date: \(dateFormatter.string(from: date))")
-                }
             
             // Only show chat if no menu is showing
             if !showingMenu {

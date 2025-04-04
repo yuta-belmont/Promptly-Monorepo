@@ -1,24 +1,7 @@
 import SwiftUI
 import Combine
 
-// Define a debug helper function at the top level
-private func debugLog(_ source: String, _ action: String) {
-    let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
-    print("\(timestamp) [PlannerItemView]: \(source) - \(action)")
-}
-
 // MARK: - Helper Structures
-
-// Break callbacks into smaller, focused structures
-struct ItemCallbacks {
-    let onLoseFocus: ((String) -> Void)?
-    
-    init(
-        onLoseFocus: ((String) -> Void)? = nil
-    ) {
-        self.onLoseFocus = onLoseFocus
-    }
-}
 
 struct MetadataCallbacks {
     let onNotificationChange: ((Date?) -> Void)?
@@ -78,7 +61,6 @@ struct MutablePlannerItemData {
     }
     
     mutating func startDeletingAnimation() {
-        debugLog("startDeletingAnimation", "called")
         isDeleting = true
         // Animation will be handled by the View
     }
@@ -94,7 +76,6 @@ private func formatNotificationTime(_ date: Date) -> String {
 // MARK: - Menu button component
 private struct ItemMenuButton: View {
     @Binding var itemData: MutablePlannerItemData
-    let itemCallbacks: ItemCallbacks
     let metadataCallbacks: MetadataCallbacks
     
     var body: some View {
@@ -138,7 +119,6 @@ private struct ItemMenuButton: View {
                     itemData.startDeletingAnimation()
                     
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                        itemCallbacks.onLoseFocus?("")
                         itemData.showingPopover = false
                     }
                 }
@@ -155,7 +135,6 @@ private struct ItemMenuButton: View {
 private struct MainItemRow: View {
     @Binding var itemData: MutablePlannerItemData
     let onToggleItem: ((UUID, Date?) -> Void)?
-    let itemCallbacks: ItemCallbacks
     let metadataCallbacks: MetadataCallbacks
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
@@ -193,7 +172,6 @@ private struct MainItemRow: View {
             // Menu button
             ItemMenuButton(
                 itemData: $itemData,
-                itemCallbacks: itemCallbacks,
                 metadataCallbacks: metadataCallbacks
             )
         }
@@ -345,7 +323,6 @@ private struct SubItemRowView: View {
         HStack(spacing: 0) {
             // Checkbox button
             Button(action: {
-                debugLog("SubItemRowView", "checkbox button tapped")
                 feedbackGenerator.impactOccurred()
                 
                 // Update local state immediately
@@ -513,9 +490,6 @@ struct PlannerItemView: View, Equatable {
             MainItemRow(
                 itemData: $itemData,
                 onToggleItem: onToggleItem,
-                itemCallbacks: ItemCallbacks(
-                    onLoseFocus: onLoseFocus
-                ),
                 metadataCallbacks: MetadataCallbacks(
                     onNotificationChange: onNotificationChange,
                     onGroupChange: onGroupChange
@@ -627,6 +601,7 @@ struct PlannerItemView: View, Equatable {
         if let groupId = itemData.groupId, let group = groupStore.getGroup(by: groupId) {
             itemData.groupTitle = group.title
             itemData.groupColor = group.hasColor ? Color(red: group.colorRed, green: group.colorGreen, blue: group.colorBlue) : nil
+
             return true
         }
         return false
