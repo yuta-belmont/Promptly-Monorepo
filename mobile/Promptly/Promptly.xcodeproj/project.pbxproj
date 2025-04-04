@@ -21,7 +21,6 @@
 		8F3C830A2D7A03270072CCAF /* SharedShapes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F3C83062D7A03270072CCAF /* SharedShapes.swift */; };
 		8F3C830B2D7A03270072CCAF /* ViewModifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F3C83072D7A03270072CCAF /* ViewModifiers.swift */; };
 		8F3C830F2D7A07F30072CCAF /* EasyListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F3C830E2D7A07F30072CCAF /* EasyListViewModel.swift */; };
-		8F61868A2DA04C00005EF884 /* CustomRetainFocusTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6186892DA04C00005EF884 /* CustomRetainFocusTextField.swift */; };
 		8F7DEA3D2D80D98500287676 /* GroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F7DEA3C2D80D98500287676 /* GroupStore.swift */; };
 		8F7DEA3F2D80DD7400287676 /* PersistenceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F7DEA3E2D80DD7400287676 /* PersistenceController.swift */; };
 		8F7DEA422D80DDCA00287676 /* SpeechRecognitionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F7DEA412D80DDCA00287676 /* SpeechRecognitionService.swift */; };
@@ -94,7 +93,6 @@
 		8F3C83062D7A03270072CCAF /* SharedShapes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedShapes.swift; sourceTree = "<group>"; };
 		8F3C83072D7A03270072CCAF /* ViewModifiers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModifiers.swift; sourceTree = "<group>"; };
 		8F3C830E2D7A07F30072CCAF /* EasyListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EasyListViewModel.swift; sourceTree = "<group>"; };
-		8F6186892DA04C00005EF884 /* CustomRetainFocusTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomRetainFocusTextField.swift; sourceTree = "<group>"; };
 		8F7DEA3C2D80D98500287676 /* GroupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupStore.swift; sourceTree = "<group>"; };
 		8F7DEA3E2D80DD7400287676 /* PersistenceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceController.swift; sourceTree = "<group>"; };
 		8F7DEA402D80DDCA00287676 /* ChecklistPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChecklistPersistence.swift; sourceTree = "<group>"; };
@@ -292,7 +290,6 @@
 		8F9DFF062D70AE7500F62D5E /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				8F6186892DA04C00005EF884 /* CustomRetainFocusTextField.swift */,
 				8F8FE7402D85EA3C00355B3D /* Auth */,
 				8F7DEA472D80DFA300287676 /* ChatView */,
 				8F7DEA462D80DF8400287676 /* CalendarView */,
@@ -402,7 +399,6 @@
 				8F3C830B2D7A03270072CCAF /* ViewModifiers.swift in Sources */,
 				8FB9D7AA2D766FD700F8B0E2 /* NotificationManager.swift in Sources */,
 				8FC448472D7275F00008E3AB /* Checklist.swift in Sources */,
-				8F61868A2DA04C00005EF884 /* CustomRetainFocusTextField.swift in Sources */,
 				8F9DFF082D70BFBF00F62D5E /* ChatMessage.swift in Sources */,
 				8F9DFF122D70C19800F62D5E /* ChecklistItem.swift in Sources */,
 				8FC4560F2D7E3123007EE5DB /* BackgroundView.swift in Sources */,
