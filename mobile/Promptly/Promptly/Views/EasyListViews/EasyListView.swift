@@ -284,7 +284,6 @@ struct EasyListHeader: View {
                         Text("Done")
                             .foregroundColor(.white)
                             .dynamicTypeSize(.small...DynamicTypeSize.large)
-                            //.padding(.bottom, ) // Match the padding used by the image buttons
                     }
                     .frame(minWidth: 44)
                 }
@@ -468,7 +467,7 @@ struct ListContent: View {
                 }
             }
             
-            EasyListFooter()
+            EasyListFooter(isEditing: $isEditing)
                 .environmentObject(viewModel.counterManager)
         }
     }
@@ -501,10 +500,14 @@ struct ListContent: View {
                 // No need to post notification - view handles its own state
             },
             onLoseFocus: { text in
-                // Only used for deletion through the menu
+                // Only used for text-based deletion (e.g. when editing and clearing text)
                 if text.isEmpty {
                     deleteItem(item)
                 }
+            },
+            onDelete: {
+                // Used for menu-based deletion
+                deleteItem(item)
             },
             onNotificationChange: { date in
                 viewModel.updateItemNotification(itemId: item.id, with: date)
@@ -537,30 +540,34 @@ struct ListContent: View {
 
 struct EasyListFooter: View {
     @EnvironmentObject private var counterManager: CounterStateManager
+    @Binding var isEditing: Bool
     
     var body: some View {
         ZStack {
-            // Left side content
-            HStack {
-                Text("\(counterManager.completedCount)/\(counterManager.totalCount) completed")
-                    .font(.footnote)
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(.ultraThinMaterial.opacity(0.9))
-                    )
-                Spacer()
-            }
-            
-            // Right side content
-            HStack {
-                Spacer()
-                if counterManager.totalCount > 0 {
-                    ProgressView(value: Double(counterManager.completedCount), total: Double(counterManager.totalCount))
-                        .progressViewStyle(LinearProgressViewStyle(tint: .green))
-                        .frame(width: 80)
+            // Only show content when not editing
+            if !isEditing {
+                // Left side content
+                HStack {
+                    Text("\(counterManager.completedCount)/\(counterManager.totalCount) completed")
+                        .font(.footnote)
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(.ultraThinMaterial.opacity(0.9))
+                        )
+                    Spacer()
+                }
+                
+                // Right side content
+                HStack {
+                    Spacer()
+                    if counterManager.totalCount > 0 {
+                        ProgressView(value: Double(counterManager.completedCount), total: Double(counterManager.totalCount))
+                            .progressViewStyle(LinearProgressViewStyle(tint: .green))
+                            .frame(width: 80)
+                    }
                 }
             }
         }
@@ -813,6 +820,7 @@ struct EasyListView: View {
                     isEditing = false
                     isNewItemFocused = false
                     isNotesFocused = false
+                    focusManager.isEasyListFocused = false
                 },
                 onNotesToggle: {
                     // Remove focus

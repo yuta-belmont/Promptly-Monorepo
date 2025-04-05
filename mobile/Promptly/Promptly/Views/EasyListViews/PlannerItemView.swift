@@ -77,6 +77,7 @@ private func formatNotificationTime(_ date: Date) -> String {
 private struct ItemMenuButton: View {
     @Binding var itemData: MutablePlannerItemData
     let metadataCallbacks: MetadataCallbacks
+    let onDelete: (() -> Void)?  // Add onDelete callback
     
     var body: some View {
         Button(action: {
@@ -115,11 +116,13 @@ private struct ItemMenuButton: View {
                     // Then call the parent callback to update the data model
                     metadataCallbacks.onGroupChange?(newGroupId)
                 },
-                onDelete: { 
+                onDelete: {
+                    // Start the deletion animation
                     itemData.startDeletingAnimation()
                     
+                    // Call the actual delete after the animation
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                        itemData.showingPopover = false
+                        onDelete?()  // This will trigger the actual deletion in the parent
                     }
                 }
             )
@@ -136,6 +139,7 @@ private struct MainItemRow: View {
     @Binding var itemData: MutablePlannerItemData
     let onToggleItem: ((UUID, Date?) -> Void)?
     let metadataCallbacks: MetadataCallbacks
+    let onDelete: (() -> Void)?  // Add onDelete callback
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
     var body: some View {
@@ -172,7 +176,8 @@ private struct MainItemRow: View {
             // Menu button
             ItemMenuButton(
                 itemData: $itemData,
-                metadataCallbacks: metadataCallbacks
+                metadataCallbacks: metadataCallbacks,
+                onDelete: onDelete
             )
         }
         // Add listRowSeparator to avoid rendering separators
@@ -442,6 +447,7 @@ struct PlannerItemView: View, Equatable {
     let onToggleItem: ((UUID, Date?) -> Void)?
     let onToggleSubItem: ((UUID, UUID, Bool) -> Void)?
     let onLoseFocus: ((String) -> Void)?
+    let onDelete: (() -> Void)?  // New callback for deletion
     let onNotificationChange: ((Date?) -> Void)?
     let onGroupChange: ((UUID?) -> Void)?
     let onItemTap: ((UUID) -> Void)?
@@ -468,6 +474,7 @@ struct PlannerItemView: View, Equatable {
         onToggleItem: ((UUID, Date?) -> Void)? = nil,
         onToggleSubItem: ((UUID, UUID, Bool) -> Void)? = nil,
         onLoseFocus: ((String) -> Void)? = nil,
+        onDelete: (() -> Void)? = nil,  // New parameter
         onNotificationChange: ((Date?) -> Void)? = nil,
         onGroupChange: ((UUID?) -> Void)? = nil,
         onItemTap: ((UUID) -> Void)? = nil
@@ -480,6 +487,7 @@ struct PlannerItemView: View, Equatable {
         self.onToggleItem = onToggleItem
         self.onToggleSubItem = onToggleSubItem
         self.onLoseFocus = onLoseFocus
+        self.onDelete = onDelete
         self.onNotificationChange = onNotificationChange
         self.onGroupChange = onGroupChange
         self.onItemTap = onItemTap
@@ -493,7 +501,8 @@ struct PlannerItemView: View, Equatable {
                 metadataCallbacks: MetadataCallbacks(
                     onNotificationChange: onNotificationChange,
                     onGroupChange: onGroupChange
-                )
+                ),
+                onDelete: onDelete
             )
             
             MetadataRow(
@@ -534,7 +543,7 @@ struct PlannerItemView: View, Equatable {
             Group {
                 // Default outline
                 RoundedRectangle(cornerRadius: 16)
-                    .strokeBorder(.white.opacity(0.05), lineWidth: 0.5)
+                    .strokeBorder(.white.opacity(0.075), lineWidth: 0.5)
                 
                 // Animated outline that appears with the glow for main tap
                 if showOutline {
@@ -615,6 +624,7 @@ extension PlannerItemView {
         onToggleItem: ((UUID, Date?) -> Void)? = nil,
         onToggleSubItem: ((UUID, UUID, Bool) -> Void)? = nil,
         onLoseFocus: ((String) -> Void)? = nil,
+        onDelete: (() -> Void)? = nil,  // New parameter
         onNotificationChange: ((Date?) -> Void)? = nil,
         onGroupChange: ((UUID?) -> Void)? = nil,
         onItemTap: ((UUID) -> Void)? = nil
@@ -624,6 +634,7 @@ extension PlannerItemView {
             onToggleItem: onToggleItem,
             onToggleSubItem: onToggleSubItem,
             onLoseFocus: onLoseFocus,
+            onDelete: onDelete,  // Pass through new parameter
             onNotificationChange: onNotificationChange,
             onGroupChange: onGroupChange,
             onItemTap: onItemTap

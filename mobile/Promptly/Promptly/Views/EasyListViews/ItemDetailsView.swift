@@ -12,9 +12,9 @@ struct ItemDetailsView: View {
     @State private var isEditingTitle = false
     @State private var editedTitleText = ""
     @FocusState private var isTitleFieldFocused: Bool
-    @State private var editingSubitemId: UUID? = nil
-    @State private var editedSubitemText = ""
+    @State private var editingSubitemId: UUID?
     @FocusState private var focusedSubitemId: UUID?
+    @State private var borderOpacity: Double = 0
     
     // Add focus removal state
     private enum FocusRemovalState {
@@ -41,40 +41,21 @@ struct ItemDetailsView: View {
         if isEditingTitle {
             saveTitle()
         }
-        if editingSubitemId != nil {
-            let currentEditingId = editingSubitemId
-            editingSubitemId = nil  // Clear editing state first
-            
-            if let id = currentEditingId {
-                if editedSubitemText.isEmpty {
-                    viewModel.deleteSubitem(id)
-                } else {
-                    viewModel.updateSubitemTitle(id, newTitle: editedSubitemText)
-                }
-            }
-        }
         
         // Phase 2: Clear focus states
-        focusRemovalState = .clearingFocus
+        focusedSubitemId = nil
+        isTitleFieldFocused = false
+        editingSubitemId = nil
+        isEditingTitle = false
+        isSubitemFieldFocused = false
+        
+        // Phase 3: Reset removal state
         DispatchQueue.main.async {
-            withAnimation(.easeOut(duration: 0.2)) {
-                self.isSubitemFieldFocused = false
-                self.isTitleFieldFocused = false
-                self.focusedSubitemId = nil
-                
-                // Phase 3: Mark as complete
-                self.focusRemovalState = .completed
-                
-                // Reset state after a brief delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    self.focusRemovalState = nil
-                }
-            }
+            focusRemovalState = nil
         }
     }
     
     @State private var dragOffset = CGSize.zero
-    @State private var draggedTooFar = false
     
     init(item: Models.ChecklistItem, isPresented: Binding<Bool>) {
         self._isPresented = isPresented
@@ -103,22 +84,28 @@ struct ItemDetailsView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
+                ZStack {
+                    // Static border
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
+                    
+                    // Animated border
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(.white.opacity(borderOpacity), lineWidth: 1.5)
+                }
             )
             .offset(x: dragOffset.width)
             .gesture(
                 DragGesture()
                     .onChanged { value in
                         // Only allow dragging from the left edge (first 88 points) and only to the right
-                        if value.startLocation.x < 88 && value.translation.width > 0 {
+                        if value.startLocation.x < 66 && value.translation.width > 0 {
                             dragOffset = value.translation
                         }
                     }
                     .onEnded { value in
                         // If dragged more than 100 points to the right, dismiss
-                        if value.startLocation.x < 44 && value.translation.width > 100 {
-                            draggedTooFar = true
+                        if value.startLocation.x < 66 && value.translation.width > 50 {
                             // Use animation to ensure smooth transition back to EasyListView
                             withAnimation(.easeInOut(duration: 0.25)) {
                                 isPresented = false
@@ -140,9 +127,9 @@ struct ItemDetailsView: View {
             if isEditingTitle {
                 saveTitle()
             }
-            if editingSubitemId != nil {
-                saveSubitemEdit()
-            }
+            
+            // Remove focus which will trigger saves in subitems
+            removeAllFocus()
             
             // Save changes when view disappears
             viewModel.saveChanges()
@@ -158,15 +145,7 @@ struct ItemDetailsView: View {
                 saveTitle()
             }
         }
-        .onChange(of: focusedSubitemId) { oldValue, newValue in
-            
-            // Only handle focus changes if we're not in the middle of focus removal
-            if focusRemovalState == nil {
-                if oldValue != nil && newValue == nil && editingSubitemId != nil {
-                    saveSubitemEdit()
-                }
-            }
-        }
+        .preference(key: IsEditingPreferenceKey.self, value: isAnyFieldFocused)
     }
     
     private var headerView: some View {
@@ -195,7 +174,20 @@ struct ItemDetailsView: View {
     private var checkboxButton: some View {
         Button(action: {
             feedbackGenerator.impactOccurred()
+            let wasCompleted = viewModel.item.isCompleted
             viewModel.toggleCompleted()
+            
+            // Only animate when completing, not uncompleting
+            if !wasCompleted {
+                // Trigger border animation
+                borderOpacity = 0.2
+                // Reset opacity after delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        borderOpacity = 0
+                    }
+                }
+            }
         }) {
             Image(systemName: viewModel.item.isCompleted ? "checkmark.circle.fill" : "circle")
                 .foregroundColor(viewModel.item.isCompleted ? .green : .gray)
@@ -245,16 +237,16 @@ struct ItemDetailsView: View {
             Button(action: {
                 feedbackGenerator.impactOccurred()
                 if viewModel.item.subItems.count < 50 {
-                    // Set focus first
-                    isSubitemFieldFocused = true
+                    // First post notification to show and scroll to the field
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("ScrollToNewSubitemRow"),
+                        object: nil
+                    )
+                    removeAllFocus()
                     
-                    // Then trigger scroll notification after a tiny delay
-                    // to ensure focus state has been processed
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        NotificationCenter.default.post(
-                            name: NSNotification.Name("ScrollToNewSubitemRow"),
-                            object: nil
-                        )
+                    // Then set focus after a short delay to ensure view is visible
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        isSubitemFieldFocused = true
                     }
                 }
             }) {
@@ -416,7 +408,7 @@ struct ItemDetailsView: View {
                                         newSubitemText = ""
                                         
                                         // After adding a subitem, maintain focus and keep the input field ready for more entry
-                                        isSubitemFieldFocused = true
+                                        isSubitemFieldFocused = keepFocus
                                         
                                         // Scroll to top to keep the input field visible
                                         DispatchQueue.main.async {
@@ -449,14 +441,7 @@ struct ItemDetailsView: View {
                                     startEditingSubitem(subitem)
                                 },
                                 editingSubitemId: $editingSubitemId,
-                                editedSubitemText: $editedSubitemText,
-                                focusedSubitemId: $focusedSubitemId,
-                                onSave: { newText in
-                                    if !newText.isEmpty {
-                                        viewModel.updateSubitemTitle(subitem.id, newTitle: newText)
-                                    }
-                                    removeAllFocus()
-                                }
+                                focusedSubitemId: $focusedSubitemId
                             )
                             .id(subitem.id)
                             .listRowBackground(Color.clear)
@@ -650,32 +635,10 @@ extension ItemDetailsView {
     // Subitem editing methods
     private func startEditingSubitem(_ subitem: Models.SubItem) {
         editingSubitemId = subitem.id
-        editedSubitemText = subitem.title
         
         // Pre-load editing state before setting focus
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
             self.focusedSubitemId = subitem.id
-        }
-    }
-    
-    private func saveSubitemEdit() {
-        guard let subitemId = editingSubitemId else { return }
-        
-        if editedSubitemText.isEmpty {
-            // Delete the subitem if text is empty
-            viewModel.deleteSubitem(subitemId)
-        } else if editedSubitemText != viewModel.item.subItems.first(where: { $0.id == subitemId })?.title {
-            viewModel.updateSubitemTitle(subitemId, newTitle: editedSubitemText)
-        }
-        
-        // Use our centralized function to clear all focus
-        removeAllFocus()
-    }
-    
-    private func cancelDragging() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            dragOffset = .zero
-            draggedTooFar = false
         }
     }
 }
@@ -699,18 +662,20 @@ private struct NewSubItemRow: View {
                 textColor: isFocused.wrappedValue ? .white : .gray,
                 placeholder: "Add subitem...",
                 onReturn: {
-                    if !text.isEmpty {
-                        onSubmit(true)
-                    } else {
-                        isFocused.wrappedValue = false
-                    }
+                    onSubmit(true)
                 }
             )
             .focused(isFocused)
-            .frame(width: UIScreen.main.bounds.width * 0.85, alignment: .leading)
+            .frame(width: UIScreen.main.bounds.width * 0.80, alignment: .topTrailing)
             .clipped(antialiased: true)
-            .padding(.leading, 4)
+            .padding(.leading, 10)
             .zIndex(1)
+            .onChange(of: isFocused.wrappedValue) { oldValue, newValue in
+                //if we lose focus, save whatever's in the new subitem text field
+                if !newValue && oldValue && !text.isEmpty {
+                    onSubmit(false)
+                }
+            }
             
         }
         .listRowBackground(Color.clear)
@@ -733,15 +698,29 @@ private struct SubItemView: View {
     let onToggle: () -> Void
     let onTap: () -> Void
     @Binding var editingSubitemId: UUID?
-    @Binding var editedSubitemText: String
     @FocusState.Binding var focusedSubitemId: UUID?
-    let onSave: (String) -> Void
+    @State private var editedText: String
     @State private var isPreloading = false
     
     // Add state for swipe
     @State private var offset: CGFloat = 0
     @State private var isSwiped = false
     private let deleteWidth: CGFloat = 75
+    
+    init(subitem: Models.SubItem,
+         viewModel: ItemDetailsViewModel,
+         onToggle: @escaping () -> Void,
+         onTap: @escaping () -> Void,
+         editingSubitemId: Binding<UUID?>,
+         focusedSubitemId: FocusState<UUID?>.Binding) {
+        self.subitem = subitem
+        self.viewModel = viewModel
+        self.onToggle = onToggle
+        self.onTap = onTap
+        self._editingSubitemId = editingSubitemId
+        self._focusedSubitemId = focusedSubitemId
+        self._editedText = State(initialValue: subitem.title)
+    }
     
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -783,7 +762,7 @@ private struct SubItemView: View {
                         Text(subitem.title)
                             .font(.body)
                             .foregroundColor(.white)
-                            .lineLimit(3)
+                            .lineLimit(4)
                             .strikethrough(subitem.isCompleted, color: .gray)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 8)
@@ -799,7 +778,7 @@ private struct SubItemView: View {
                     }
                     
                     if editingSubitemId == subitem.id || isPreloading {
-                        TextEditor(text: $editedSubitemText)
+                        TextEditor(text: $editedText)
                             .font(.body)
                             .foregroundColor(.white)
                             .scrollContentBackground(.hidden)
@@ -807,10 +786,26 @@ private struct SubItemView: View {
                             .padding(.vertical, 0)
                             .padding(.leading, 0)
                             .focused($focusedSubitemId, equals: subitem.id)
-                            .onChange(of: editedSubitemText) { oldValue, newValue in
+                            .onChange(of: editedText) { oldValue, newValue in
                                 if newValue.contains("\n") {
-                                    editedSubitemText = oldValue
-                                    onSave(editedSubitemText)
+                                    editedText = oldValue
+                                    // Save changes when Enter is pressed (since this doesn't destroy the view).
+                                    if editedText.isEmpty {
+                                        viewModel.deleteSubitem(subitem.id)
+                                    }
+                                    focusedSubitemId = nil
+                                }
+                            }
+                            .onDisappear {
+                                print("📝 TextEditor disappearing for '\(subitem.title)' with text '\(editedText)'")
+                                if editedText.isEmpty {
+                                    print("   ❌ Deleting empty subitem")
+                                    viewModel.deleteSubitem(subitem.id)
+                                } else if editedText != subitem.title {
+                                    print("   ✏️ Updating subitem text")
+                                    viewModel.updateSubitemTitle(subitem.id, newTitle: editedText)
+                                } else {
+                                    print("   ⏭️ No changes to save")
                                 }
                             }
                             .opacity(isPreloading ? 0 : 1)
@@ -829,45 +824,48 @@ private struct SubItemView: View {
         .simultaneousGesture(
             DragGesture()
                 .onChanged { value in
+                    // Don't allow dragging if this subitem is being edited
+                    
                     // Calculate the angle of the drag to determine if it's horizontal enough
                     let horizontalAmount = abs(value.translation.width)
                     let verticalAmount = abs(value.translation.height)
+                    let translation = value.translation.width
                     
-                    // Only respond if the gesture is primarily horizontal
-                    // (horizontal movement is at least 3x the vertical movement)
-                    if horizontalAmount > verticalAmount * 3 && horizontalAmount > 25 {
+                    // Only respond if:
+                    // 1. The gesture is primarily horizontal (horizontal movement is at least 3x the vertical movement)
+                    // 2. Has moved at least 25 points
+                    if (horizontalAmount > verticalAmount * 2) && (translation < -50) {
+                        guard editingSubitemId != subitem.id else { return }
                         // Only allow left swipe (negative values)
-                        let translation = value.translation.width
-                        if translation < 0 {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                // Add some resistance to the drag
-                                offset = max(-deleteWidth, translation)
-                            }
-                        } else if isSwiped {
-                            // If already swiped, allow closing with some resistance
-                            offset = -deleteWidth + min(deleteWidth, translation)
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            // Add some resistance to the drag
+                            offset = max(-deleteWidth, translation)
+                        }
+                    } else if isSwiped {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            offset = 0
+                            isSwiped = false
                         }
                     }
                 }
                 .onEnded { value in
+                    // Don't allow dragging if this subitem is being edited
+                    guard editingSubitemId != subitem.id else { return }
+                    
                     let translation = value.translation.width
-                    let velocity = value.velocity.width
                     let horizontalAmount = abs(value.translation.width)
                     let verticalAmount = abs(value.translation.height)
                     
-                    // Only complete the swipe if it was primarily horizontal
-                    if horizontalAmount > verticalAmount * 2 && horizontalAmount > 50 {
+                    // Only complete the swipe if:
+                    // 1. It was primarily horizontal
+                    // 2. Moved enough distance (in the negative direction)
+                    // 3. Has sufficient velocity or distance
+                    if (horizontalAmount > verticalAmount * 2) && (translation < -100) {
+                        guard editingSubitemId != subitem.id else { return }
                         // Determine if we should open or close based on velocity and position
-                        if (translation < -deleteWidth/2 || velocity < -100) && !isSwiped {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                offset = -deleteWidth
-                                isSwiped = true
-                            }
-                        } else {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                offset = 0
-                                isSwiped = false
-                            }
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            offset = -deleteWidth
+                            isSwiped = true
                         }
                     } else {
                         // If the gesture wasn't horizontal enough, reset position

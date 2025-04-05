@@ -106,16 +106,7 @@ struct Dark: View {
     var body: some View {
         OptimizedBackground {
             ZStack {
-                // Deep dark radial gradient base
-                RadialGradient(
-                    gradient: Gradient(colors: [
-                        Color(red: 0.05, green: 0.05, blue: 0.05), // Dark gray center
-                        Color(red: 0.03, green: 0.03, blue: 0.03)  // Almost black edges
-                    ]),
-                    center: .center,
-                    startRadius: 1,
-                    endRadius: 400
-                )
+                Color(red: 0.05, green: 0.05, blue: 0.05) // Dark gray center
             }
         }
     }

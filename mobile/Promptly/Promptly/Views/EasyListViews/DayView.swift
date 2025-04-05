@@ -505,7 +505,7 @@ struct DayView: View, Hashable {
                             // Only show EasyListView when not showing item details
                             EasyListView()
                                 .environmentObject(easyListViewModel) // Make the view model available
-                                .frame(height: geometry.size.height - (isDateHeaderExpanded ? 110 : 52)) // Adjust height when week view is visible
+                                .frame(height: max(0, geometry.size.height - (isDateHeaderExpanded ? 110 : 52))) // Adjust height when week view is visible
                                 .offset(x: dragOffset.width, y: dragOffset.height)
                                 .rotationEffect(rotation)
                                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
@@ -611,7 +611,6 @@ struct DayView: View, Hashable {
             }
             .navigationBarBackButtonHidden(true)
             .preference(key: RemoveFocusPreferenceKey.self, value: FocusRemovalAction(removeAllFocus: removeAllFocus))
-            .ignoresSafeArea(.keyboard) // Ignore keyboard safe area to prevent view from shifting up
             
             // ItemDetails overlay
             if showingItemDetails, let item = selectedItem {

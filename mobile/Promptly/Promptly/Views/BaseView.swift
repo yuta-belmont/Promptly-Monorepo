@@ -13,6 +13,7 @@ struct BaseView: View {
     @StateObject private var chatViewModel = ChatViewModel()
     @State private var isChatExpanded = false
     @State private var isKeyboardActive = false
+    @State private var isEditing: Bool = false
     
     @StateObject private var authManager = AuthManager.shared
     
@@ -41,15 +42,27 @@ struct BaseView: View {
             DayView(date: date, showMenu: $showingMenu, onBack: onBack)
                 .environmentObject(focusManager)
                 .zIndex(0)
+                .onPreferenceChange(IsEditingPreferenceKey.self) { newValue in
+                    isEditing = newValue
+                    if newValue && isChatExpanded {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            isChatExpanded = false
+                        }
+                    }
+                }
             
-            // Only show chat if no menu is showing
-            if !showingMenu {
+            // Only show chat if no menu is showing and not editing
+            if !showingMenu && !isEditing {
                 // Darkened background for chat - using a fixed medium opacity level
                 Color.black
                     .opacity(isChatExpanded ? 0.4 : 0)
                     .edgesIgnoringSafeArea(.all)
                     .zIndex(0.5)
-                    .allowsHitTesting(false)
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            isChatExpanded = false
+                        }
+                    }
                 
                 // Chat overlay
                 VStack {

@@ -252,11 +252,9 @@ struct PopoverContentView: View {
                 .padding(.horizontal, 4)
             }
 
-            // Only show delete button if showDeleteOption is true
+            // Delete option
             if showDeleteOption {
                 Divider()
-                    .background(Color.white.opacity(0.2))
-                // Delete Row - Entire row is tappable
                 Button(action: {
                     feedbackGenerator.impactOccurred()
                     
@@ -265,8 +263,12 @@ struct PopoverContentView: View {
                         deleteTimer?.invalidate()
                         deleteTimer = nil
                         deleteConfirmationActive = false
-                        onDelete()
-                        // No need to wait for animation to complete - close popover immediately
+                        dismiss()  // Dismiss the popover first
+                        
+                        // Call onDelete after a short delay to allow the popover to dismiss
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            onDelete()  // This will trigger the actual deletion
+                        }
                     } else {
                         // First tap - start confirmation timer
                         deleteConfirmationActive = true
@@ -274,18 +276,19 @@ struct PopoverContentView: View {
                         deleteTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { _ in
                             deleteConfirmationActive = false
                         }
+
                     }
                 }) {
                     HStack {
                         Image(systemName: "trash")
                             .frame(width: 24)
                         Text(deleteConfirmationActive ? "Confirm" : "Delete")
-                        Spacer()
+                        Spacer(minLength: 0)
                     }
-                    .foregroundColor(.red)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .contentShape(Rectangle())  // Make entire area tappable
+                    .foregroundColor(.red)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
