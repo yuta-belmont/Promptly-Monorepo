@@ -191,18 +191,11 @@ final class ChatViewModel: ObservableObject {
                 self.messages.append(message)
             }
             
-            // Only notify for assistant messages
-            if message.role == MessageRoles.assistant {
-                DispatchQueue.main.async {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("ChatMessageAdded"),
-                        object: nil,
-                        userInfo: [
-                            "role": message.role
-                        ]
-                    )
-                }
+            // Increment unread count for assistant messages when chat is not expanded
+            if message.role == MessageRoles.assistant && !isExpanded {
+                incrementUnreadCount()
             }
+            
         } else {
             // Create a new main chat history if it doesn't exist
             let newHistory = ChatHistory.create(in: context, isMainHistory: true)
@@ -234,17 +227,9 @@ final class ChatViewModel: ObservableObject {
                 self.chatHistory = newHistory
             }
             
-            // Only notify for assistant messages
-            if message.role == MessageRoles.assistant {
-                DispatchQueue.main.async {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("ChatMessageAdded"),
-                        object: nil,
-                        userInfo: [
-                            "role": message.role
-                        ]
-                    )
-                }
+            // Increment unread count for assistant messages when chat is not expanded
+            if message.role == MessageRoles.assistant && !isExpanded {
+                incrementUnreadCount()
             }
         }
     }
