@@ -44,6 +44,41 @@ struct SlideInTransitionModifier: ViewModifier {
     }
 }
 
+// Add at the top with other preference keys and structs
+struct WaveShape: Shape {
+    var progress: CGFloat
+    
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+    
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        
+        // Calculate the y position of the wave center
+        let progressHeight = rect.height * progress
+        let waveCenter = progressHeight
+        
+        // Dynamic wave height that grows with progress
+        let minHeight: CGFloat = 10
+        let maxHeight: CGFloat = 350
+        let heightProgress = min(progress, 1.0) // Expand in first half of animation
+        let currentHeight = minHeight + (maxHeight - minHeight) * heightProgress
+        
+        let startY = max(0, waveCenter - currentHeight/2)
+        let endY = min(rect.height, waveCenter + currentHeight/2)
+        
+        path.move(to: CGPoint(x: 0, y: startY))
+        path.addLine(to: CGPoint(x: rect.width, y: startY))
+        path.addLine(to: CGPoint(x: rect.width, y: endY))
+        path.addLine(to: CGPoint(x: 0, y: endY))
+        path.closeSubpath()
+        
+        return path
+    }
+}
+
 struct DayView: View, Hashable {
     @EnvironmentObject private var focusManager: FocusManager
     @State private var currentDate: Date
@@ -52,6 +87,9 @@ struct DayView: View, Hashable {
     @State private var isListEditing = false
     @Binding var showMenu: Bool
     @Environment(\.dismiss) private var dismiss
+    @State private var showCheckInButton = true
+    @State private var isAnimatingCheckIn = false
+    @State private var waveProgress: CGFloat = -0.1 // Start slightly above screen
     
     // Create a StateObject for the EasyListViewModel
     @StateObject private var easyListViewModel: EasyListViewModel
@@ -253,6 +291,43 @@ struct DayView: View, Hashable {
         return weekViewDates
     }
     
+    // Update the handleCheckIn method
+    private func handleCheckIn() {
+        // Prepare and trigger haptic feedback
+        feedbackGenerator.prepare()
+        feedbackGenerator.impactOccurred()
+        
+        // Hide button and start animation immediately
+        withAnimation(.easeInOut(duration: 0.3)) {
+            showCheckInButton = false
+            isAnimatingCheckIn = true
+        }
+        
+        // Start wave animation immediately
+        withAnimation(.easeOut(duration: 1.0)) {
+            waveProgress = 1.1 // Move past bottom of screen
+        }
+        
+        // Clean up after animation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            withAnimation {
+                isAnimatingCheckIn = false
+                waveProgress = -0.1 // Reset for next time
+                showCheckInButton = true // Show the button again
+            }
+        }
+        
+        // Get the current checklist data and send to ChatService
+        let checklist = easyListViewModel.getChecklistForCheckin()
+        Task {
+            do {
+                try await _ = ChatService.shared.handleCheckin(checklist: checklist)
+            } catch {
+                print("Error sending checkin: \(error)")
+            }
+        }
+    }
+    
     var body: some View {
         ZStack {
             GeometryReader { geometry in
@@ -314,6 +389,20 @@ struct DayView: View, Hashable {
                         }
                         
                         Spacer()
+
+                        if showCheckInButton {
+                            Button(action: handleCheckIn) {
+                                Text("check-in")
+                                    .font(.caption)
+                                    .fontWeight(.regular)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(Color.blue)
+                                    .cornerRadius(6)
+                                    .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+                            }
+                        }
                         
                         if !isToday {
                             Button(action: {
@@ -611,6 +700,33 @@ struct DayView: View, Hashable {
             }
             .navigationBarBackButtonHidden(true)
             .preference(key: RemoveFocusPreferenceKey.self, value: FocusRemovalAction(removeAllFocus: removeAllFocus))
+            
+            // Wave overlay
+            if isAnimatingCheckIn {
+                ZStack {
+                    // Main wave
+                    WaveShape(progress: waveProgress)
+                        .fill(Color.white)
+                        .opacity(0.2 * (1 - waveProgress))
+                        .blur(radius: 30)
+                        .edgesIgnoringSafeArea(.all)
+                    
+                    // Glowing overlay
+                    WaveShape(progress: waveProgress)
+                        .fill(Color.white)
+                        .opacity(0.15 * (1 - waveProgress))
+                        .blur(radius: 60)
+                        .edgesIgnoringSafeArea(.all)
+                    
+                    // Sharp center wave
+                    WaveShape(progress: waveProgress)
+                        .fill(Color.blue)
+                        .opacity(0.1 * (1 - waveProgress))
+                        .blur(radius: 10)
+                        .edgesIgnoringSafeArea(.all)
+                }
+                .zIndex(997)
+            }
             
             // ItemDetails overlay
             if showingItemDetails, let item = selectedItem {

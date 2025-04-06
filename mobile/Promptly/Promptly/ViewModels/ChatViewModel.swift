@@ -13,7 +13,7 @@ final class ChatViewModel: ObservableObject {
     @Published var isExpanded: Bool = false
     @Published var isFullyExpanded: Bool = false
     
-    private let chatService = ChatService()
+    private let chatService = ChatService.shared
     private let persistenceService = ChatPersistenceService.shared
     private let firestoreService = FirestoreService.shared
     private var chatHistory: ChatHistory!
@@ -531,6 +531,21 @@ final class ChatViewModel: ObservableObject {
         if !firestoreService.hasActiveListeners() {
             self.isLoading = false
             self.isPendingResponse = false
+        }
+    }
+    
+    // Method to handle messages from ChatService
+    @MainActor
+    func handleMessage(_ message: String) {
+        // Create a new message entity using the proper ChatMessage.create method
+        let chatMessage = ChatMessage.create(
+            in: context,
+            role: MessageRoles.assistant,
+            content: message
+        )
+        
+        Task {
+            await addMessageAndNotify(chatMessage)
         }
     }
 }

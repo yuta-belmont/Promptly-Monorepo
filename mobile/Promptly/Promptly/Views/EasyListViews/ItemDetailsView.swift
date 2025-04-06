@@ -180,7 +180,7 @@ struct ItemDetailsView: View {
             // Only animate when completing, not uncompleting
             if !wasCompleted {
                 // Trigger border animation
-                borderOpacity = 0.2
+                borderOpacity = 0.4
                 // Reset opacity after delay
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     withAnimation(.easeInOut(duration: 0.5)) {

@@ -21,6 +21,11 @@ class FirebaseService:
     """
     _instance = None
     
+    # Collection names
+    MESSAGE_TASKS_COLLECTION = 'message_tasks'
+    CHECKLIST_TASKS_COLLECTION = 'checklist_tasks'
+    CHECKIN_TASKS_COLLECTION = 'checkin_tasks'
+    
     def __new__(cls):
         """Singleton pattern to ensure only one Firebase connection."""
         if cls._instance is None:
@@ -251,6 +256,8 @@ class FirebaseService:
             for doc in query.stream():
                 task_data = doc.to_dict()
                 task_data['id'] = doc.id
+                # Add the collection name to the task data
+                task_data['collection'] = collection
                 # Convert Firestore data types to JSON serializable types
                 task_data = convert_firestore_data(task_data)
                 tasks.append(task_data)
@@ -360,4 +367,79 @@ class FirebaseService:
         except Exception as e:
             logger.error(f"Error storing checklist data: {e}")
             print(f"[FIREBASE] Error storing checklist data: {e}")
+            raise
+
+    def add_checkin_task(self,
+                        user_id: str,
+                        user_full_name: str,
+                        checklist_data: Dict[str, Any],
+                        client_time: Optional[str] = None) -> str:
+        """
+        Add a checkin analysis task to Firestore.
+        
+        Args:
+            user_id: The ID of the user
+            user_full_name: The full name of the user
+            checklist_data: The checklist data to analyze
+            client_time: The current time on the client device (optional)
+            
+        Returns:
+            The ID of the created task
+        """
+        try:
+            # Create a reference to the checkin tasks collection
+            task_ref = self.db.collection(self.CHECKIN_TASKS_COLLECTION).document()
+            
+            # Set the task data
+            task_data = {
+                'status': 'pending',
+                'user_id': user_id,
+                'user_full_name': user_full_name,
+                'checklist_data': checklist_data,
+                'created_at': firestore.SERVER_TIMESTAMP,
+                'updated_at': firestore.SERVER_TIMESTAMP
+            }
+            
+            # Include client time if provided
+            if client_time:
+                task_data['client_time'] = client_time
+                
+            task_ref.set(task_data)
+            
+            logger.info(f"Added checkin task {task_ref.id} for user {user_id}")
+            return task_ref.id
+            
+        except Exception as e:
+            logger.error(f"Error adding checkin task: {e}")
+            print(f"[FIREBASE] Error adding checkin task: {e}")
+            raise
+
+    def store_checkin(self,
+                      user_id: str,
+                      checkin_data: Dict[str, Any]) -> None:
+        """
+        Store the check-in data and analysis in Firestore.
+        
+        Args:
+            user_id: The ID of the user
+            checkin_data: Dictionary containing checklist data, analysis, and timestamp
+        """
+        try:
+            # Create a reference to store the checkin data
+            checkin_ref = self.db.collection('checkins').document()
+            
+            # Set the checkin data
+            checkin_data.update({
+                'user_id': user_id,
+                'created_at': firestore.SERVER_TIMESTAMP
+            })
+            
+            # Store the data
+            checkin_ref.set(checkin_data)
+            
+            logger.info(f"Stored checkin data for user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error storing checkin data: {e}")
+            print(f"[FIREBASE] Error storing checkin data: {e}")
             raise 

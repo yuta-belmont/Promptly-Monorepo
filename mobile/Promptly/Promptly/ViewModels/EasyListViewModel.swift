@@ -741,4 +741,33 @@ final class EasyListViewModel: ObservableObject {
         let updatedChecklist = checklist
         checklist = updatedChecklist
     }
+    
+    // Add this method before the last closing brace
+    func getChecklistForCheckin() -> [String: Any] {
+        return [
+            "date": checklist.date.ISO8601Format(),
+            "items": checklist.items.map { item in
+                var itemDict: [String: Any] = [
+                    "title": item.title,
+                    "isCompleted": item.isCompleted,
+                    "group": item.group?.title ?? "Uncategorized"
+                ]
+                
+                // Add notification if exists
+                if let notification = item.notification {
+                    itemDict["notification"] = notification.ISO8601Format()
+                }
+                
+                // Add subitems if they exist
+                itemDict["subitems"] = item.subItems.map { subItem in
+                    [
+                        "title": subItem.title,
+                        "isCompleted": subItem.isCompleted
+                    ]
+                }
+                
+                return itemDict
+            }
+        ]
+    }
 } 

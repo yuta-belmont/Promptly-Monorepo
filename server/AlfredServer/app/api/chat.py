@@ -40,6 +40,24 @@ class MessageWithContextCreate(BaseModel):
     context_messages: Optional[List[dict]] = Field(default_factory=list)
     current_time: Optional[str] = None
 
+class SubItem(BaseModel):
+    title: str
+    isCompleted: bool
+
+class ChecklistItem(BaseModel):
+    title: str
+    isCompleted: bool
+    group: str
+    notification: Optional[str] = None
+    subitems: Optional[List[SubItem]] = []
+
+class Checklist(BaseModel):
+    date: str
+    items: List[ChecklistItem]
+
+class CheckinRequest(BaseModel):
+    checklist: Checklist
+    current_time: Optional[str] = None
 
 # Stateless message endpoint that doesn't use the chat model
 @router.post("/messages", response_model=OptimizedChatResponse)
@@ -108,4 +126,54 @@ async def send_stateless_message(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process message: {str(e)}",
+        )
+
+@router.post("/checkin", response_model=OptimizedChatResponse)
+async def send_checkin(
+    *,
+    current_user: User = Depends(deps.get_current_user),
+    request_data: CheckinRequest,
+    response: Response
+):
+    """
+    Process a checkin request containing checklist data.
+    
+    This endpoint creates a Firebase task for processing checklist data
+    and returns a task ID for the client to listen to.
+    """
+    try:
+        # Set the content type header for the optimized format
+        response.headers["Content-Type"] = "application/vnd.promptly.optimized+json"
+        
+        # Create the checkin task using the dedicated method
+        task_id = firebase_service.add_checkin_task(
+            user_id=str(current_user.id),
+            user_full_name=current_user.full_name,
+            checklist_data=request_data.checklist.dict(),
+            client_time=request_data.current_time
+        )
+        
+        # Create the optimized response with pending status and task_id
+        optimized_response = OptimizedChatResponse(
+            response=MessageResponse(
+                id=task_id,  # Use the task_id as the message id
+                content=json.dumps({
+                    "status": "pending"
+                })
+            ),
+            metadata={
+                "status": "pending",
+                "message_id": task_id,
+                "task_type": "checkin_task"
+            }
+        )
+        
+        print(f"Created checkin task: {task_id}")
+        return optimized_response
+        
+    except Exception as e:
+        print(f"DEBUG: ERROR in checkin processing: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process checkin: {str(e)}",
         ) 

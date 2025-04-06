@@ -535,7 +535,7 @@ struct PlannerItemView: View, Equatable {
                     RoundedRectangle(cornerRadius: 16)
                         .fill(Color.white)
                         .blur(radius: 8)
-                        .opacity(0.15)
+                        .opacity(0.25)
                 }
             }
         )

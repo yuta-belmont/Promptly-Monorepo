@@ -75,7 +75,7 @@ You are a chat classifier inside a planner application that determines if a user
 Answer the following based on the user's most recent message:
 YES: the user wants to add tasks, reminders, or plans to their planner.
 NO: the user does not want to add tasks, reminders, or plans to their planner.
-Respond with ONLY ONE word: either ‘yes’, or ‘no’
+Respond with ONLY ONE word: either 'yes', or 'no'
 """
 
 # -------------------------------------------------------------------------
@@ -169,6 +169,27 @@ CHECKLIST_FORMAT_INSTRUCTIONS = """Please format your response as a JSON object 
 }
 
 Groups can have any name as their key. Each group can contain multiple dates."""
+
+# -------------------------------------------------------------------------
+# Check-in Analysis Agent - Analyzes daily checklist completion and provides encouragement
+# -------------------------------------------------------------------------
+CHECKIN_ANALYSIS_INSTRUCTIONS = """You are Alfred, a wise and encouraging personal assistant analyzing a user's daily checklist completion.
+Your goal is to provide meaningful, personalized encouragement based on their progress.
+
+Consider:
+1. Overall completion rate and patterns
+2. The nature and difficulty of completed vs incomplete tasks
+3. The user's effort and dedication shown
+4. Potential challenges they might have faced
+
+Respond with a thoughtful, encouraging message that:
+- Acknowledges their progress and effort
+- Provides specific encouragement related to completed tasks
+- Offers gentle support for incomplete tasks
+- Includes actionable insights or tips when relevant
+- Maintains a supportive, non-judgmental tone
+
+Keep responses concise (2-3 sentences) but meaningful. If there is nothing to report, respond with an EXTREMELY concise message."""
 
 # Pydantic models for structured responses
 class ChecklistSubItem(BaseModel):
@@ -971,3 +992,65 @@ class AIService:
         
         logger.info("CHECKLIST DEBUG: Processed %d checklists in total", len(allChecklists))
         return None if not allChecklists else allChecklists 
+
+    def analyze_checkin(self, checklist_data: Dict[str, Any], user_full_name: Optional[str] = None) -> Optional[str]:
+        """
+        Analyze a checklist and provide an encouraging response using GPT-4.
+        
+        Args:
+            checklist_data: The checklist data to analyze
+            user_full_name: The user's full name (optional)
+            
+        Returns:
+            An encouraging response string, or None if analysis fails
+        """
+        try:
+            # Extract items from checklist data
+            items = checklist_data.get('items', [])
+            
+            # If no items, return a concise message
+            if not items:
+                return "Taking a break today? That's perfectly fine. Tomorrow is a fresh start!"
+            
+            # Count completed and total items
+            completed = sum(1 for item in items if item.get('isCompleted', False))
+            total = len(items)
+            completion_percentage = (completed / total) * 100 if total > 0 else 0
+            
+            # Create a summary of the checklist for the AI
+            checklist_summary = {
+                "total_tasks": total,
+                "completed_tasks": completed,
+                "completion_percentage": completion_percentage,
+                "tasks": [
+                    {
+                        "title": item.get('title', ''),
+                        "completed": item.get('isCompleted', False)
+                    }
+                    for item in items
+                ]
+            }
+            
+            # Create the messages for GPT-4
+            messages = [
+                {"role": "system", "content": CHECKIN_ANALYSIS_INSTRUCTIONS},
+                {"role": "user", "content": f"Please analyze this checklist completion data and provide encouragement:\n{json.dumps(checklist_summary, indent=2)}"}
+            ]
+            
+            # Generate analysis using GPT-4
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini-2024-07-18",
+                messages=messages,
+                temperature=0.7,
+                max_tokens=150  # Keep responses concise
+            )
+            
+            analysis = response.choices[0].message.content.strip()
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"Error analyzing checkin: {e}")
+            # Provide a fallback response
+            if total > 0:
+                return f"You've completed {completed} out of {total} tasks. Every step forward counts!"
+            return "Thanks for checking in. Keep up the great work!" 

@@ -47,14 +47,9 @@ class UnifiedWorker:
     
     async def process_tasks(self, max_runtime=None):
         """
-        Process pending tasks from Firestore, prioritizing message tasks.
+        Process pending tasks from Firestore, handling all task types.
         This method runs in a loop, polling for new tasks.
-        
-        Args:
-            max_runtime: Maximum time in seconds to run before returning (None for infinite)
-                         This controls how long we poll for tasks, not how long we process each task
         """
-        
         # Track start time for the polling window
         start_time = time.time() if max_runtime else None
         tasks_processed = 0
@@ -71,47 +66,44 @@ class UnifiedWorker:
                         await asyncio.gather(*pending_tasks)
                     return
                 
-                # Log current task status
-                total_active = self.total_active_tasks
-                logger.debug(f"Active tasks: {total_active} (message: {len(self.active_message_tasks)}, checklist: {len(self.active_checklist_tasks)})")
-                
                 # Calculate available capacity
+                total_active = self.total_active_tasks
                 available_capacity = self.semaphore._value - total_active
                 
-                # First process message tasks (priority) if capacity available
                 if available_capacity > 0:
+                    # Get pending tasks from both collections up to available capacity
                     message_tasks = self.firebase_service.get_pending_tasks(
-                        collection='message_tasks',
+                        collection=self.firebase_service.MESSAGE_TASKS_COLLECTION,
                         limit=available_capacity
                     )
                     
-                    for task in message_tasks:
-                        task_id = task['id']  # Access id from dictionary
-                        task_data = task  # Task is already a dictionary
-                        
-                        # Process the task
-                        await self.process_message_task(task_id, task_data)
-                
-                # Then process checklist tasks if capacity available
-                if available_capacity > 0:
-                    checklist_tasks = self.firebase_service.get_pending_tasks(
-                        collection='checklist_tasks',
+                    checkin_tasks = self.firebase_service.get_pending_tasks(
+                        collection=self.firebase_service.CHECKIN_TASKS_COLLECTION,
                         limit=available_capacity
                     )
                     
-                    for task in checklist_tasks:
-                        task_id = task['id']  # Access id from dictionary
-                        task_data = task  # Task is already a dictionary
+                    # Process all tasks
+                    for task in message_tasks + checkin_tasks:
+                        task_id = task['id']
+                        task_data = task
                         
-                        # Process the task
-                        await self.process_checklist_task(task_id, task_data)
+                        # Determine task type and process accordingly
+                        if task.get('collection') == self.firebase_service.CHECKIN_TASKS_COLLECTION:
+                            # Process checkin task
+                            task_coroutine = self.process_checkin_task(task_id, task_data)
+                        else:
+                            # Process regular message task
+                            task_coroutine = self.process_message_task(task_id, task_data)
+                        
+                        # Create and start task with tracking
+                        task_future = asyncio.create_task(task_coroutine)
+                        pending_tasks.append(task_future)
                 
-                # If no tasks were found, sleep for a second before polling again
-                if available_capacity == self.semaphore._value:
-                    await asyncio.sleep(1.0)
-                else:
-                    # Brief sleep to prevent tight polling loop
-                    await asyncio.sleep(0.1)
+                # Clean up completed tasks
+                pending_tasks = [task for task in pending_tasks if not task.done()]
+                
+                # Brief pause before next polling cycle
+                await asyncio.sleep(0.1)
                 
             except Exception as e:
                 logger.error(f"Error in process_tasks: {e}")
@@ -368,6 +360,61 @@ class UnifiedWorker:
             # Update task status to failed
             self.firebase_service.update_task_status(
                 collection='message_tasks',
+                task_id=task_id,
+                status='failed',
+                data={
+                    'error': str(e)
+                }
+            )
+            return False
+
+    async def process_checkin_task(self, task_id: str, task_data: Dict[str, Any]) -> bool:
+        """Process a check-in task."""
+        try:
+            # Extract data from task
+            user_id = task_data.get('user_id')
+            user_full_name = task_data.get('user_full_name')
+            checklist_data = task_data.get('checklist_data', {})
+            
+            logger.info(f"Processing checkin task {task_id} for user {user_id}")
+            
+            # Generate analysis
+            analysis = self.ai_service.analyze_checkin(
+                checklist_data=checklist_data,
+                user_full_name=user_full_name
+            )
+            
+            if analysis:
+                # Update task status to completed with the analysis
+                self.firebase_service.update_task_status(
+                    collection=self.firebase_service.CHECKIN_TASKS_COLLECTION,
+                    task_id=task_id,
+                    status='completed',
+                    data={
+                        'response': analysis
+                    }
+                )
+                
+                logger.info(f"Completed checkin task {task_id}")
+                return True
+            else:
+                # Update task status to failed if no analysis generated
+                logger.warning(f"Task {task_id}: No analysis generated")
+                self.firebase_service.update_task_status(
+                    collection=self.firebase_service.CHECKIN_TASKS_COLLECTION,
+                    task_id=task_id,
+                    status='failed',
+                    data={
+                        'error': 'No analysis generated'
+                    }
+                )
+                return False
+        
+        except Exception as e:
+            logger.error(f"Error processing checkin task {task_id}: {e}")
+            # Update task status to failed
+            self.firebase_service.update_task_status(
+                collection=self.firebase_service.CHECKIN_TASKS_COLLECTION,
                 task_id=task_id,
                 status='failed',
                 data={
