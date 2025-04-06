@@ -413,6 +413,8 @@ struct SlateBackground: View {
     }
 }
 
+
+
 //Sunrise background ===============
 struct SunriseBackground: View {
     var body: some View {
@@ -441,7 +443,7 @@ struct NatureBackground: View {
                 // Simplified base with radial gradient for organic feel
                 RadialGradient(
                     gradient: Gradient(colors: [
-                        Color(red: 0.5, green: 0.8, blue: 0.6),    // Light pale green in center
+                        Color(red: 0.4, green: 0.67, blue: 0.47),    // Light pale green in center
                         Color(red: 0.3, green: 0.6, blue: 0.4),    // Medium jungle green
                         Color(red: 0.1, green: 0.3, blue: 0.15)     // Deep vibrant jungle green for edges
                     ]),
@@ -453,7 +455,7 @@ struct NatureBackground: View {
                 // Subtle linear gradient overlay to add depth
                 LinearGradient(
                     gradient: Gradient(colors: [
-                        Color(red: 0.4, green: 0.7, blue: 0.5).opacity(0.3),   // Lighter top
+                        Color(red: 0.3, green: 0.55, blue: 0.37).opacity(0.3),   // Lighter top
                         Color(red: 0.1, green: 0.3, blue: 0.2).opacity(0.3)    // Darker bottom
                     ]),
                     startPoint: .top,
@@ -464,7 +466,7 @@ struct NatureBackground: View {
                 // Subtle "glow" near the top to simulate light filtering through leaves
                 RadialGradient(
                     gradient: Gradient(colors: [
-                        Color(red: 0.8, green: 0.9, blue: 0.7).opacity(0.2),   // Light filtered through leaves
+                        Color(red: 0.8, green: 0.9, blue: 0.7).opacity(0.2).opacity(0.5),   // Light filtered through leaves
                         Color.clear
                     ]),
                     center: UnitPoint(x: 0.5, y: 0.2),  // Positioned near top
@@ -611,6 +613,742 @@ struct StarField: View {
                     starContext.opacity = star.opacity
                     starContext.fill(path, with: .color(.white))
                 }
+            }
+        }
+    }
+}
+
+//Emerald background ===============
+struct Emerald: View {
+    var body: some View {
+        OptimizedBackground {
+            ZStack {
+                // Deep emerald gradient base - changed to linear gradient, darker at top
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 0.0133, green: 0.12, blue: 0.08),  // Darkest at top
+                        Color(red: 0.03, green: 0.25, blue: 0.18),  // Medium in middle
+                        Color(red: 0.05, green: 0.35, blue: 0.25)   // Lightest at bottom
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                
+                // Shimmering effect
+                EmeraldFacets()
+                    .blendMode(.overlay)
+                
+            }
+        }
+    }
+}
+
+// Optimized emerald facets using Canvas
+struct EmeraldFacets: View {
+    // Pre-generate facet data for consistency
+    private let facets: [(x: Double, y: Double, width: Double, height: Double, rotation: Double)] = {
+        var facetData: [(x: Double, y: Double, width: Double, height: Double, rotation: Double)] = []
+        for _ in 0..<15 {
+            let x = Double.random(in: 0...1)
+            let y = Double.random(in: 0...1)
+            let width = Double.random(in: 50...150)
+            let height = Double.random(in: 20...60)
+            let rotation = Double.random(in: 0...(.pi * 2))
+            facetData.append((x: x, y: y, width: width, height: height, rotation: rotation))
+        }
+        return facetData
+    }()
+    
+    var body: some View {
+        Canvas { context, size in
+            // Apply a single blur to the entire context
+            var blurredContext = context
+            blurredContext.addFilter(.blur(radius: 15))
+            blurredContext.opacity = 0.2
+            
+            // Draw all facets in a single pass
+            for facet in facets {
+                let centerX = facet.x * size.width
+                let centerY = facet.y * size.height
+                
+                // Create a rectangle path
+                var path = Path(CGRect(
+                    x: centerX - facet.width/2,
+                    y: centerY - facet.height/2,
+                    width: facet.width,
+                    height: facet.height
+                ))
+                
+                // Rotate the path
+                let rotation = CGAffineTransform(rotationAngle: facet.rotation)
+                let translation = CGAffineTransform(translationX: centerX, y: centerY)
+                let transform = CGAffineTransform(translationX: -centerX, y: -centerY)
+                    .concatenating(rotation)
+                    .concatenating(translation)
+                
+                path = path.applying(transform)
+                
+                // Fill with white color for shimmer effect
+                blurredContext.fill(path, with: .color(.white))
+            }
+        }
+    }
+}
+
+//Gradient background ===============
+struct GradientBackground: View {
+    var body: some View {
+        OptimizedBackground {
+            ZStack {
+                // Base diagonal gradient with vibrant colors
+                LinearGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color(red: 0.2, green: 0.4, blue: 0.8),    // Deep blue in top-left
+                        Color(red: 0.5, green: 0.3, blue: 0.8),    // Purple in middle-top
+                        Color(red: 0.8, green: 0.2, blue: 0.6),    // Magenta in middle
+                        Color(red: 0.9, green: 0.3, blue: 0.2),    // Coral in middle-bottom
+                        Color(red: 1.0, green: 0.6, blue: 0.1)     // Gold in bottom-right
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                
+                // Soft light trails effect
+                GradientTrails()
+                    .blendMode(.softLight)
+                
+                // Add subtle highlight
+                RadialGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color.white.opacity(0.2),
+                        Color.clear
+                    ]),
+                    center: .init(x: 0.3, y: 0.3),
+                    startRadius: 0,
+                    endRadius: 300
+                )
+                .blendMode(.screen)
+                
+                // Add subtle shadow edges for depth
+                LinearGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color.black.opacity(0.3),
+                        Color.clear,
+                        Color.clear,
+                        Color.black.opacity(0.3)
+                    ]),
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .blendMode(.multiply)
+            }
+        }
+    }
+}
+
+// Light trails that add motion to the gradient
+struct GradientTrails: View {
+    // Pre-generate trail data for consistency
+    private let trails: [(start: UnitPoint, end: UnitPoint, width: Double, opacity: Double)] = {
+        var trailData: [(start: UnitPoint, end: UnitPoint, width: Double, opacity: Double)] = []
+        for _ in 0..<10 {
+            // Create diagonal trails in the same direction as the gradient
+            let x1 = Double.random(in: -0.2...0.6)
+            let y1 = Double.random(in: -0.2...0.6)
+            let length = Double.random(in: 0.4...1.0)
+            let angle = Double.random(in: -0.1...0.1) + 0.785 // Base around 45° (π/4) with slight variation
+            
+            let x2 = x1 + cos(angle) * length
+            let y2 = y1 + sin(angle) * length
+            
+            let width = Double.random(in: 10...60)
+            let opacity = Double.random(in: 0.1...0.4)
+            
+            trailData.append((
+                start: UnitPoint(x: x1, y: y1),
+                end: UnitPoint(x: x2, y: y2),
+                width: width,
+                opacity: opacity
+            ))
+        }
+        return trailData
+    }()
+    
+    var body: some View {
+        Canvas { context, size in
+            // Apply a single blur to the entire context
+            var blurredContext = context
+            blurredContext.addFilter(.blur(radius: 20))
+            
+            // Draw all trails in a single pass
+            for trail in trails {
+                let start = CGPoint(
+                    x: trail.start.x * size.width,
+                    y: trail.start.y * size.height
+                )
+                let end = CGPoint(
+                    x: trail.end.x * size.width,
+                    y: trail.end.y * size.height
+                )
+                
+                // Create a path for the trail
+                var path = Path()
+                path.move(to: start)
+                path.addLine(to: end)
+                
+                // Set line width and opacity
+                blurredContext.stroke(path, with: .color(.white), lineWidth: trail.width)
+                blurredContext.opacity = trail.opacity
+            }
+        }
+    }
+}
+
+//RoseGold background ===============
+struct RoseGold: View {
+    var body: some View {
+        OptimizedBackground {
+            ZStack {
+                // Base diagonal gradient with focused rose gold palette
+                LinearGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color(red: 0.85, green: 0.65, blue: 0.65),  // Pale rose in top-left
+                        Color(red: 0.93, green: 0.75, blue: 0.65),  // Light rose gold
+                        Color(red: 0.85, green: 0.65, blue: 0.55),  // Medium rose gold
+                        Color(red: 0.75, green: 0.55, blue: 0.45),  // Deeper rose gold
+                        Color(red: 0.60, green: 0.40, blue: 0.35)   // Burnished copper in bottom-right
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                
+                // Soft metallic gleam effect
+                RoseGoldGleam()
+                    .blendMode(.softLight)
+                
+                // Add golden highlight
+                RadialGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color(red: 1.0, green: 0.95, blue: 0.8).opacity(0.25),  // Gold tint
+                        Color.clear
+                    ]),
+                    center: .init(x: 0.25, y: 0.25),
+                    startRadius: 0,
+                    endRadius: 300
+                )
+                .blendMode(.screen)
+                
+                // Add subtle shadow edges for depth
+                LinearGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color.black.opacity(0.2),
+                        Color.clear,
+                        Color.clear,
+                        Color.black.opacity(0.2)
+                    ]),
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .blendMode(.multiply)
+            }
+        }
+    }
+}
+
+// Gleam effect that creates a subtle metallic shine
+struct RoseGoldGleam: View {
+    // Pre-generate gleam data for consistency
+    private let gleams: [(x: Double, y: Double, width: Double, height: Double, rotation: Double, opacity: Double)] = {
+        var gleamData: [(x: Double, y: Double, width: Double, height: Double, rotation: Double, opacity: Double)] = []
+        for _ in 0..<8 {
+            // Create gleams flowing diagonally like the gradient
+            let x = Double.random(in: 0...1)
+            let y = Double.random(in: 0...1)
+            let width = Double.random(in: 80...200)
+            let height = Double.random(in: 10...30)
+            let baseAngle = 0.785 // 45° (π/4)
+            let rotation = Double.random(in: -0.1...0.1) + baseAngle
+            let opacity = Double.random(in: 0.1...0.3)
+            
+            gleamData.append((
+                x: x, y: y, width: width, height: height, rotation: rotation, opacity: opacity
+            ))
+        }
+        return gleamData
+    }()
+    
+    var body: some View {
+        Canvas { context, size in
+            // Apply a single blur to the entire context
+            var blurredContext = context
+            blurredContext.addFilter(.blur(radius: 15))
+            
+            // Draw all gleams in a single pass
+            for gleam in gleams {
+                let centerX = gleam.x * size.width
+                let centerY = gleam.y * size.height
+                
+                // Create an oval path for the gleam
+                var path = Path(ellipseIn: CGRect(
+                    x: centerX - gleam.width/2,
+                    y: centerY - gleam.height/2,
+                    width: gleam.width,
+                    height: gleam.height
+                ))
+                
+                // Rotate the path to follow gradient direction
+                let rotation = CGAffineTransform(rotationAngle: gleam.rotation)
+                let translation = CGAffineTransform(translationX: centerX, y: centerY)
+                let transform = CGAffineTransform(translationX: -centerX, y: -centerY)
+                    .concatenating(rotation)
+                    .concatenating(translation)
+                
+                path = path.applying(transform)
+                
+                // Set opacity and fill with white for shimmer effect
+                blurredContext.opacity = gleam.opacity
+                blurredContext.fill(path, with: .color(.white))
+            }
+        }
+    }
+}
+
+//HyperVibrant background ===============
+struct HyperVibrant: View {
+    var body: some View {
+        OptimizedBackground {
+            ZStack {
+                // Base diagonal gradient with intense, saturated colors
+                LinearGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color(red: 0.0, green: 0.85, blue: 1.0),    // Bright cyan in top-left
+                        Color(red: 0.2, green: 0.0, blue: 1.0),     // Electric blue
+                        Color(red: 0.95, green: 0.0, blue: 1.0),    // Hot pink/magenta
+                        Color(red: 1.0, green: 0.2, blue: 0.0),     // Vibrant red-orange
+                        Color(red: 1.0, green: 0.9, blue: 0.0)      // Electric yellow in bottom-right
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                
+                // Dynamic energy waves
+                EnergyWaves()
+                    .blendMode(.screen)
+                
+                // Pulsing glow center
+                RadialGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color.white.opacity(0.4),
+                        Color.white.opacity(0.1),
+                        Color.clear
+                    ]),
+                    center: .init(x: 0.5, y: 0.5),
+                    startRadius: 0,
+                    endRadius: 250
+                )
+                .blendMode(.overlay)
+                
+                // Add vibrant edge highlights
+                LinearGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color(red: 0.0, green: 1.0, blue: 1.0).opacity(0.3),  // Bright cyan edge
+                        Color.clear,
+                        Color.clear,
+                        Color(red: 1.0, green: 0.0, blue: 0.8).opacity(0.3)   // Magenta edge
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .blendMode(.screen)
+                
+                // Sharp contrast boost
+                LinearGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color.black.opacity(0.2),
+                        Color.clear,
+                        Color.clear,
+                        Color.black.opacity(0.2)
+                    ]),
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .blendMode(.multiply)
+            }
+        }
+    }
+}
+
+// Dynamic energy waves for the HyperVibrant background
+struct EnergyWaves: View {
+    // Pre-generate wave data for consistency but with more intense properties
+    private let waves: [(start: UnitPoint, end: UnitPoint, width: Double, opacity: Double, color: Color)] = {
+        var waveData: [(start: UnitPoint, end: UnitPoint, width: Double, opacity: Double, color: Color)] = []
+        
+        // Predefined vibrant colors for the waves
+        let colors = [
+            Color(red: 0.0, green: 1.0, blue: 1.0),  // Cyan
+            Color(red: 0.3, green: 0.0, blue: 1.0),  // Electric blue
+            Color(red: 1.0, green: 0.0, blue: 1.0),  // Magenta
+            Color(red: 1.0, green: 0.3, blue: 0.0),  // Orange-red
+            Color(red: 1.0, green: 1.0, blue: 0.0)   // Yellow
+        ]
+        
+        for i in 0..<15 {  // More waves for greater intensity
+            // Create diagonal waves in various directions for more dynamic feel
+            let x1 = Double.random(in: -0.2...0.6)
+            let y1 = Double.random(in: -0.2...0.6)
+            let length = Double.random(in: 0.5...1.2)  // Longer waves
+            
+            // Multiple angles to create more chaotic, energetic pattern
+            let baseAngles = [0.785, 0.4, 1.2, 0.0, 1.57]  // 45°, ~23°, ~69°, 0°, 90°
+            let angleIndex = i % baseAngles.count
+            let angle = baseAngles[angleIndex] + Double.random(in: -0.2...0.2)  // Add variation
+            
+            let x2 = x1 + cos(angle) * length
+            let y2 = y1 + sin(angle) * length
+            
+            let width = Double.random(in: 15...80)  // Wider for more impact
+            let opacity = Double.random(in: 0.2...0.5)  // Higher opacity for visibility
+            let color = colors[i % colors.count]  // Cycle through vibrant colors
+            
+            waveData.append((
+                start: UnitPoint(x: x1, y: y1),
+                end: UnitPoint(x: x2, y: y2),
+                width: width,
+                opacity: opacity,
+                color: color
+            ))
+        }
+        return waveData
+    }()
+    
+    var body: some View {
+        Canvas { context, size in
+            // Apply glow effect with blur
+            var blurredContext = context
+            blurredContext.addFilter(.blur(radius: 15))
+            
+            // Draw all energy waves in a single pass
+            for wave in waves {
+                let start = CGPoint(
+                    x: wave.start.x * size.width,
+                    y: wave.start.y * size.height
+                )
+                let end = CGPoint(
+                    x: wave.end.x * size.width,
+                    y: wave.end.y * size.height
+                )
+                
+                // Create a path for the wave
+                var path = Path()
+                path.move(to: start)
+                path.addLine(to: end)
+                
+                // Set opacity and color
+                blurredContext.opacity = wave.opacity
+                
+                // Use color for each wave instead of just white
+                blurredContext.stroke(path, with: .color(wave.color), lineWidth: wave.width)
+            }
+        }
+    }
+}
+
+//HyperGray background ===============
+struct Hallucination: View {
+    var body: some View {
+        OptimizedBackground {
+            ZStack {
+                // Base diagonal gradient with grayscale equivalents plus subtle color hints
+                LinearGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color(white: 0.8).opacity(0.92).blended(with: Color(red: 0.0, green: 0.85, blue: 1.0).opacity(0.08)),    // Hint of cyan
+                        Color(white: 0.3).opacity(0.92).blended(with: Color(red: 0.2, green: 0.0, blue: 1.0).opacity(0.08)),     // Hint of blue
+                        Color(white: 0.7).opacity(0.92).blended(with: Color(red: 0.95, green: 0.0, blue: 1.0).opacity(0.08)),    // Hint of magenta
+                        Color(white: 0.5).opacity(0.92).blended(with: Color(red: 1.0, green: 0.2, blue: 0.0).opacity(0.08)),     // Hint of orange-red
+                        Color(white: 0.9).opacity(0.92).blended(with: Color(red: 1.0, green: 0.9, blue: 0.0).opacity(0.08))      // Hint of yellow
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                
+                // Dynamic energy waves in grayscale with subtle color hints
+                GrayWavesWithColorHints()
+                    .blendMode(.screen)
+                 
+                
+                // Add grayscale edge highlights with subtle color hints
+                LinearGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color.clear,
+                        Color.clear,
+                        Color.clear,
+                        Color(white: 0.8).opacity(0.28).blended(with: Color(red: 1.0, green: 0.0, blue: 0.8).opacity(0.02))   // Hint of magenta
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .blendMode(.screen)
+                
+                // Sharp contrast boost (black, so remains unchanged)
+                LinearGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color.black.opacity(0.2),
+                        Color.clear,
+                        Color.clear,
+                        Color.black.opacity(0.2)
+                    ]),
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .blendMode(.multiply)
+            }
+        }
+    }
+}
+
+// Helper extension to blend colors
+extension Color {
+    func blended(with color: Color) -> Color {
+        return self.opacity(1.0).opacity(1.0) + color.opacity(1.0)
+    }
+    
+    static func + (lhs: Color, rhs: Color) -> Color {
+        let components1 = lhs.components
+        let components2 = rhs.components
+        
+        return Color(
+            red: components1.red + components2.red,
+            green: components1.green + components2.green,
+            blue: components1.blue + components2.blue
+        )
+    }
+    
+    var components: (red: Double, green: Double, blue: Double, opacity: Double) {
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var o: CGFloat = 0
+        
+        guard UIColor(self).getRed(&r, green: &g, blue: &b, alpha: &o) else {
+            return (0, 0, 0, 0)
+        }
+        
+        return (Double(r), Double(g), Double(b), Double(o))
+    }
+}
+
+// Dynamic energy waves for the HyperGray background with color hints
+struct GrayWavesWithColorHints: View {
+    // Pre-generate wave data for consistency but with more intense properties
+    private let waves: [(start: UnitPoint, end: UnitPoint, width: Double, opacity: Double, grayValue: Double, colorHint: Color)] = {
+        var waveData: [(start: UnitPoint, end: UnitPoint, width: Double, opacity: Double, grayValue: Double, colorHint: Color)] = []
+        
+        // Subtle color hints for the waves
+        let colorHints = [
+            Color(red: 0.0, green: 1.0, blue: 1.0),  // Cyan
+            Color(red: 0.3, green: 0.0, blue: 1.0),  // Electric blue
+            Color(red: 1.0, green: 0.0, blue: 1.0),  // Magenta
+            Color(red: 1.0, green: 0.3, blue: 0.0),  // Orange-red
+            Color(red: 1.0, green: 1.0, blue: 0.0)   // Yellow
+        ]
+        
+        for i in 0..<15 {  // More waves for greater intensity
+            // Create diagonal waves in various directions for more dynamic feel
+            let x1 = Double.random(in: -0.2...0.6)
+            let y1 = Double.random(in: -0.2...0.6)
+            let length = Double.random(in: 0.5...1.2)  // Longer waves
+            
+            // Multiple angles to create more chaotic, energetic pattern
+            let baseAngles = [0.785, 0.4, 1.2, 0.0, 1.57]  // 45°, ~23°, ~69°, 0°, 90°
+            let angleIndex = i % baseAngles.count
+            let angle = baseAngles[angleIndex] + Double.random(in: -0.2...0.2)  // Add variation
+            
+            let x2 = x1 + cos(angle) * length
+            let y2 = y1 + sin(angle) * length
+            
+            let width = Double.random(in: 15...80)  // Wider for more impact
+            let opacity = Double.random(in: 0.2...0.5)  // Higher opacity for visibility
+            let grayValue = Double.random(in: 0.7...1.0) // Use bright grays for the waves
+            let colorHint = colorHints[i % colorHints.count].opacity(0.08)  // Very subtle color hint
+            
+            waveData.append((
+                start: UnitPoint(x: x1, y: y1),
+                end: UnitPoint(x: x2, y: y2),
+                width: width,
+                opacity: opacity,
+                grayValue: grayValue,
+                colorHint: colorHint
+            ))
+        }
+        return waveData
+    }()
+    
+    var body: some View {
+        Canvas { context, size in
+            // Apply glow effect with blur
+            var blurredContext = context
+            blurredContext.addFilter(.blur(radius: 15))
+            
+            // Draw all energy waves in a single pass
+            for wave in waves {
+                let start = CGPoint(
+                    x: wave.start.x * size.width,
+                    y: wave.start.y * size.height
+                )
+                let end = CGPoint(
+                    x: wave.end.x * size.width,
+                    y: wave.end.y * size.height
+                )
+                
+                // Create a path for the wave
+                var path = Path()
+                path.move(to: start)
+                path.addLine(to: end)
+                
+                // Set opacity and use the grayscale color with a hint of color
+                // For the Canvas API, we'll just use the color hint directly with very low opacity
+                blurredContext.opacity = wave.opacity
+                
+                // First stroke with the grayscale color
+                blurredContext.stroke(path, with: .color(Color(white: wave.grayValue)), lineWidth: wave.width)
+                
+                // Then add a second pass with the color hint at very low opacity
+                var colorContext = blurredContext
+                colorContext.opacity = wave.opacity * 0.15  // Even lower opacity for the color hint
+                colorContext.stroke(path, with: .color(wave.colorHint), lineWidth: wave.width)
+            }
+        }
+    }
+}
+
+//Nightmare background ===============
+struct Nightmare: View {
+    var body: some View {
+        OptimizedBackground {
+            ZStack {
+                // Base diagonal gradient with dark colors and subtle color hints
+                LinearGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color(white: 0.05).opacity(0.92).blended(with: Color(red: 0.0, green: 0.1, blue: 0.3).opacity(0.08)),    // Hint of dark blue
+                        Color(white: 0.1).opacity(0.92).blended(with: Color(red: 0.2, green: 0.0, blue: 0.3).opacity(0.08)),     // Hint of deep purple
+                        Color(white: 0.03).opacity(0.92).blended(with: Color(red: 0.3, green: 0.0, blue: 0.2).opacity(0.08)),    // Hint of deep crimson
+                        Color(white: 0.08).opacity(0.92).blended(with: Color(red: 0.2, green: 0.05, blue: 0.0).opacity(0.08)),   // Hint of dark red
+                        Color(white: 0.0).opacity(0.92).blended(with: Color(red: 0.1, green: 0.05, blue: 0.0).opacity(0.08))     // Hint of deep amber
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                
+                // Dynamic energy waves in dark grayscale with subtle color hints
+                NightmareWaves()
+                    .blendMode(.screen)
+                
+                // Eerie glow center
+                RadialGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color(red: 0.4, green: 0.0, blue: 0.0).opacity(0.15),  // Deep red glow
+                        Color.clear
+                    ]),
+                    center: .init(x: 0.5, y: 0.5),
+                    startRadius: 0,
+                    endRadius: 250
+                )
+                .blendMode(.screen)
+                
+                // Add dark edge highlights with subtle color hints
+                LinearGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color(white: 0.0).opacity(0.5),
+                        Color.clear,
+                        Color.clear,
+                        Color(white: 0.0).opacity(0.5).blended(with: Color(red: 0.3, green: 0.0, blue: 0.0).opacity(0.05))   // Hint of deep red
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .blendMode(.multiply)
+            }
+        }
+    }
+}
+
+// Sinister waves for the Nightmare background
+struct NightmareWaves: View {
+    // Pre-generate wave data for consistency but with more intense properties
+    private let waves: [(start: UnitPoint, end: UnitPoint, width: Double, opacity: Double, grayValue: Double, colorHint: Color)] = {
+        var waveData: [(start: UnitPoint, end: UnitPoint, width: Double, opacity: Double, grayValue: Double, colorHint: Color)] = []
+        
+        // Dark color hints for the waves
+        let colorHints = [
+            Color(red: 0.1, green: 0.0, blue: 0.2),  // Deep purple
+            Color(red: 0.2, green: 0.0, blue: 0.0),  // Dark red
+            Color(red: 0.0, green: 0.1, blue: 0.2),  // Dark blue
+            Color(red: 0.1, green: 0.05, blue: 0.0), // Deep amber
+            Color(red: 0.05, green: 0.0, blue: 0.05) // Dark magenta
+        ]
+        
+        for i in 0..<15 {
+            // Create diagonal waves in various disturbing directions
+            let x1 = Double.random(in: -0.2...0.6)
+            let y1 = Double.random(in: -0.2...0.6)
+            let length = Double.random(in: 0.5...1.2)
+            
+            // Multiple angles for chaotic, unsettling pattern
+            let baseAngles = [0.785, 0.4, 1.2, 0.0, 1.57]
+            let angleIndex = i % baseAngles.count
+            let angle = baseAngles[angleIndex] + Double.random(in: -0.2...0.2)
+            
+            let x2 = x1 + cos(angle) * length
+            let y2 = y1 + sin(angle) * length
+            
+            let width = Double.random(in: 15...80)
+            let opacity = Double.random(in: 0.1...0.3)  // Lower opacity for darker feel
+            let grayValue = Double.random(in: 0.1...0.4) // Dark grays for the waves
+            let colorHint = colorHints[i % colorHints.count].opacity(0.1)  // Subtle dark color hint
+            
+            waveData.append((
+                start: UnitPoint(x: x1, y: y1),
+                end: UnitPoint(x: x2, y: y2),
+                width: width,
+                opacity: opacity,
+                grayValue: grayValue,
+                colorHint: colorHint
+            ))
+        }
+        return waveData
+    }()
+    
+    var body: some View {
+        Canvas { context, size in
+            // Apply glow effect with blur
+            var blurredContext = context
+            blurredContext.addFilter(.blur(radius: 15))
+            
+            // Draw all waves in a single pass
+            for wave in waves {
+                let start = CGPoint(
+                    x: wave.start.x * size.width,
+                    y: wave.start.y * size.height
+                )
+                let end = CGPoint(
+                    x: wave.end.x * size.width,
+                    y: wave.end.y * size.height
+                )
+                
+                // Create a path for the wave
+                var path = Path()
+                path.move(to: start)
+                path.addLine(to: end)
+                
+                // Set opacity for dark gray waves
+                blurredContext.opacity = wave.opacity
+                blurredContext.stroke(path, with: .color(Color(white: wave.grayValue)), lineWidth: wave.width)
+                
+                // Then add a second pass with the dark color hint
+                var colorContext = blurredContext
+                colorContext.opacity = wave.opacity * 0.2
+                colorContext.stroke(path, with: .color(wave.colorHint), lineWidth: wave.width)
             }
         }
     }

@@ -24,11 +24,15 @@ struct PromptlyApp: App {
     // Initialize the persistence controller
     let persistenceController = PersistenceController.shared
     
+    // Add shared ChatViewModel
+    @StateObject private var chatViewModel = ChatViewModel.shared
+    
     var body: some Scene {
         
         WindowGroup {
             RootView()
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                .environmentObject(chatViewModel) // Provide chatViewModel to all views
                 .dynamicTypeSize(.small...DynamicTypeSize.xLarge)
         }
     }

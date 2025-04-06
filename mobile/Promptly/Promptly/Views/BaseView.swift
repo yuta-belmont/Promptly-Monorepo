@@ -10,7 +10,7 @@ struct BaseView: View {
     @State private var isMenuClosing = false
     @StateObject private var themeManager = ThemeManager.shared
     // Chat-related states
-    @StateObject private var chatViewModel = ChatViewModel()
+    @EnvironmentObject private var chatViewModel: ChatViewModel
     @State private var isChatExpanded = false
     @State private var isKeyboardActive = false
     @State private var isEditing: Bool = false
@@ -72,7 +72,6 @@ struct BaseView: View {
                         // When chat is expanded, use the full width
                         if isChatExpanded {
                             ChatView(
-                                viewModel: chatViewModel,
                                 isKeyboardActive: $isKeyboardActive,
                                 isExpanded: $isChatExpanded
                             )

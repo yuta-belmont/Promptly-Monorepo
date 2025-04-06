@@ -2,7 +2,7 @@ import SwiftUI
 import Combine
 
 struct ChatView: View {
-    @ObservedObject var viewModel: ChatViewModel
+    @EnvironmentObject private var viewModel: ChatViewModel
     @EnvironmentObject private var focusManager: FocusManager
     @State private var lastSentMessageId: UUID?
     @State private var messageOffset: [UUID: CGFloat] = [:]
@@ -64,7 +64,6 @@ struct ChatView: View {
                             isExpanded: $isExpanded,
                             height: $height,
                             isDragging: $isDragging,
-                            viewModel: viewModel,
                             maxHeight: maxHeight,
                             initialHeight: initialHeight,
                             snapThreshold: snapThreshold
@@ -237,7 +236,8 @@ struct ChatView: View {
                 .onChange(of: geometry.safeAreaInsets) { oldValue, newValue in
                     currentGeometry = geometry
                 }
-                .onChange(of: isExpanded) { _, newValue in
+                .onChange(of: isExpanded) { oldValue, newValue in
+                    viewModel.isExpanded = newValue
                     if newValue {
                         resetChatState()
                     }
@@ -370,7 +370,7 @@ private struct ChatHeaderView: View {
     @Binding var isExpanded: Bool
     @Binding var height: CGFloat
     @Binding var isDragging: Bool
-    @ObservedObject var viewModel: ChatViewModel
+    @EnvironmentObject private var viewModel: ChatViewModel
     let maxHeight: CGFloat
     let initialHeight: CGFloat
     let snapThreshold: CGFloat
@@ -428,11 +428,9 @@ private struct ChatHeaderView: View {
                         if isFullyExpanded {
                             height = initialHeight
                             isFullyExpanded = false
-                            viewModel.isFullyExpanded = false
                         } else {
                             height = maxHeight
                             isFullyExpanded = true
-                            viewModel.isFullyExpanded = true
                         }
                     }
                 }) {
@@ -456,9 +454,7 @@ private struct ChatHeaderView: View {
                 // Close button
                 Button(action: {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        viewModel.clearUnreadCount()
                         isExpanded = false
-                        viewModel.isExpanded = false
                         isFullyExpanded = false
                         height = initialHeight
                     }
@@ -500,7 +496,6 @@ private struct ChatHeaderView: View {
                             // Keep the height at its current value during the closing animation
                             height = currentHeight
                             isExpanded = false
-                            viewModel.isExpanded = false
                             isFullyExpanded = false
                         }
                     }
@@ -509,14 +504,12 @@ private struct ChatHeaderView: View {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             height = maxHeight
                             isFullyExpanded = true
-                            viewModel.isFullyExpanded = true
                         }
                     }
                     // Otherwise, just ensure we're not in fully expanded state
                     else {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             isFullyExpanded = false
-                            viewModel.isFullyExpanded = false
                         }
                     }
                 }
@@ -524,17 +517,11 @@ private struct ChatHeaderView: View {
         .onAppear {
             // Reset to initial height when view appears
             height = initialHeight
-            viewModel.isExpanded = isExpanded
             if isExpanded {
                 viewModel.clearUnreadCount()
             }
         }
         .onChange(of: isExpanded) { oldValue, newValue in
-            // Only reset height when chat is opened, not when closed
-            if newValue {
-                height = initialHeight
-            }
-            viewModel.isExpanded = newValue
             if newValue {
                 viewModel.clearUnreadCount()
             }

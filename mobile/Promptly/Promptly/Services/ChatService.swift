@@ -22,8 +22,8 @@ final class ChatService {
     private let persistenceService = ChatPersistenceService.shared
     private let firestoreService = FirestoreService.shared
     
-    // Store multiple view models using a dictionary with UUID as key
-    private var chatViewModels: [UUID: WeakRef<ChatViewModel>] = [:]
+    // Access the shared view model directly
+    private var chatViewModel: ChatViewModel { ChatViewModel.shared }
     
     // Network path monitor for connectivity checking
     private let networkMonitor = NWPathMonitor()
@@ -40,14 +40,6 @@ final class ChatService {
     // Callback for message updates
     var onMessageUpdate: ((String) -> Void)?
     
-    // Helper class to store weak references
-    private class WeakRef<T: AnyObject> {
-        weak var value: T?
-        init(_ value: T) {
-            self.value = value
-        }
-    }
-    
     private init() {
         // Set up network path monitor
         networkMonitor.pathUpdateHandler = { [weak self] path in
@@ -55,33 +47,17 @@ final class ChatService {
             print("Network connection status changed: \(path.status == .satisfied ? "Connected" : "Disconnected")")
         }
         networkMonitor.start(queue: networkQueue)
-        
-        // Set up periodic cleanup of nil references
-        Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
-            self?.cleanupViewModels()
-        }
     }
     
-    private func cleanupViewModels() {
-        chatViewModels = chatViewModels.filter { $0.value.value != nil }
-    }
-    
-    // Update the setChatViewModel method to store in dictionary
+    // This method is maintained for backward compatibility, but now just a no-op
     func setChatViewModel(_ viewModel: ChatViewModel) {
-        let id = UUID()
-        chatViewModels[id] = WeakRef(viewModel)
-        cleanupViewModels() // Clean up any nil references while we're here
+        // No need to do anything since we use the shared instance
     }
     
-    // Helper method to notify all view models
+    // Helper method to notify the view model
     public func notifyAllViewModels(_ message: String) {
-        cleanupViewModels() // Clean up before notifying
-        for weakViewModel in chatViewModels.values {
-            if let viewModel = weakViewModel.value {
-                Task { @MainActor in
-                    viewModel.handleMessage(message)
-                }
-            }
+        Task { @MainActor in
+            chatViewModel.handleMessage(message)
         }
         // Also call the general callback if set
         onMessageUpdate?(message)
@@ -663,15 +639,17 @@ final class ChatService {
                 
                 
                 if status == "completed", let data = data {
+                    print("🔍 DEBUG: Firestore message task completed, data: \(data.keys)")
                     
                     // Update loading indicator based on listener status
                     // This will automatically hide if no listeners are active
                     Task { @MainActor in
-                        self.chatViewModels.values.forEach { $0.value?.updateLoadingIndicator() }
+                        self.chatViewModel.updateLoadingIndicator()
                     }
                     
                     // Check for response field, which contains the message content
                     if let response = data["response"] as? String {
+                        print("🔍 DEBUG: Received response from Firestore: \(response.prefix(30))...")
                         
                         // Try to parse the response as JSON first
                         if let responseData = response.data(using: .utf8),
@@ -691,6 +669,7 @@ final class ChatService {
                                 self.setupChecklistTaskListener(taskId: checklistTaskId)
                             }
                         } else {
+                            print("🔍 DEBUG: About to call notifyAllViewModels with raw response")
                             // If not JSON, treat the entire response as the message
                             Task { @MainActor in
                                 self.notifyAllViewModels(response)
@@ -704,7 +683,7 @@ final class ChatService {
                     // Update loading indicator based on listener status
                     // This will automatically hide if no listeners are active
                     Task { @MainActor in
-                        self.chatViewModels.values.forEach { $0.value?.updateLoadingIndicator() }
+                        self.chatViewModel.updateLoadingIndicator()
                     }
                     
                     // If we have error details, show them to the user
@@ -725,7 +704,7 @@ final class ChatService {
                 
                 // Update the loading indicator since we just set up a listener
                 Task { @MainActor in
-                    self.chatViewModels.values.forEach { $0.value?.updateLoadingIndicator() }
+                    self.chatViewModel.updateLoadingIndicator()
                 }
             }
         }
@@ -748,7 +727,7 @@ final class ChatService {
                 if status == "completed", let data = data {
                     // Update loading indicator based on listener status
                     Task { @MainActor in
-                        self.chatViewModels.values.forEach { $0.value?.updateLoadingIndicator() }
+                        self.chatViewModel.updateLoadingIndicator()
                     }
                     
                     // First check for a direct response field
@@ -778,19 +757,6 @@ final class ChatService {
                                 Task { @MainActor in
                                     // Save the checklists
                                     self.saveOrAppendChecklists(checklists)
-                                    /*
-                                    // Send a confirmation message to the chat
-                                    self.notifyAllViewModels("I've updated your checklist.")
-                                    
-                                    // Notify that a new checklist is available
-                                    if let clientTime = data["client_time"] as? String,
-                                       let date = ISO8601DateFormatter().date(from: clientTime) {
-                                        NotificationCenter.default.post(
-                                            name: Notification.Name("NewChecklistAvailable"),
-                                            object: date
-                                        )
-                                    }
-                                     */
                                 }
                             }
                         }
@@ -798,7 +764,7 @@ final class ChatService {
                 } else if status == "failed", let data = data {
                     // Update loading indicator based on listener status
                     Task { @MainActor in
-                        self.chatViewModels.values.forEach { $0.value?.updateLoadingIndicator() }
+                        self.chatViewModel.updateLoadingIndicator()
                     }
                     
                     // If we have error details, show them to the user
@@ -815,7 +781,7 @@ final class ChatService {
                 
                 // Update the loading indicator since we just set up a listener
                 Task { @MainActor in
-                    self.chatViewModels.values.forEach { $0.value?.updateLoadingIndicator() }
+                    self.chatViewModel.updateLoadingIndicator()
                 }
             }
         }
@@ -996,6 +962,8 @@ final class ChatService {
     /// This ensures messages appear properly in the chat interface and are persisted in Core Data
     @MainActor
     private func addAssistantMessage(_ message: String) {
+        print("🔍 DEBUG: addAssistantMessage called with: \(message.prefix(30))...")
+        
         let context = persistenceService.viewContext
         
         // Check if the message is a JSON string and extract just the message content
@@ -1028,6 +996,7 @@ final class ChatService {
                 
                 // Notify that a message was added
                 DispatchQueue.main.async {
+                    print("🔍 DEBUG: Posting ChatMessageAdded notification")
                     NotificationCenter.default.post(
                         name: Notification.Name("ChatMessageAdded"),
                         object: nil,
@@ -1044,6 +1013,7 @@ final class ChatService {
                 
                 // Notify that a message was added
                 DispatchQueue.main.async {
+                    print("🔍 DEBUG: Posting ChatMessageAdded notification (new history)")
                     NotificationCenter.default.post(
                         name: Notification.Name("ChatMessageAdded"),
                         object: nil,
@@ -1152,6 +1122,9 @@ final class ChatService {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: requestData) else {
             throw ChatServiceError.invalidRequest
         }
+        
+        // Print the size of the checkin data being sent
+        print("📊 CHECKIN DATA SIZE: \(jsonData.count) bytes")
         
         // Create the request
         let url = URL(string: "\(serverBaseURL)/chat/checkin")!

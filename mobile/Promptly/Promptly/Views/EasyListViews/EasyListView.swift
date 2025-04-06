@@ -380,7 +380,7 @@ struct ListContent: View {
         
         // Scroll immediately with a short animation
         DispatchQueue.main.async {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(.easeOut(duration: 0.2)) {
                 // Try scrolling to the test element at the bottom of the list
                 proxy.scrollTo("newItemRow", anchor: .top)
             }
@@ -435,6 +435,12 @@ struct ListContent: View {
                         handleMoveItems(from: from, to: to)
                     }
                     .id("items-\(viewModel.date.timeIntervalSince1970)-\(viewModel.items.count)")
+                    
+                    // Add spacer at bottom of list for better scrolling
+                    Color.clear.frame(height: 100)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets())
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
@@ -444,7 +450,6 @@ struct ListContent: View {
                 .animation(.easeInOut(duration: 0.2), value: viewModel.items.count)
                 .environment(\.defaultMinListRowHeight, 0) // Minimize row height calculations
                 .onChange(of: isNewItemFocused) { oldValue, newValue in
-                    print("NewItemRow focus changed: \(oldValue) -> \(newValue)")
                     // Only handle focus management
                     if newValue && !viewModel.isItemLimitReached {
                         focusManager.requestFocus(for: .easyList)

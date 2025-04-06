@@ -35,6 +35,9 @@ struct ItemDetailsView: View {
     
     // Function to remove all focus
     private func removeAllFocus() {
+        // Only proceed if no focus removal is in progress
+        guard focusRemovalState == nil else { return }
+        
         focusRemovalState = .saving
         
         // Phase 1: Save all edits
@@ -42,16 +45,22 @@ struct ItemDetailsView: View {
             saveTitle()
         }
         
-        // Phase 2: Clear focus states
+        // Phase 2: Update state and clear focus
+        focusRemovalState = .clearingFocus
+        
+        // Clear focus states
         focusedSubitemId = nil
         isTitleFieldFocused = false
         editingSubitemId = nil
         isEditingTitle = false
         isSubitemFieldFocused = false
         
-        // Phase 3: Reset removal state
-        DispatchQueue.main.async {
-            focusRemovalState = nil
+        // Phase 3: Set to completed, then reset after a delay
+        focusRemovalState = .completed
+        
+        // Reset state after a short delay to allow UI to sync up
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.focusRemovalState = nil
         }
     }
     
@@ -242,7 +251,9 @@ struct ItemDetailsView: View {
                         name: NSNotification.Name("ScrollToNewSubitemRow"),
                         object: nil
                     )
-                    removeAllFocus()
+                    if !isSubitemFieldFocused {
+                        removeAllFocus()
+                    }
                     
                     // Then set focus after a short delay to ensure view is visible
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -467,7 +478,7 @@ struct ItemDetailsView: View {
                                 .listRowInsets(EdgeInsets())
                         }
                         
-                        Color.clear.frame(height: 44)
+                        Color.clear.frame(height: 100)
                             .listRowBackground(Color.clear)
                             .listRowInsets(EdgeInsets())
                             .listRowSeparator(.hidden)

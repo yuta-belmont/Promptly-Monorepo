@@ -12,9 +12,15 @@ enum AppTheme: String, CaseIterable, Identifiable {
     case lava = "Lava"
     case sunshine = "Sunshine"
     case bubblegum = "Bubblegum"
-    case starryNight = "Starry"
-    case diamond = "Crystaline"
     case sunrise = "Sunrise"
+    case roseGold = "RoseGold"
+    case emerald = "Emerald"
+    case diamond = "Crystaline"
+    case starryNight = "Starry"
+    case vibrant = "Vibrant"
+    case hallucination = "Daydream"
+    case nightmare = "Nightmare"
+    case hyperVibrant = "HyperVibrant"
     
     var id: String { self.rawValue }
     
@@ -22,6 +28,18 @@ enum AppTheme: String, CaseIterable, Identifiable {
     @ViewBuilder
     func backgroundView() -> some View {
         switch self {
+        case .nightmare:
+            Nightmare()
+        case .hallucination:
+            Hallucination()
+        case .hyperVibrant:
+            HyperVibrant()
+        case .roseGold:
+            RoseGold()
+        case .vibrant:
+            GradientBackground()
+        case .emerald:
+            Emerald()
         case .mist:
             Mist()
         case .sunshine:
@@ -53,6 +71,158 @@ enum AppTheme: String, CaseIterable, Identifiable {
     @ViewBuilder
     func thumbnailView() -> some View {
         switch self {
+        case .nightmare:
+            RoundedRectangle(cornerRadius: 8)
+                .fill(LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(white: 0.05),  // Near black
+                        Color(white: 0.1),   // Very dark gray
+                        Color(white: 0.03)   // Even darker 
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ))
+                .overlay(
+                    // Eerie red glow
+                    RadialGradient(
+                        gradient: Gradient(colors: [
+                            Color(red: 0.4, green: 0.0, blue: 0.0).opacity(0.2),  // Deep red glow
+                            Color.clear
+                        ]),
+                        center: .init(x: 0.5, y: 0.5),
+                        startRadius: 0,
+                        endRadius: 30
+                    )
+                    .blendMode(.screen)
+                )
+        case .hallucination:
+            RoundedRectangle(cornerRadius: 8)
+                .fill(LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(white: 0.8).opacity(0.92).blended(with: Color(red: 0.0, green: 0.85, blue: 1.0).opacity(0.15)),    // Hint of cyan (slightly stronger)
+                        Color(white: 0.3).opacity(0.92).blended(with: Color(red: 0.2, green: 0.0, blue: 1.0).opacity(0.15)),     // Hint of blue (slightly stronger)
+                        Color(white: 0.7).opacity(0.92).blended(with: Color(red: 0.95, green: 0.0, blue: 1.0).opacity(0.15)),    // Hint of magenta (slightly stronger)
+                        Color(white: 0.5).opacity(0.92).blended(with: Color(red: 1.0, green: 0.2, blue: 0.0).opacity(0.15)),     // Hint of orange-red (slightly stronger)
+                        Color(white: 0.9).opacity(0.92).blended(with: Color(red: 1.0, green: 0.9, blue: 0.0).opacity(0.15))      // Hint of yellow (slightly stronger)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ))
+                .overlay(
+                    // Subtle highlight to mimic the effect in the actual background
+                    RadialGradient(
+                        gradient: Gradient(colors: [
+                            Color.white.opacity(0.3),
+                            Color.clear
+                        ]),
+                        center: .init(x: 0.3, y: 0.3),
+                        startRadius: 0,
+                        endRadius: 30
+                    )
+                    .blendMode(.screen)
+                )
+        case .hyperVibrant:
+            RoundedRectangle(cornerRadius: 8)
+                .fill(LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 0.0, green: 0.85, blue: 1.0),    // Bright cyan in top-left
+                        Color(red: 0.2, green: 0.0, blue: 1.0),     // Electric blue
+                        Color(red: 0.95, green: 0.0, blue: 1.0),    // Hot pink/magenta
+                        Color(red: 1.0, green: 0.2, blue: 0.0),     // Vibrant red-orange
+                        Color(red: 1.0, green: 0.9, blue: 0.0)      // Electric yellow in bottom-right
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ))
+                .overlay(
+                    // Pulsing glow center
+                    RadialGradient(
+                        gradient: Gradient(colors: [
+                            Color.white.opacity(0.4),
+                            Color.white.opacity(0.1),
+                            Color.clear
+                        ]),
+                        center: .init(x: 0.5, y: 0.5),
+                        startRadius: 0,
+                        endRadius: 40
+                    )
+                    .blendMode(.overlay)
+                )
+        case .roseGold:
+            RoundedRectangle(cornerRadius: 8)
+                .fill(LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 0.85, green: 0.65, blue: 0.65),  // Pale rose in top-left
+                        Color(red: 0.93, green: 0.75, blue: 0.65),  // Light rose gold
+                        Color(red: 0.75, green: 0.55, blue: 0.45),  // Deeper rose gold
+                        Color(red: 0.60, green: 0.40, blue: 0.35)   // Burnished copper in bottom-right
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ))
+                .overlay(
+                    // Subtle golden gleam
+                    RadialGradient(
+                        gradient: Gradient(colors: [
+                            Color(red: 1.0, green: 0.95, blue: 0.8).opacity(0.25),  // Gold tint
+                            Color.clear
+                        ]),
+                        center: .init(x: 0.25, y: 0.25),
+                        startRadius: 0,
+                        endRadius: 50
+                    )
+                    .blendMode(.screen)
+                )
+        case .vibrant:
+            RoundedRectangle(cornerRadius: 8)
+                .fill(LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 0.2, green: 0.4, blue: 0.8),    // Deep blue in top-left
+                        Color(red: 0.5, green: 0.3, blue: 0.8),    // Purple in middle-top
+                        Color(red: 0.8, green: 0.2, blue: 0.6),    // Magenta in middle
+                        Color(red: 0.9, green: 0.3, blue: 0.2),    // Coral in middle-bottom
+                        Color(red: 1.0, green: 0.6, blue: 0.1)     // Gold in bottom-right
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ))
+                .overlay(
+                    // Add subtle highlight as in the actual background
+                    RadialGradient(
+                        gradient: Gradient(colors: [
+                            Color.white.opacity(0.2),
+                            Color.clear
+                        ]),
+                        center: .init(x: 0.3, y: 0.3),
+                        startRadius: 0,
+                        endRadius: 50
+                    )
+                    .blendMode(.screen)
+                )
+        case .emerald:
+            RoundedRectangle(cornerRadius: 8)
+                .fill(LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 0.02, green: 0.18, blue: 0.12),  // Darkest at top
+                        Color(red: 0.03, green: 0.25, blue: 0.18),  // Medium in middle
+                        Color(red: 0.05, green: 0.35, blue: 0.25)   // Lightest at bottom
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                ))
+                .overlay(
+                    // Subtle shine effect
+                    RadialGradient(
+                        gradient: Gradient(colors: [
+                            Color.white.opacity(0.25),
+                            Color.clear
+                        ]),
+                        center: .init(x: 0.3, y: 0.7),
+                        startRadius: 5,
+                        endRadius: 40
+                    )
+                    .blendMode(.softLight)
+                )
         case .mist:
             RoundedRectangle(cornerRadius: 8)
                 .fill(LinearGradient(

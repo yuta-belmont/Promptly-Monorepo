@@ -4,6 +4,11 @@ import Firebase
 
 @MainActor
 final class ChatViewModel: ObservableObject {
+    // Add static shared instance
+    static let shared = ChatViewModel()
+    
+    let id = UUID()
+    
     @Published var messages: [ChatMessage] = []
     @Published var userInput: String = ""
     @Published var isLoading: Bool = false
@@ -38,7 +43,8 @@ final class ChatViewModel: ObservableObject {
         return unreadCounts["main"] ?? 0
     }
     
-    init() {
+    // Allow private init to enforce singleton pattern
+    private init() {
         self.context = ChatPersistenceService.shared.viewContext
         
         // Set this view model on the chat service for callbacks
@@ -128,7 +134,6 @@ final class ChatViewModel: ObservableObject {
     @objc private func handleChatMessageAdded(_ notification: Notification) {
         if let role = notification.userInfo?["role"] as? String,
            role == MessageRoles.assistant {  // Updated to use string constant
-            
             // Always increment unread count for assistant messages when chat is not expanded
             if !isExpanded {
                 incrementUnreadCount()
@@ -154,8 +159,7 @@ final class ChatViewModel: ObservableObject {
         }
     }
     
-    private func addMessageAndNotify(_ message: ChatMessage) async {
-        // Load the main chat history
+    private func addMessageAndNotify(_ message: ChatMessage) async {        // Load the main chat history
         if let mainHistory = await persistenceService.loadMainChatHistory() {
             
             // Ensure message is in the same context as the history
@@ -433,6 +437,7 @@ final class ChatViewModel: ObservableObject {
     
     // Add method to increment unread count
     func incrementUnreadCount() {
+        
         DispatchQueue.main.async {
             self.unreadCounts["main"] = (self.unreadCounts["main"] ?? 0) + 1
             // Save the updated counts
@@ -451,6 +456,7 @@ final class ChatViewModel: ObservableObject {
     
     // Update the existing message handling to increment unread count
     private func handleNewMessage(_ message: ChatMessage) {
+        
         DispatchQueue.main.async {
             if message.role == MessageRoles.assistant { // Updated to use string constant
                 self.incrementUnreadCount()
@@ -522,6 +528,8 @@ final class ChatViewModel: ObservableObject {
     // Method to handle messages from ChatService
     @MainActor
     func handleMessage(_ message: String) {
+        print("🔍 DEBUG: handleMessage called with: \(message.prefix(20))...")
+        
         // Create a new message entity using the proper ChatMessage.create method
         let chatMessage = ChatMessage.create(
             in: context,
@@ -530,6 +538,7 @@ final class ChatViewModel: ObservableObject {
         )
         
         Task {
+            print("🔍 DEBUG: About to call addMessageAndNotify from handleMessage")
             await addMessageAndNotify(chatMessage)
         }
     }
