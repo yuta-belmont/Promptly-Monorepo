@@ -19,8 +19,9 @@ enum AppTheme: String, CaseIterable, Identifiable {
     case starryNight = "Starry"
     case vibrant = "Vibrant"
     case hallucination = "Daydream"
-    case nightmare = "Nightmare"
     case hyperVibrant = "HyperVibrant"
+    case nightmare = "Dusk"
+    case theEnd = "The End"
     
     var id: String { self.rawValue }
     
@@ -28,6 +29,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
     @ViewBuilder
     func backgroundView() -> some View {
         switch self {
+        case .theEnd:
+            TheEnd()
         case .nightmare:
             Nightmare()
         case .hallucination:
@@ -71,6 +74,9 @@ enum AppTheme: String, CaseIterable, Identifiable {
     @ViewBuilder
     func thumbnailView() -> some View {
         switch self {
+        case .theEnd:
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(.black))
         case .nightmare:
             RoundedRectangle(cornerRadius: 8)
                 .fill(LinearGradient(

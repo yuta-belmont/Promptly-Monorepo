@@ -1,5 +1,17 @@
 import SwiftUI
 
+// Define a clear editing state enum
+enum EditingState: Equatable {
+    case none
+    case title
+    case newSubitem
+    case existingSubitem(UUID)
+    
+    var isFocused: Bool {
+        self != .none
+    }
+}
+
 struct ItemDetailsView: View {
     @Binding var isPresented: Bool
     @StateObject private var viewModel: ItemDetailsViewModel
@@ -12,7 +24,7 @@ struct ItemDetailsView: View {
     @State private var isEditingTitle = false
     @State private var editedTitleText = ""
     @FocusState private var isTitleFieldFocused: Bool
-    @State private var editingSubitemId: UUID?
+    @State private var editingSubitemId: UUID? //we use this as the initial variable to set editing when we first tap a subitem. This is important because subitems must transition from text to texteditors.
     @FocusState private var focusedSubitemId: UUID?
     @State private var borderOpacity: Double = 0
     
@@ -28,40 +40,49 @@ struct ItemDetailsView: View {
     @State private var draggedItem: Models.SubItem?
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
+    // Consolidated focus management
+    @State private var editingState: EditingState = .none
+    @FocusState private var titleFocused: Bool
+    @FocusState private var newSubitemFocused: Bool
+    
     // Computed property to check if any field is focused
     private var isAnyFieldFocused: Bool {
         isSubitemFieldFocused || isTitleFieldFocused || focusedSubitemId != nil
     }
     
-    // Function to remove all focus
+    // Function to synchronize focus state with editing state
+    private func updateFocusState() {
+        // First update the focus state
+        switch editingState {
+        case .none:
+            titleFocused = false
+            newSubitemFocused = false
+            focusedSubitemId = nil
+        case .title:
+            titleFocused = true
+            newSubitemFocused = false
+            focusedSubitemId = nil
+        case .newSubitem:
+            titleFocused = false
+            newSubitemFocused = true
+            focusedSubitemId = nil
+        case .existingSubitem(let id):
+            titleFocused = false
+            newSubitemFocused = false
+            focusedSubitemId = id
+        }
+    }
+    
+    // Robust focus removal function
     private func removeAllFocus() {
-        // Only proceed if no focus removal is in progress
-        guard focusRemovalState == nil else { return }
-        
-        focusRemovalState = .saving
-        
-        // Phase 1: Save all edits
-        if isEditingTitle {
+        // Save any ongoing edits
+        if case .title = editingState {
             saveTitle()
         }
         
-        // Phase 2: Update state and clear focus
-        focusRemovalState = .clearingFocus
-        
-        // Clear focus states
-        focusedSubitemId = nil
-        isTitleFieldFocused = false
-        editingSubitemId = nil
-        isEditingTitle = false
-        isSubitemFieldFocused = false
-        
-        // Phase 3: Set to completed, then reset after a delay
-        focusRemovalState = .completed
-        
-        // Reset state after a short delay to allow UI to sync up
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            self.focusRemovalState = nil
-        }
+        // Clear state first, then focus will follow
+        editingState = .none
+        updateFocusState()
     }
     
     @State private var dragOffset = CGSize.zero
@@ -133,7 +154,7 @@ struct ItemDetailsView: View {
         }
         .onDisappear {
             // Save any ongoing edits
-            if isEditingTitle {
+            if case .title = editingState {
                 saveTitle()
             }
             
@@ -149,12 +170,24 @@ struct ItemDetailsView: View {
                 object: viewModel.item.id
             )
         }
-        .onChange(of: isTitleFieldFocused) { _, newValue in
-            if !newValue && isEditingTitle {
+        // Monitor focus state changes
+        .onChange(of: titleFocused) { _, isFocused in
+            if !isFocused, case .title = editingState {
                 saveTitle()
+                editingState = .none
             }
         }
-        .preference(key: IsEditingPreferenceKey.self, value: isAnyFieldFocused)
+        .onChange(of: newSubitemFocused) { _, isFocused in
+            if !isFocused, case .newSubitem = editingState {
+                editingState = .none
+            }
+        }
+        .onChange(of: focusedSubitemId) { _, focusedId in
+            if focusedId == nil, case .existingSubitem = editingState {
+                editingState = .none
+            }
+        }
+        .preference(key: IsEditingPreferenceKey.self, value: editingState.isFocused)
     }
     
     private var headerView: some View {
@@ -169,7 +202,6 @@ struct ItemDetailsView: View {
                 .animation(.easeInOut, value: viewModel.item.isCompleted)
             
             // Action buttons
-
             actionButtons
             
             // Menu and close buttons
@@ -251,13 +283,18 @@ struct ItemDetailsView: View {
                         name: NSNotification.Name("ScrollToNewSubitemRow"),
                         object: nil
                     )
-                    if !isSubitemFieldFocused {
+                    
+                    // First clear any current focus
+                    if editingState != .newSubitem {
                         removeAllFocus()
                     }
                     
-                    // Then set focus after a short delay to ensure view is visible
+                    // Then set new focus state
+                    editingState = .newSubitem
+                    
+                    // Update focus after a short delay to ensure view is updated
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        isSubitemFieldFocused = true
+                        updateFocusState()
                     }
                 }
             }) {
@@ -305,8 +342,7 @@ struct ItemDetailsView: View {
     
     private var menuAndCloseButtons: some View {
         Group {
-            
-            if isAnyFieldFocused {
+            if editingState.isFocused {
                 // Done button
                 Button(action: {
                     removeAllFocus()
@@ -333,13 +369,14 @@ struct ItemDetailsView: View {
         }
     }
     
-    // Function to start editing title
+    // Start editing title
     private func startEditingTitle() {
         editedTitleText = viewModel.item.title
-        isEditingTitle = true
+        editingState = .title
+        updateFocusState()
     }
     
-    // Function to save title
+    // Save title
     private func saveTitle() {
         if !editedTitleText.isEmpty {
             viewModel.updateTitle(editedTitleText)
@@ -351,7 +388,7 @@ struct ItemDetailsView: View {
     // Title view component
     private var titleView: some View {
         ZStack {
-            if isEditingTitle {
+            if case .title = editingState {
                 // Editable title field
                 TextEditor(text: $editedTitleText)
                     .font(.title3)
@@ -360,7 +397,7 @@ struct ItemDetailsView: View {
                     .background(Color.clear)
                     .padding(.horizontal, 8)
                     .frame(maxHeight: 96)
-                    .focused($isTitleFieldFocused)
+                    .focused($titleFocused)
                     .onChange(of: editedTitleText) {_, newValue in
                         // Check for Enter key
                         if newValue.contains("\n") {
@@ -369,12 +406,13 @@ struct ItemDetailsView: View {
                             
                             // Save the title
                             saveTitle()
+                            removeAllFocus()
                         }
                     }
                     .onAppear {
                         // Set focus in the next run loop
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-                            isTitleFieldFocused = true
+                            titleFocused = true
                         }
                     }
                     .overlay(
@@ -412,14 +450,19 @@ struct ItemDetailsView: View {
                         if viewModel.item.subItems.count < 50 {
                             NewSubItemRow(
                                 text: $newSubitemText,
-                                isFocused: $isSubitemFieldFocused,
+                                isFocused: $newSubitemFocused,
                                 onSubmit: { keepFocus in
                                     if !newSubitemText.isEmpty {
                                         viewModel.addSubitem(newSubitemText)
                                         newSubitemText = ""
                                         
                                         // After adding a subitem, maintain focus and keep the input field ready for more entry
-                                        isSubitemFieldFocused = keepFocus
+                                        if keepFocus {
+                                            editingState = .newSubitem
+                                            updateFocusState()
+                                        } else {
+                                            removeAllFocus()
+                                        }
                                         
                                         // Scroll to top to keep the input field visible
                                         DispatchQueue.main.async {
@@ -429,7 +472,7 @@ struct ItemDetailsView: View {
                                         }
                                     } else {
                                         // If text is empty, just lose focus
-                                        isSubitemFieldFocused = false
+                                        removeAllFocus()
                                     }
                                 },
                                 viewModel: viewModel
@@ -451,7 +494,7 @@ struct ItemDetailsView: View {
                                 onTap: {
                                     startEditingSubitem(subitem)
                                 },
-                                editingSubitemId: $editingSubitemId,
+                                editingState: editingState,
                                 focusedSubitemId: $focusedSubitemId
                             )
                             .id(subitem.id)
@@ -488,7 +531,7 @@ struct ItemDetailsView: View {
                     .scrollContentBackground(.hidden)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
-                        if isSubitemFieldFocused {
+                        if case .newSubitem = editingState {
                             withAnimation(.easeOut(duration: 0.2)) {
                                 proxy.scrollTo("newSubItemRow", anchor: .top)
                             }
@@ -503,7 +546,7 @@ struct ItemDetailsView: View {
                             }
                         }
                     }
-                    .onChange(of: isSubitemFieldFocused) { oldValue, newValue in
+                    .onChange(of: newSubitemFocused) { oldValue, newValue in
                         if newValue {
                             // When field gets focus, scroll to it
                             DispatchQueue.main.async {
@@ -645,12 +688,8 @@ extension ItemDetailsView {
     
     // Subitem editing methods
     private func startEditingSubitem(_ subitem: Models.SubItem) {
-        editingSubitemId = subitem.id
-        
-        // Pre-load editing state before setting focus
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-            self.focusedSubitemId = subitem.id
-        }
+        editingState = .existingSubitem(subitem.id)
+        updateFocusState()
     }
 }
 
@@ -708,7 +747,7 @@ private struct SubItemView: View {
     let viewModel: ItemDetailsViewModel
     let onToggle: () -> Void
     let onTap: () -> Void
-    @Binding var editingSubitemId: UUID?
+    let editingState: EditingState
     @FocusState.Binding var focusedSubitemId: UUID?
     @State private var editedText: String
     @State private var isPreloading = false
@@ -722,15 +761,23 @@ private struct SubItemView: View {
          viewModel: ItemDetailsViewModel,
          onToggle: @escaping () -> Void,
          onTap: @escaping () -> Void,
-         editingSubitemId: Binding<UUID?>,
+         editingState: EditingState,
          focusedSubitemId: FocusState<UUID?>.Binding) {
         self.subitem = subitem
         self.viewModel = viewModel
         self.onToggle = onToggle
         self.onTap = onTap
-        self._editingSubitemId = editingSubitemId
+        self.editingState = editingState
         self._focusedSubitemId = focusedSubitemId
         self._editedText = State(initialValue: subitem.title)
+    }
+    
+    // Helper to determine if this specific subitem is being edited
+    private var isEditing: Bool {
+        if case .existingSubitem(let id) = editingState, id == subitem.id {
+            return true
+        }
+        return false
     }
     
     var body: some View {
@@ -769,7 +816,7 @@ private struct SubItemView: View {
                 .buttonStyle(.plain)
                 
                 ZStack {
-                    if editingSubitemId != subitem.id || isPreloading {
+                    if !isEditing || isPreloading {
                         Text(subitem.title)
                             .font(.body)
                             .foregroundColor(.white)
@@ -788,7 +835,7 @@ private struct SubItemView: View {
                             }
                     }
                     
-                    if editingSubitemId == subitem.id || isPreloading {
+                    if isEditing || isPreloading {
                         TextEditor(text: $editedText)
                             .font(.body)
                             .foregroundColor(.white)
@@ -801,27 +848,16 @@ private struct SubItemView: View {
                                 if newValue.contains("\n") {
                                     editedText = oldValue
                                     // Save changes when Enter is pressed (since this doesn't destroy the view).
-                                    if editedText.isEmpty {
-                                        viewModel.deleteSubitem(subitem.id)
-                                    }
+                                    saveChanges()
                                     focusedSubitemId = nil
                                 }
                             }
                             .onDisappear {
-                                print("📝 TextEditor disappearing for '\(subitem.title)' with text '\(editedText)'")
-                                if editedText.isEmpty {
-                                    print("   ❌ Deleting empty subitem")
-                                    viewModel.deleteSubitem(subitem.id)
-                                } else if editedText != subitem.title {
-                                    print("   ✏️ Updating subitem text")
-                                    viewModel.updateSubitemTitle(subitem.id, newTitle: editedText)
-                                } else {
-                                    print("   ⏭️ No changes to save")
-                                }
+                                saveChanges()
                             }
                             .opacity(isPreloading ? 0 : 1)
                             .onChange(of: isPreloading) { oldValue, newValue in
-                                if oldValue == true && newValue == false && editingSubitemId == subitem.id {
+                                if oldValue == true && newValue == false && isEditing {
                                     focusedSubitemId = subitem.id
                                 }
                             }
@@ -846,7 +882,7 @@ private struct SubItemView: View {
                     // 1. The gesture is primarily horizontal (horizontal movement is at least 3x the vertical movement)
                     // 2. Has moved at least 25 points
                     if (horizontalAmount > verticalAmount * 2) && (translation < -50) {
-                        guard editingSubitemId != subitem.id else { return }
+                        guard !isEditing else { return }
                         // Only allow left swipe (negative values)
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                             // Add some resistance to the drag
@@ -861,7 +897,7 @@ private struct SubItemView: View {
                 }
                 .onEnded { value in
                     // Don't allow dragging if this subitem is being edited
-                    guard editingSubitemId != subitem.id else { return }
+                    guard !isEditing else { return }
                     
                     let translation = value.translation.width
                     let horizontalAmount = abs(value.translation.width)
@@ -872,7 +908,7 @@ private struct SubItemView: View {
                     // 2. Moved enough distance (in the negative direction)
                     // 3. Has sufficient velocity or distance
                     if (horizontalAmount > verticalAmount * 2) && (translation < -100) {
-                        guard editingSubitemId != subitem.id else { return }
+                        guard !isEditing else { return }
                         // Determine if we should open or close based on velocity and position
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                             offset = -deleteWidth
@@ -890,6 +926,15 @@ private struct SubItemView: View {
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
         .listRowInsets(EdgeInsets())
+    }
+    
+    // Helper to save changes to a subitem
+    private func saveChanges() {
+        if editedText.isEmpty {
+            viewModel.deleteSubitem(subitem.id)
+        } else if editedText != subitem.title {
+            viewModel.updateSubitemTitle(subitem.id, newTitle: editedText)
+        }
     }
 }
 
@@ -1022,3 +1067,4 @@ private struct SubitemDeleteConfirmationView: View {
         }
     }
 } 
+

@@ -314,6 +314,7 @@ struct NewItemRow: View {
     let isFocused: FocusState<Bool>.Binding
     let onSubmit: () -> Void
     @Binding var isListEmpty: Bool
+    @State private var previousText: String = ""
     
     var body: some View {
         HStack {
@@ -322,20 +323,42 @@ struct NewItemRow: View {
                 .font(.system(size: 22))
                 .zIndex(2)
             
-            CustomTextField(
-                text: $text,
-                textColor: isFocused.wrappedValue ? .white : .gray,
-                placeholder: "New item",
-                onReturn: {
-                    if !text.isEmpty {
-                        onSubmit()
-                    } else {
-                        print("NewItemRow onSubmit: Setting local focus to false (empty text)")
-                        isFocused.wrappedValue = false
-                    }
+            ZStack(alignment: .leading) {
+                // Placeholder text
+                if text.isEmpty {
+                    Text("New item")
+                        .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0.7))
+                        .padding(.leading, 4)
+                        .padding(.top, 4)
+                        .allowsHitTesting(false)
                 }
-            )
-            .focused(isFocused)
+                
+                TextEditor(text: $text)
+                    .foregroundColor(isFocused.wrappedValue ? .white : .gray)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.clear)
+                    .focused(isFocused)
+                    .frame(maxHeight: 80)
+                    .onChange(of: text) { oldValue, newValue in
+                        // Check if user pressed return (added a newline)
+                        if newValue.contains("\n") {
+                            // Remove the newline character
+                            if oldValue.count == 0 {
+                                text = newValue.replacingOccurrences(of: "\n", with: " ")
+                            } else {
+                                text = oldValue
+                            }
+                            
+                            // Submit if text is not empty
+                            if !text.isEmpty {
+                                onSubmit()
+                            } else {
+                                isFocused.wrappedValue = false
+                            }
+                        }
+                        previousText = text
+                    }
+            }
             .frame(width: UIScreen.main.bounds.width * 0.80, alignment: .topTrailing)
             .clipped(antialiased: true)
             .padding(.leading, 4)
@@ -833,6 +856,7 @@ struct EasyListView: View {
                     isEditing = false
                     isNewItemFocused = false
                     isNotesFocused = false
+                    focusManager.isEasyListFocused = false
                     
                     // Toggle notes view with flip animation
                     withAnimation(.easeInOut(duration: 0.4)) {

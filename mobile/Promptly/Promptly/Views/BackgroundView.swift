@@ -102,6 +102,16 @@ struct DiamondField: View {
     }
 }
 
+struct TheEnd: View {
+    var body: some View {
+        OptimizedBackground {
+            ZStack {
+                Color(.black)
+            }
+        }
+    }
+}
+
 struct Dark: View {
     var body: some View {
         OptimizedBackground {
