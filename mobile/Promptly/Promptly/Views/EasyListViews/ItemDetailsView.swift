@@ -239,40 +239,56 @@ struct ItemDetailsView: View {
     
     private var actionButtons: some View {
         Group {
-                // Ellipsis menu button
+            if viewModel.canUndo {
+                // Undo button
                 Button(action: {
-                    isGroupSectionExpanded = false
-                    showingPopover = true
+                    feedbackGenerator.impactOccurred()
+                    viewModel.undo()
                 }) {
-                    Image(systemName: "ellipsis")
-                        .rotationEffect(.degrees(90))
+                    Image(systemName: "arrow.uturn.backward")
                         .foregroundColor(.white.opacity(0.6))
-                        .font(.system(size: 16))
+                        .font(.system(size: 20))
                         .frame(width: 30, height: 30)
                         .contentShape(Rectangle())
                 }
                 .padding(.horizontal, 4)
                 .buttonStyle(.plain)
-                .popover(isPresented: $showingPopover,
-                         attachmentAnchor: .point(.center),
-                         arrowEdge: .top) {
-                    PopoverContentView(
-                        itemId: viewModel.item.id,
-                        itemDate: viewModel.item.date,
-                        itemNotification: viewModel.item.notification,
-                        itemGroupId: viewModel.item.groupId,
-                        isGroupSectionExpanded: $isGroupSectionExpanded,
-                        onNotificationChange: { newNotification in
-                            viewModel.updateNotification(newNotification)
-                        },
-                        onGroupChange: { newGroupId in
-                            viewModel.updateGroup(newGroupId)
-                        },
-                        onDelete: {},
-                        showDeleteOption: false
-                    )
-                    .presentationCompactAdaptation(.none)
-                }
+            }
+            
+            // Ellipsis menu button
+            Button(action: {
+                isGroupSectionExpanded = false
+                showingPopover = true
+            }) {
+                Image(systemName: "ellipsis")
+                    .rotationEffect(.degrees(90))
+                    .foregroundColor(.white.opacity(0.6))
+                    .font(.system(size: 16))
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .padding(.horizontal, 4)
+            .buttonStyle(.plain)
+            .popover(isPresented: $showingPopover,
+                     attachmentAnchor: .point(.center),
+                     arrowEdge: .top) {
+                PopoverContentView(
+                    itemId: viewModel.item.id,
+                    itemDate: viewModel.item.date,
+                    itemNotification: viewModel.item.notification,
+                    itemGroupId: viewModel.item.groupId,
+                    isGroupSectionExpanded: $isGroupSectionExpanded,
+                    onNotificationChange: { newNotification in
+                        viewModel.updateNotification(newNotification)
+                    },
+                    onGroupChange: { newGroupId in
+                        viewModel.updateGroup(newGroupId)
+                    },
+                    onDelete: {},
+                    showDeleteOption: false
+                )
+                .presentationCompactAdaptation(.none)
+            }
             
             // Add button - always show it
             Button(action: {
@@ -701,43 +717,71 @@ private struct NewSubItemRow: View {
     let viewModel: ItemDetailsViewModel
     
     var body: some View {
-        HStack {
+        HStack(alignment: .top) {
             Image(systemName: "circle")
                 .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0))
                 .font(.system(size: 20))
                 .zIndex(2)
+                .padding(.top, 6)
             
-            CustomTextField(
-                text: $text,
-                textColor: isFocused.wrappedValue ? .white : .gray,
-                placeholder: "Add subitem...",
-                onReturn: {
-                    onSubmit(true)
+            ZStack(alignment: .leading) {
+                // Placeholder text
+                if text.isEmpty {
+                    Text("Add subitem...")
+                        .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0.7))
+                        .padding(.leading, 4)
+                        .padding(.top, 4)
+                        .allowsHitTesting(false)
                 }
-            )
-            .focused(isFocused)
-            .frame(width: UIScreen.main.bounds.width * 0.80, alignment: .topTrailing)
-            .clipped(antialiased: true)
-            .padding(.leading, 10)
-            .zIndex(1)
-            .onChange(of: isFocused.wrappedValue) { oldValue, newValue in
-                //if we lose focus, save whatever's in the new subitem text field
-                if !newValue && oldValue && !text.isEmpty {
-                    onSubmit(false)
-                }
+                
+                TextEditor(text: $text)
+                    .foregroundColor(isFocused.wrappedValue ? .white : .gray)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.clear)
+                    .focused(isFocused)
+                    .frame(maxHeight: 80)
+                    .onChange(of: text) { oldValue, newValue in
+                        // Check if user pressed return (added a newline)
+                        if newValue.contains("\n") {
+                            // Remove the newline character
+                            if oldValue.count == 0 {
+                                text = newValue.replacingOccurrences(of: "\n", with: " ")
+                            } else {
+                                text = oldValue
+                            }
+                            
+                            // Submit if text is not empty
+                            if !text.isEmpty {
+                                onSubmit(true)
+                            } else {
+                                isFocused.wrappedValue = false
+                            }
+                        }
+                    }
+                    .onChange(of: isFocused.wrappedValue) { oldValue, newValue in
+                        // When focus is lost, save the subitem if there's text
+                        if !text.isEmpty {
+                            onSubmit(false)
+                        }
+                    }
             }
-            
+            .frame(width: UIScreen.main.bounds.width * 0.80, alignment: .topLeading)
+            .clipped(antialiased: true)
+            .padding(.leading, 4)
+            .zIndex(1)
+            .accessibilityAddTraits(.isKeyboardKey)
         }
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
         .listRowInsets(EdgeInsets())
-        .padding(.vertical, 4)
+        .padding(.vertical, (isFocused.wrappedValue || viewModel.item.subItems.isEmpty) ? 4 : 0)
         .padding(.leading, 16)
-        // Add a minimum height to ensure it's always fully visible
-        .frame(minHeight: 44)
-        // Only hide when not focused AND list is not empty
-        .opacity(isFocused.wrappedValue || viewModel.item.subItems.isEmpty ? 1 : 0)
-        .frame(height: isFocused.wrappedValue || viewModel.item.subItems.isEmpty ? nil : 0)
+        // Only show when focused OR list is empty
+        .opacity((isFocused.wrappedValue || viewModel.item.subItems.isEmpty) ? 1 : 0)
+        // Explicitly set height to 0 when hidden
+        .frame(height: (isFocused.wrappedValue || viewModel.item.subItems.isEmpty) ? nil : 0, alignment: .top)
+        // Hide completely when not visible
+        .accessibility(hidden: !(isFocused.wrappedValue || viewModel.item.subItems.isEmpty))
     }
 }
 
@@ -790,6 +834,8 @@ private struct SubItemView: View {
             
             Button(action: {
                 withAnimation {
+                    offset = 0
+                    isSwiped = false
                     viewModel.deleteSubitem(subitem.id)
                 }
             }) {

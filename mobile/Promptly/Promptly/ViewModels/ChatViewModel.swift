@@ -542,4 +542,64 @@ final class ChatViewModel: ObservableObject {
             await addMessageAndNotify(chatMessage)
         }
     }
+    
+    // Add method to clear chat history
+    @MainActor
+    func clearChatHistory() {
+        // First, remove any existing main chat history
+        let context = self.context
+        let request: NSFetchRequest<ChatHistory> = ChatHistory.fetchRequest()
+        request.predicate = NSPredicate(format: "isMainHistory == %@", NSNumber(value: true))
+        
+        do {
+            let results = try context.fetch(request)
+            for history in results {
+                context.delete(history)
+            }
+            try context.save()
+        } catch {
+            print("Error removing existing main chat history: \(error)")
+        }
+        
+        // Create a new empty chat history
+        let newHistory = ChatHistory.create(in: context, isMainHistory: true)
+        
+        // Save the new empty history
+        persistenceService.saveChatHistory(newHistory)
+        
+        // Update the view model's state
+        self.chatHistory = newHistory
+        self.messages = []
+        
+        // Clear unread counts
+        self.clearUnreadCount()
+    }
+    
+    // Add method for minimalist check-in response
+    @MainActor
+    public func handleOfflineCheckIn(checklist: Models.Checklist) async {
+        // Count total and completed items
+        let totalItems = checklist.items.count
+        let completedItems = checklist.items.filter { $0.isCompleted }.count
+        let completionPercentage = totalItems > 0 ? Int((Double(completedItems) / Double(totalItems)) * 100) : 0
+        
+        // Generate response text based on checklist state
+        let responseText: String
+        if totalItems == 0 {
+            responseText = "No items in checklist."
+        } else if completedItems == totalItems {
+            responseText = "All items completed."
+        } else {
+            responseText = "\(completedItems)/\(totalItems) items completed (\(completionPercentage)%)."
+        }
+        
+        // Create and add the message
+        let message = ChatMessage.create(
+            in: context,
+            role: MessageRoles.assistant,
+            content: responseText
+        )
+        
+        await addMessageAndNotify(message)
+    }
 }

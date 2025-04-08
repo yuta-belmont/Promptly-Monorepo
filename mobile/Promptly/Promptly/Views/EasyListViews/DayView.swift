@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 // Notification names for checklist minimize/expand
 extension Notification.Name {
@@ -79,8 +80,84 @@ struct WaveShape: Shape {
     }
 }
 
+// Add this new view at the top level of the file
+struct CheckInButton: View {
+    @StateObject private var userSettings = UserSettings.shared
+    let currentMinute: Date
+    let currentDate: Date
+    let onCheckIn: () -> Void
+    
+    private var shouldShow: Bool {
+        
+        let calendar = Calendar.current
+        let now = currentMinute
+        
+        // If we've already checked in on the day we're viewing, don't show the button
+        if calendar.isDate(userSettings.lastCheckin, inSameDayAs: currentDate) {
+            return false
+        }
+        
+        // Don't show button if last check-in is ahead of the current day
+        if calendar.compare(userSettings.lastCheckin, to: currentDate, toGranularity: .day) == .orderedDescending {
+            return false
+        }
+        
+        // Only show button for today or yesterday
+        let isToday = calendar.isDate(currentDate, inSameDayAs: now)
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+        let isYesterday = calendar.isDate(currentDate, inSameDayAs: yesterday)
+        
+        if !isToday && !isYesterday {
+            return false
+        }
+        
+        // Get the check-in time for the day we're viewing
+        let checkInTime = userSettings.checkInTime
+        let checkInComponents = calendar.dateComponents([.hour, .minute], from: checkInTime)
+        
+        // Create a date with the viewed day's date but the check-in time
+        let viewedDayCheckInTime = calendar.date(bySettingHour: checkInComponents.hour ?? 0,
+                                               minute: checkInComponents.minute ?? 0,
+                                               second: 0, 
+                                               of: currentDate) ?? currentDate
+        
+        // If we're past the check-in time for the viewed day
+        if now >= viewedDayCheckInTime {
+            // Convert current date to string key
+            let dayKey = userSettings.dateFormatter.string(from: currentDate)
+                        
+            // Check if we're within the expiry time
+            if let expiryTime = userSettings.checkInButtonExpiryTimes[dayKey] {
+                let isWithinExpiry = now <= expiryTime
+                return isWithinExpiry
+            }
+        }
+        
+        return false
+    }
+    
+    var body: some View {
+        Group {
+            if shouldShow {
+                Button(action: onCheckIn) {
+                    Text("check-in")
+                        .font(.caption)
+                        .fontWeight(.regular)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.blue)
+                        .cornerRadius(6)
+                        .shadow(color: Color.black.opacity(0.2), radius: 2, x: 1, y: 1)
+                }
+            }
+        }
+    }
+}
+
 struct DayView: View, Hashable {
     @EnvironmentObject private var focusManager: FocusManager
+    
     @State private var currentDate: Date
     @State private var dragOffset = CGSize.zero
     @State private var rotation = Angle.zero
@@ -90,7 +167,12 @@ struct DayView: View, Hashable {
     @State private var showCheckInButton = true
     @State private var isAnimatingCheckIn = false
     @State private var waveProgress: CGFloat = -0.1 // Start slightly above screen
+    @StateObject private var userSettings = UserSettings.shared
+    @State private var currentMinute = Date()  // Add state for current minute
     
+    // Timer to update current minute
+    let timer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
+
     // Create a StateObject for the EasyListViewModel
     @StateObject private var easyListViewModel: EasyListViewModel
     
@@ -164,11 +246,6 @@ struct DayView: View, Hashable {
     private let selectionFeedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
     private func updateToNewDate(_ newDate: Date) {
-        let oldDateString = DateFormatter.localizedString(from: currentDate, dateStyle: .medium, timeStyle: .short)
-        let newDateString = DateFormatter.localizedString(from: newDate, dateStyle: .medium, timeStyle: .short)
-        
-        let startTime = CFAbsoluteTimeGetCurrent()
-        
         // Do this first to minimize time between UI updates
         easyListViewModel.updateToDate(newDate)
         
@@ -182,8 +259,6 @@ struct DayView: View, Hashable {
                 self.updateWeekDates(for: newDate)
             }
         }
-        
-        let duration = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
     }
     
     // Optimized swipe handling - reduce animation complexity
@@ -293,6 +368,17 @@ struct DayView: View, Hashable {
     
     // Update the handleCheckIn method
     private func handleCheckIn() {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        // Check if last check-in was today or yesterday
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+        let isLastCheckInToday = calendar.isDate(userSettings.lastCheckin, inSameDayAs: now)
+        let isLastCheckInYesterday = calendar.isDate(userSettings.lastCheckin, inSameDayAs: yesterday)
+        
+        // Set lastCheckin to the exact day we're viewing in the DayView
+        userSettings.lastCheckin = currentDate
+        
         // Prepare and trigger haptic feedback
         feedbackGenerator.prepare()
         feedbackGenerator.impactOccurred()
@@ -308,6 +394,19 @@ struct DayView: View, Hashable {
             waveProgress = 1.1 // Move past bottom of screen
         }
         
+        // Update check-in stats
+        if isLastCheckInToday || isLastCheckInYesterday {
+            // Increment streak if last check-in was today or yesterday
+            userSettings.streak += 1
+        } else {
+            // Reset streak if not consecutive
+            userSettings.streak = 1
+        }
+        
+        // Calculate and update check-in points
+        let streakBonus = Int(ceil(Double(userSettings.streak) / 7.0))
+        userSettings.checkinPoints += streakBonus
+        
         // Clean up after animation
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             withAnimation {
@@ -317,14 +416,67 @@ struct DayView: View, Hashable {
             }
         }
         
-        // Get the current checklist data and send to ChatService
-        let checklist = easyListViewModel.getChecklistForCheckin()
-        Task {
-            do {
-                try await _ = ChatService.shared.handleCheckin(checklist: checklist)
-            } catch {
-                print("Error sending checkin: \(error)")
+        // Only proceed with chat-related operations if chat is enabled
+        if userSettings.isChatEnabled {
+            // Get the current checklist data
+            let checklist = easyListViewModel.getChecklistForCheckin()
+            
+            // Try server check-in first
+            Task {
+                do {
+                    let dictChecklist = easyListViewModel.getChecklistDictionaryForCheckin()
+                    try await _ = ChatService.shared.handleCheckin(checklist: dictChecklist)
+                } catch {
+                    // If server check-in fails, fall back to offline processing
+                    await ChatViewModel.shared.handleOfflineCheckIn(checklist: checklist)
+                }
             }
+        }
+    }
+    
+    private func setupExpiryTimeIfNeeded() {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        // Get the check-in time for the day we're viewing
+        let checkInTime = userSettings.checkInTime
+        let checkInComponents = calendar.dateComponents([.hour, .minute], from: checkInTime)
+        
+        // Helper function to set up expiry time for a specific day
+        func setupExpiryTime(for day: Date) {
+            // Convert day to string key
+            let dayKey = userSettings.dateFormatter.string(from: day)
+            
+            // Only set up if we don't have an expiry time for this day
+            guard userSettings.checkInButtonExpiryTimes[dayKey] == nil else {
+                print("[Check-in] Expiry time already set for \(dayKey): \(userSettings.checkInButtonExpiryTimes[dayKey]?.description ?? "nil")")
+                return
+            }
+            
+            // Create a date with the day's date but the check-in time
+            let dayCheckInTime = calendar.date(bySettingHour: checkInComponents.hour ?? 0,
+                                            minute: checkInComponents.minute ?? 0,
+                                            second: 0,
+                                            of: day) ?? day
+            
+            // Set expiry time to 12 hours after check-in time
+            let expiryTime = calendar.date(byAdding: .hour, value: 12, to: dayCheckInTime) ?? dayCheckInTime
+            
+            // Create a new dictionary with the updated expiry time
+            var updatedTimes = userSettings.checkInButtonExpiryTimes
+            updatedTimes[dayKey] = expiryTime
+            
+            // Update using the proper method
+            userSettings.updateExpiryTimes(updatedTimes)
+            print("[Check-in] Set expiry time for \(dayKey) to: \(expiryTime.description)")
+        }
+        
+        // Set up expiry time for today
+        setupExpiryTime(for: now)
+        
+        // Set up expiry time for yesterday
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now) {
+            setupExpiryTime(for: yesterday)
         }
     }
     
@@ -390,19 +542,7 @@ struct DayView: View, Hashable {
                         
                         Spacer()
 
-                        if showCheckInButton {
-                            Button(action: handleCheckIn) {
-                                Text("check-in")
-                                    .font(.caption)
-                                    .fontWeight(.regular)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
-                                    .background(Color.blue)
-                                    .cornerRadius(6)
-                                    .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
-                            }
-                        }
+                        CheckInButton(currentMinute: currentMinute, currentDate: currentDate, onCheckIn: handleCheckIn)
                         
                         if !isToday {
                             Button(action: {
@@ -433,7 +573,7 @@ struct DayView: View, Hashable {
                                 .padding(.vertical, 5)
                                 .background(.ultraThinMaterial)
                                 .cornerRadius(6)
-                                .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+                                .shadow(color: Color.black.opacity(0.2), radius: 2, x: 1, y: 1)
                             }
                         }
 
@@ -629,6 +769,9 @@ struct DayView: View, Hashable {
                     }
                 }
                 .onAppear {
+                    // Set up expiry time if needed (when the check-in button expires)
+                    setupExpiryTimeIfNeeded()
+                    
                     // Prepare all haptic feedback generators
                     feedbackGenerator.prepare()
                     dateHeaderFeedbackGenerator.prepare()
@@ -637,6 +780,34 @@ struct DayView: View, Hashable {
                     // Load data after the view has appeared and layout is complete
                     DispatchQueue.main.async {
                         easyListViewModel.loadData()
+                    }
+                    
+                    let calendar = Calendar.current
+                    let now = Date()
+                    
+                    // Get the check-in time components
+                    let checkInTime = userSettings.checkInTime
+                    let checkInComponents = calendar.dateComponents([.hour, .minute], from: checkInTime)
+                    
+                    // Create a date with today's date but the check-in time
+                    let todayCheckInTime = calendar.date(bySettingHour: checkInComponents.hour ?? 0,
+                                                       minute: checkInComponents.minute ?? 0,
+                                                       second: 0,
+                                                       of: now) ?? now
+                    
+                    // Add 1 second to the check-in time
+                    let triggerTime = calendar.date(byAdding: .second, value: 1, to: todayCheckInTime) ?? todayCheckInTime
+                    
+                    // Calculate delay until trigger time
+                    let delay = triggerTime.timeIntervalSince(now)
+                    
+                    if delay > 0 {
+                        print("[Check-in] Setting timer to trigger in \(delay) seconds")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                            print("\n[Check-in] Timer triggered at \(Date().description)")
+                            currentMinute = Date()
+                            print("[Check-in] Updated currentMinute to: \(currentMinute.description)")
+                        }
                     }
                 }
                 .onDisappear {

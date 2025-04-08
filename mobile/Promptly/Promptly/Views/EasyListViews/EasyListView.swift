@@ -317,11 +317,12 @@ struct NewItemRow: View {
     @State private var previousText: String = ""
     
     var body: some View {
-        HStack {
+        HStack(alignment: .top) {
             Image(systemName: "circle")
                 .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0))
                 .font(.system(size: 22))
                 .zIndex(2)
+                .padding(.top, 6)
             
             ZStack(alignment: .leading) {
                 // Placeholder text
@@ -359,7 +360,7 @@ struct NewItemRow: View {
                         previousText = text
                     }
             }
-            .frame(width: UIScreen.main.bounds.width * 0.80, alignment: .topTrailing)
+            .frame(width: UIScreen.main.bounds.width * 0.80, alignment: .topLeading)
             .clipped(antialiased: true)
             .padding(.leading, 4)
             .zIndex(1)
@@ -368,13 +369,14 @@ struct NewItemRow: View {
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
         .listRowSeparator(.hidden)
-        .padding(.vertical, 4)
+        .padding(.vertical, (isFocused.wrappedValue || isListEmpty) ? 4 : 0)
         .padding(.leading, 16)
-        // Add a minimum height to ensure it's always fully visible
-        .frame(minHeight: 44)
-        // Only hide when not focused AND list is not empty
+        // Only show when focused OR list is empty
         .opacity((isFocused.wrappedValue || isListEmpty) ? 1 : 0)
-        .frame(height: (isFocused.wrappedValue || isListEmpty) ? nil : 0)
+        // Explicitly set height to 0 when hidden
+        .frame(height: (isFocused.wrappedValue || isListEmpty) ? nil : 0, alignment: .top)
+        // Hide completely when not visible
+        .accessibility(hidden: !(isFocused.wrappedValue || isListEmpty))
     }
 }
 
@@ -506,7 +508,7 @@ struct ListContent: View {
     
     private func deleteItem(_ item: Models.ChecklistItem) {
         if let index = viewModel.items.firstIndex(where: { $0.id == item.id }) {
-            viewModel.deleteItemWithoutUndo(id: item.id)
+            viewModel.deleteItem(id: item.id)  // Use the regular deleteItem method that adds to undo stack
         }
     }
     

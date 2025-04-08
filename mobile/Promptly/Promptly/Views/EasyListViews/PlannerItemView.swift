@@ -88,11 +88,12 @@ private struct ItemMenuButton: View {
                 .rotationEffect(.degrees(90))
                 .foregroundColor(.white.opacity(0.6))
                 .font(.system(size: 16))
-                .frame(width: 30, height: 30)
+                .frame(maxWidth: 30, maxHeight: .infinity, alignment: .top)
+                .padding(.top, 16)
+                .padding(.trailing, 6)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.top, 2)
         .popover(isPresented: $itemData.showingPopover,
                  attachmentAnchor: .point(.center),
                  arrowEdge: .trailing) {
@@ -143,7 +144,7 @@ private struct MainItemRow: View {
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: 0) {
             // Checkbox button
             Button(action: {
                 feedbackGenerator.impactOccurred()
@@ -155,9 +156,12 @@ private struct MainItemRow: View {
                 Image(systemName: itemData.isCompletedLocally ? "checkmark.circle.fill" : "circle")
                     .foregroundColor(itemData.isCompletedLocally ? .green : .gray)
                     .font(.system(size: 22))
+                    .padding(.horizontal, 12)
+                    .padding(.top, 6)
+                    .frame(maxHeight: .infinity, alignment: .top)
             }
             .buttonStyle(.plain)
-            .padding(.top, 6)
+            .contentShape(Rectangle()) // Move contentShape to Button level
             
             // Text input area
             ItemTextInputArea(
@@ -215,7 +219,7 @@ private struct ItemTextInputArea: View {
             .strikethrough(isCompletedLocally, color: .gray)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 8)
-            .padding(.horizontal, 5)
+            .padding(.horizontal, 0)
             .opacity(textOpacity)
             .contentShape(Rectangle())
     }
@@ -244,18 +248,15 @@ private struct ExpandCollapseButton: View {
                 Image(systemName: areSubItemsExpanded ? "chevron.up" : "chevron.down")
                     .foregroundColor(.white.opacity(0.8))
                     .font(.system(size: 16))
-                    .frame(width: 30, height: 30)
+                    .padding(.horizontal, 50)
+                    .frame(maxWidth: 40, maxHeight: .infinity, alignment: .top)
                     .contentShape(Rectangle())
+                    .padding(.top, 14)
             }
             .buttonStyle(.plain)
-            .padding(.top, 2)
             .onAppear {
                 feedbackGenerator.prepare()
             }
-        } else {
-            // Empty spacer when there are no subitems
-            Spacer()
-                .frame(width: 30, height: 30)
         }
     }
 }
@@ -509,14 +510,15 @@ struct PlannerItemView: View, Equatable {
                 itemData: $itemData,
                 groupInfo: groupInfo
             )
+            .padding(.horizontal, 12)
             
             SubItemsSection(
                 itemData: $itemData,
                 onToggleSubItem: onToggleSubItem
             )
+            .padding(.horizontal, 12)
         }
         .padding(.vertical, 6)
-        .padding(.horizontal, 12)
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 16)
@@ -587,6 +589,13 @@ struct PlannerItemView: View, Equatable {
             if isDeleting {
                 withAnimation(.easeOut(duration: 0.25)) {
                     itemData.opacity = 0.1
+                }
+                // Reset opacity and isDeleting after a delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    withAnimation(.easeIn(duration: 0.25)) {
+                        itemData.opacity = 1.0
+                        itemData.isDeleting = false
+                    }
                 }
             }
         }

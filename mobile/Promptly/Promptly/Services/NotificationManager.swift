@@ -7,6 +7,7 @@ class NotificationManager: NSObject {
     
     private let notificationCenter = UNUserNotificationCenter.current()
     private let notificationCategoryIdentifier = "CHECKLIST_ITEM"
+    private let checkInCategoryIdentifier = "CHECK_IN" // New category for check-ins
     
     private override init() {
         super.init()
@@ -44,15 +45,29 @@ class NotificationManager: NSObject {
         )
         
         // Create a category with the complete action
-        let category = UNNotificationCategory(
+        let checklistCategory = UNNotificationCategory(
             identifier: notificationCategoryIdentifier,
             actions: [completeAction],
             intentIdentifiers: [],
             options: []
         )
         
-        // Register the category
-        notificationCenter.setNotificationCategories([category])
+        // New check-in category setup
+        let checkInAction = UNNotificationAction(
+            identifier: "CHECK_IN_ACTION",
+            title: "Check In",
+            options: .foreground
+        )
+        
+        let checkInCategory = UNNotificationCategory(
+            identifier: checkInCategoryIdentifier,
+            actions: [checkInAction],
+            intentIdentifiers: [],
+            options: []
+        )
+        
+        // Register both categories
+        notificationCenter.setNotificationCategories([checklistCategory, checkInCategory])
     }
     
     // MARK: - Notification Scheduling
@@ -194,12 +209,113 @@ class NotificationManager: NSObject {
         completion(.newData)
     }
     
+    // MARK: - Check-in Notifications
+    
+    func scheduleCheckInNotifications() {
+        // First remove any existing check-in notifications
+        removeAllCheckInNotifications()
+        
+        // Get user settings
+        let userSettings = UserSettings.shared
+        
+        // Only schedule if notifications are enabled
+        guard userSettings.isCheckInNotificationEnabled else { return }
+        
+        // Get the check-in time
+        let checkInTime = userSettings.checkInTime
+        
+        // Schedule for next 7 days
+        for dayOffset in 0..<7 {
+            guard let notificationDate = Calendar.current.date(
+                byAdding: .day,
+                value: dayOffset,
+                to: checkInTime
+            ) else { continue }
+            
+            scheduleCheckInNotification(for: notificationDate)
+        }
+    }
+    
+    private func scheduleCheckInNotification(for date: Date) {
+        // Create notification content
+        let content = UNMutableNotificationContent()
+        content.title = "Check In"
+        content.sound = .default
+        content.categoryIdentifier = checkInCategoryIdentifier
+        
+        // Create date components for the trigger
+        let dateComponents = Calendar.current.dateComponents(
+            [.year, .month, .day, .hour, .minute],
+            from: date
+        )
+        
+        // Create the trigger
+        let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: false)
+        
+        // Create the request with a unique identifier
+        let identifier = "check-in-\(date.timeIntervalSince1970)"
+        let request = UNNotificationRequest(
+            identifier: identifier,
+            content: content,
+            trigger: trigger
+        )
+        
+        // Schedule the notification
+        notificationCenter.add(request) { error in
+            if let error = error {
+                print("Error scheduling check-in notification: \(error)")
+            }
+        }
+    }
+    
+    func removeAllCheckInNotifications() {
+        // Get all pending notifications
+        notificationCenter.getPendingNotificationRequests { requests in
+            // Filter for check-in notifications
+            let checkInIdentifiers = requests
+                .filter { $0.identifier.hasPrefix("check-in-") }
+                .map { $0.identifier }
+            
+            // Remove them
+            self.notificationCenter.removePendingNotificationRequests(withIdentifiers: checkInIdentifiers)
+        }
+    }
+    
+    // MARK: - Settings Change Handlers
+    
+    func handleCheckInTimeChange() {
+        // Reschedule all check-in notifications with new time
+        scheduleCheckInNotifications()
+    }
+    
+    func handleNotificationToggleChange() {
+        let userSettings = UserSettings.shared
+        
+        if userSettings.isCheckInNotificationEnabled {
+            // Schedule new notifications
+            scheduleCheckInNotifications()
+        } else {
+            // Remove all notifications
+            removeAllCheckInNotifications()
+        }
+    }
+    
     // MARK: - Notification Handling
     
     func handleNotificationResponse(_ response: UNNotificationResponse, completion: @escaping () -> Void) {
         let userInfo = response.notification.request.content.userInfo
         
-        // Extract the item ID and checklist date from the notification
+        // Handle check-in notification response
+        if response.notification.request.content.categoryIdentifier == checkInCategoryIdentifier {
+            if response.actionIdentifier == "CHECK_IN_ACTION" {
+                // Handle check-in action
+                // This would need to be implemented based on your app's navigation
+            }
+            completion()
+            return
+        }
+        
+        // Handle existing checklist item responses
         guard let itemIDString = userInfo["itemID"] as? String,
               let itemID = UUID(uuidString: itemIDString),
               let checklistTimestamp = userInfo["checklistDate"] as? TimeInterval else {
@@ -209,7 +325,6 @@ class NotificationManager: NSObject {
         
         let checklistDate = Date(timeIntervalSince1970: checklistTimestamp)
         
-        // Handle the "Complete" action
         if response.actionIdentifier == "COMPLETE_ACTION" {
             // Mark the item as complete
             // This would need to be implemented with the ChecklistPersistence

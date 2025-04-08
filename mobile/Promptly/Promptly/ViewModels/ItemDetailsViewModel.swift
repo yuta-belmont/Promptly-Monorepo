@@ -4,6 +4,38 @@ import Combine
 
 // Add debug helper function at the top
 
+// Define undo action types for subitems
+enum SubItemUndoAction {
+    case snapshot(items: [Models.SubItem])
+}
+
+// Separate class to manage undo state for subitems
+class SubItemUndoStateManager: ObservableObject {
+    @Published var canUndo: Bool = false
+    private var undoCache: [SubItemUndoAction] = []
+    private let maxUndoActions = 10
+    
+    func addToUndoCache(_ action: SubItemUndoAction) {
+        undoCache.insert(action, at: 0)
+        if undoCache.count > maxUndoActions {
+            undoCache.removeLast()
+        }
+        canUndo = !undoCache.isEmpty
+    }
+    
+    func clearCache() {
+        undoCache.removeAll()
+        canUndo = false
+    }
+    
+    func getNextAction() -> SubItemUndoAction? {
+        guard !undoCache.isEmpty else { return nil }
+        let action = undoCache.removeFirst()
+        canUndo = !undoCache.isEmpty
+        return action
+    }
+}
+
 @MainActor
 final class ItemDetailsViewModel: ObservableObject {
     @Published var item: Models.ChecklistItem
@@ -13,6 +45,7 @@ final class ItemDetailsViewModel: ObservableObject {
     private let notificationManager = NotificationManager.shared
     let groupStore = GroupStore.shared
     private var cancellables = Set<AnyCancellable>()
+    private let undoManager = SubItemUndoStateManager()
     
     init(item: Models.ChecklistItem) {
         self.item = item
@@ -59,6 +92,9 @@ final class ItemDetailsViewModel: ObservableObject {
         
         // Update the published item
         item = mutableItem
+        
+        // Clear undo cache before saving
+        undoManager.clearCache()
         
         // Save to persistence
         saveItem()
@@ -186,7 +222,6 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Toggle the completed state of the item
     func toggleCompleted() {
-        
         // Create a mutable copy of the item
         var mutableItem = item
         
@@ -209,6 +244,9 @@ final class ItemDetailsViewModel: ObservableObject {
         // Update the published item
         item = mutableItem
         
+        // Clear undo cache before saving
+        undoManager.clearCache()
+        
         // Save changes to persistence
         saveItem()
     }
@@ -225,6 +263,9 @@ final class ItemDetailsViewModel: ObservableObject {
             // Update the published item
             item = mutableItem
             
+            // Clear undo cache before saving
+            undoManager.clearCache()
+            
             // Save changes to persistence
             saveItem()
         }
@@ -240,6 +281,9 @@ final class ItemDetailsViewModel: ObservableObject {
         
         // Update the published item
         item = mutableItem
+        
+        // Clear undo cache before saving
+        undoManager.clearCache()
         
         // Save changes to persistence
         saveItem()
@@ -258,6 +302,10 @@ final class ItemDetailsViewModel: ObservableObject {
             item = mutableItem
             
             item.lastModified = Date()
+            
+            // Clear undo cache before saving
+            undoManager.clearCache()
+            
             // Save changes to persistence
             saveItem()
         }
@@ -289,13 +337,15 @@ final class ItemDetailsViewModel: ObservableObject {
         // Update the published item
         item = mutableItem
         
+        // Clear undo cache before saving
+        undoManager.clearCache()
+        
         // Save changes to persistence
         saveItem()
     }
     
     // Move a subitem to the end of the list
     func moveSubitemToEnd(_ sourceId: UUID) {
-        
         // Create a mutable copy of the item
         var mutableItem = item
         
@@ -311,13 +361,15 @@ final class ItemDetailsViewModel: ObservableObject {
         // Update the published item
         item = mutableItem
         
+        // Clear undo cache before saving
+        undoManager.clearCache()
+        
         // Save changes to persistence
         saveItem()
     }
     
     // Handle standard SwiftUI List move operations
     func moveSubitems(from source: IndexSet, to destination: Int) {
-        
         // Create a mutable copy of the item
         var mutableItem = item
         
@@ -327,18 +379,30 @@ final class ItemDetailsViewModel: ObservableObject {
         // Update the published item
         item = mutableItem
         
+        // Clear undo cache before saving
+        undoManager.clearCache()
+        
         // Save changes to persistence
         saveItem()
     }
     
     // Delete a subitem by ID
     func deleteSubitem(_ subitemId: UUID) {
+        // Take snapshot before deletion
+        let snapshot = item.subItems
         
         // Create a mutable copy of the item
         var mutableItem = item
         
         // Remove the subitem
+        let originalCount = mutableItem.subItems.count
         mutableItem.subItems.removeAll { $0.id == subitemId }
+        
+        // Return early if nothing was deleted
+        guard mutableItem.subItems.count < originalCount else { return }
+        
+        // Add to undo cache since something was deleted
+        undoManager.addToUndoCache(.snapshot(items: snapshot))
         
         // Update the published item
         item = mutableItem
@@ -349,11 +413,21 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Delete all subitems
     func deleteAllSubitems() {
+        // Take snapshot before deletion
+        let snapshot = item.subItems
+        
         // Create a mutable copy of the item
         var mutableItem = item
         
         // Remove all subitems
+        let originalCount = mutableItem.subItems.count
         mutableItem.subItems.removeAll()
+        
+        // Return early if nothing was deleted
+        guard mutableItem.subItems.count < originalCount else { return }
+        
+        // Add to undo cache since something was deleted
+        undoManager.addToUndoCache(.snapshot(items: snapshot))
         
         // Update the published item
         item = mutableItem
@@ -364,11 +438,21 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Delete completed subitems
     func deleteCompletedSubitems() {
+        // Take snapshot before deletion
+        let snapshot = item.subItems
+        
         // Create a mutable copy of the item
         var mutableItem = item
         
         // Remove completed subitems
+        let originalCount = mutableItem.subItems.count
         mutableItem.subItems.removeAll { $0.isCompleted }
+        
+        // Return early if nothing was deleted
+        guard mutableItem.subItems.count < originalCount else { return }
+        
+        // Add to undo cache since something was deleted
+        undoManager.addToUndoCache(.snapshot(items: snapshot))
         
         // Update the published item
         item = mutableItem
@@ -379,16 +463,54 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Delete incomplete subitems
     func deleteIncompleteSubitems() {        
+        // Take snapshot before deletion
+        let snapshot = item.subItems
+        
         // Create a mutable copy of the item
         var mutableItem = item
         
         // Remove incomplete subitems
+        let originalCount = mutableItem.subItems.count
         mutableItem.subItems.removeAll { !$0.isCompleted }
+        
+        // Return early if nothing was deleted
+        guard mutableItem.subItems.count < originalCount else { return }
+        
+        // Add to undo cache since something was deleted
+        undoManager.addToUndoCache(.snapshot(items: snapshot))
         
         // Update the published item
         item = mutableItem
         
         // Save changes to persistence
         saveItem()
+    }
+    
+    // Undo the last deletion operation
+    func undo() {
+        guard let action = undoManager.getNextAction() else { return }
+        
+        switch action {
+        case .snapshot(let items):
+            // Remove all current subitems
+            var mutableItem = item
+            mutableItem.subItems.removeAll()
+            
+            // Add the snapshots items back in their original order
+            for item in items {
+                mutableItem.subItems.append(item)
+            }
+            
+            // Update the published item
+            item = mutableItem
+            
+            // Save changes
+            saveItem()
+        }
+    }
+    
+    // Check if undo is available
+    var canUndo: Bool {
+        undoManager.canUndo
     }
 } 

@@ -50,7 +50,15 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         let notificationManager = NotificationManager.shared
         
         // Request notification permissions
-        notificationManager.requestNotificationPermission { granted in }
+        notificationManager.requestNotificationPermission { granted in
+            if granted {
+                // Schedule check-in notifications if enabled
+                let userSettings = UserSettings.shared
+                if userSettings.isCheckInNotificationEnabled {
+                    notificationManager.scheduleCheckInNotifications()
+                }
+            }
+        }
         
         // Set up background fetch
         notificationManager.setupBackgroundFetch()

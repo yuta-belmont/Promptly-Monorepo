@@ -11,7 +11,7 @@ enum UndoAction {
 class UndoStateManager: ObservableObject {
     @Published var canUndo: Bool = false
     private var undoCache: [UndoAction] = []
-    private let maxUndoActions = 1
+    private let maxUndoActions = 10
     
     func addToUndoCache(_ action: UndoAction) {
         undoCache.insert(action, at: 0)
@@ -200,12 +200,7 @@ final class EasyListViewModel: ObservableObject {
             saveChecklist()
             hasUnsavedChanges = false
         }
-        
-        let oldDateString = DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short)
-        let newDateString = DateFormatter.localizedString(from: newDate, dateStyle: .medium, timeStyle: .short)
-        
-        let startTime = CFAbsoluteTimeGetCurrent()
-        
+                
         // Clear the undo cache when switching days
         undoManager.clearCache()
         
@@ -217,8 +212,6 @@ final class EasyListViewModel: ObservableObject {
         
         // Then load the data
         loadData()
-        
-        let duration = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
     }
     
     // MARK: - Date Formatting
@@ -274,8 +267,15 @@ final class EasyListViewModel: ObservableObject {
     /// Deletes an item identified by ID
     func deleteItem(id: UUID) {
         guard let index = checklist.items.firstIndex(where: { $0.id == id }) else { return }
+        
+        // Capture a snapshot of the entire checklist before deletion
+        let snapshot = checklist.items
+        
+        // Add snapshot to undo cache using the manager
+        undoManager.addToUndoCache(.snapshot(items: snapshot))
+        
         // Use the existing method to handle cleanup
-        deleteItems(at: IndexSet([index]))
+        deleteItemsWithoutUndo(at: IndexSet([index]))
     }
     
     /// Deletes an item identified by ID without adding to undo cache
@@ -721,9 +721,6 @@ final class EasyListViewModel: ObservableObject {
         // Perform the undo operation
         switch action {
         case .snapshot(let items):
-            // Save the current state for potential future operations
-            let currentSnapshot = checklist.items
-            
             // Remove all current items
             checklist.removeAllItems()
             
@@ -743,7 +740,11 @@ final class EasyListViewModel: ObservableObject {
     }
     
     // Add this method before the last closing brace
-    func getChecklistForCheckin() -> [String: Any] {
+    func getChecklistForCheckin() -> Models.Checklist {
+        return checklist
+    }
+    
+    func getChecklistDictionaryForCheckin() -> [String: Any] {
         return [
             "date": checklist.date.ISO8601Format(),
             "items": checklist.items.map { item in

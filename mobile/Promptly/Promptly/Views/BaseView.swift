@@ -9,6 +9,7 @@ struct BaseView: View {
     @State private var showingMenu = false
     @State private var isMenuClosing = false
     @StateObject private var themeManager = ThemeManager.shared
+    @StateObject private var userSettings = UserSettings.shared
     // Chat-related states
     @EnvironmentObject private var chatViewModel: ChatViewModel
     @State private var isChatExpanded = false
@@ -51,8 +52,8 @@ struct BaseView: View {
                     }
                 }
             
-            // Only show chat if no menu is showing and not editing
-            if !showingMenu && !isEditing {
+            // Only show chat if no menu is showing, not editing, and chat is enabled
+            if !showingMenu && !isEditing && userSettings.isChatEnabled {
                 // Darkened background for chat - using a fixed medium opacity level
                 Color.black
                     .opacity(isChatExpanded ? 0.4 : 0)

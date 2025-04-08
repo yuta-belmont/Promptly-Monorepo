@@ -15,7 +15,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
     case sunrise = "Sunrise"
     case roseGold = "RoseGold"
     case emerald = "Emerald"
-    case diamond = "Crystaline"
+    case diamond = "Crystalline"
     case starryNight = "Starry"
     case vibrant = "Vibrant"
     case hallucination = "Daydream"
