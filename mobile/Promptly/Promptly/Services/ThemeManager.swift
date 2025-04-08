@@ -25,6 +25,30 @@ enum AppTheme: String, CaseIterable, Identifiable {
     
     var id: String { self.rawValue }
     
+    var cost: Int {
+        switch self {
+        case .dark: return 0  // Free default theme
+        case .slate: return 0
+        case .mist: return 0
+        case .nature: return 5
+        case .blueVista: return 5
+        case .purple: return 5
+        case .lava: return 5
+        case .sunshine: return 10
+        case .bubblegum: return 20
+        case .sunrise: return 50
+        case .roseGold: return 100
+        case .emerald: return 100
+        case .diamond: return 100
+        case .starryNight: return 500
+        case .vibrant: return 1000
+        case .hallucination: return 2000
+        case .hyperVibrant: return 3000
+        case .nightmare: return 5000
+        case .theEnd: return 10000
+        }
+    }
+    
     // Return the appropriate background view for each theme
     @ViewBuilder
     func backgroundView() -> some View {

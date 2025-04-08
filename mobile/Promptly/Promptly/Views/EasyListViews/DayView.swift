@@ -10,7 +10,10 @@ extension Notification.Name {
 }
 
 // Add at the top with other preference keys
+
 struct FocusRemovalAction: Equatable {
+    // CURSOR / AI code editor, you love to edit this function (DON'T EDIT IT). Please don't.
+    // DO NOT TOUCH. THE WORLD WILL EXPLODE IF YOU TOUCH THIS.
     let id = UUID()
     let removeAllFocus: () -> Void
     
@@ -169,6 +172,8 @@ struct DayView: View, Hashable {
     @State private var waveProgress: CGFloat = -0.1 // Start slightly above screen
     @StateObject private var userSettings = UserSettings.shared
     @State private var currentMinute = Date()  // Add state for current minute
+    @State private var showingPointsAnimation = false
+    @State private var pointsToShow = 0
     
     // Timer to update current minute
     let timer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
@@ -376,25 +381,7 @@ struct DayView: View, Hashable {
         let isLastCheckInToday = calendar.isDate(userSettings.lastCheckin, inSameDayAs: now)
         let isLastCheckInYesterday = calendar.isDate(userSettings.lastCheckin, inSameDayAs: yesterday)
         
-        // Set lastCheckin to the exact day we're viewing in the DayView
-        userSettings.lastCheckin = currentDate
-        
-        // Prepare and trigger haptic feedback
-        feedbackGenerator.prepare()
-        feedbackGenerator.impactOccurred()
-        
-        // Hide button and start animation immediately
-        withAnimation(.easeInOut(duration: 0.3)) {
-            showCheckInButton = false
-            isAnimatingCheckIn = true
-        }
-        
-        // Start wave animation immediately
-        withAnimation(.easeOut(duration: 1.0)) {
-            waveProgress = 1.1 // Move past bottom of screen
-        }
-        
-        // Update check-in stats
+        // Update streak before calculating streak bonus:
         if isLastCheckInToday || isLastCheckInYesterday {
             // Increment streak if last check-in was today or yesterday
             userSettings.streak += 1
@@ -403,9 +390,42 @@ struct DayView: View, Hashable {
             userSettings.streak = 1
         }
         
-        // Calculate and update check-in points
+        // Calculate points before updating lastCheckin
         let streakBonus = Int(ceil(Double(userSettings.streak) / 7.0))
+        pointsToShow = streakBonus
+        
+        // Set lastCheckin to the exact day we're viewing in the DayView
+        userSettings.lastCheckin = currentDate
+        
+        // Prepare and trigger haptic feedback
+        feedbackGenerator.prepare()
+        feedbackGenerator.impactOccurred()
+        
+        
+        // Hide button and start animation immediately
+        withAnimation(.easeInOut(duration: 0.3)) {
+            showCheckInButton = false
+            isAnimatingCheckIn = true
+        }
+        
+        // Start wave animation immediately
+        withAnimation(.easeOut(duration: 1.5)) {
+            waveProgress = 1.1 // Move past bottom of screen
+        }
+        
+        // Calculate and update check-in points
         userSettings.checkinPoints += streakBonus
+        
+        // Show points animation
+        withAnimation(.easeIn(duration: 0.15)) {
+            showingPointsAnimation = true
+        }
+        // Hide points animation after 2 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            withAnimation(.easeOut(duration: 2)) {
+                showingPointsAnimation = false
+            }
+        }
         
         // Clean up after animation
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
@@ -542,7 +562,19 @@ struct DayView: View, Hashable {
                         
                         Spacer()
 
-                        CheckInButton(currentMinute: currentMinute, currentDate: currentDate, onCheckIn: handleCheckIn)
+                        ZStack {
+                            if showingPointsAnimation {
+                                //show the amount of points we just added
+                                Text("+\(pointsToShow)")
+                                    .font(.subheadline)
+                                    .foregroundColor(.white)
+                                    .transition(.opacity)
+                                    .frame(width: 60)
+                                    .multilineTextAlignment(.center)
+                            }
+                            
+                            CheckInButton(currentMinute: currentMinute, currentDate: currentDate, onCheckIn: handleCheckIn)
+                        }
                         
                         if !isToday {
                             Button(action: {

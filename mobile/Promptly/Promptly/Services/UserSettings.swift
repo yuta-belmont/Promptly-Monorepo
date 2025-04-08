@@ -58,6 +58,13 @@ class UserSettings: ObservableObject {
         }
     }
     
+    // MARK: - Theme Settings
+    @Published var unlockedThemes: Set<String> {
+        didSet {
+            defaults.set(Array(unlockedThemes), forKey: "unlockedThemes")
+        }
+    }
+    
     let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
@@ -116,6 +123,13 @@ class UserSettings: ObservableObject {
             self.checkInButtonExpiryTimes = [:]
         }
         
+        // Load unlocked themes or initialize with default theme
+        if let savedThemes = defaults.stringArray(forKey: "unlockedThemes") {
+            self.unlockedThemes = Set(savedThemes)
+        } else {
+            self.unlockedThemes = [AppTheme.dark.rawValue] // Default theme is always unlocked
+        }
+        
         // Now that all properties are initialized, we can set up the didSet observer
         self.checkInButtonExpiryTimes = self.checkInButtonExpiryTimes
     }
@@ -124,6 +138,15 @@ class UserSettings: ObservableObject {
     func updateExpiryTimes(_ times: [String: Date]) {
         self.checkInButtonExpiryTimes = times
         saveExpiryTimes(times)
+    }
+    
+    func unlockTheme(_ theme: AppTheme) -> Bool {
+        guard !unlockedThemes.contains(theme.rawValue) else { return true }
+        guard checkinPoints >= theme.cost else { return false }
+        
+        checkinPoints -= theme.cost
+        unlockedThemes.insert(theme.rawValue)
+        return true
     }
 }
 

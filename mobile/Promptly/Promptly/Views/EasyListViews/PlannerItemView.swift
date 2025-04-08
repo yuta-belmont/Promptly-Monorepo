@@ -545,12 +545,12 @@ struct PlannerItemView: View, Equatable {
             Group {
                 // Default outline
                 RoundedRectangle(cornerRadius: 16)
-                    .strokeBorder(.white.opacity(0.075), lineWidth: 0.5)
+                    .strokeBorder(.white.opacity(0.1), lineWidth: 0.5)
                 
                 // Animated outline that appears with the glow for main tap
                 if showOutline {
                     RoundedRectangle(cornerRadius: 16)
-                        .strokeBorder(.white.opacity(0.5), lineWidth: 0.5)
+                        .strokeBorder(.white.opacity(0.5), lineWidth: 1)
                 }
             }
         )

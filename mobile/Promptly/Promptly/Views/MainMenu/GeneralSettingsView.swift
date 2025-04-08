@@ -177,6 +177,10 @@ struct GeneralSettingsView: View {
                 Button(action: {
                     userSettings.streak = 0
                     userSettings.checkinPoints = 0
+                    userSettings.lastCheckin = Date.distantPast
+                    userSettings.checkInButtonExpiryTimes = [:]
+                    // Reset unlocked themes to only free ones
+                    userSettings.unlockedThemes = Set([AppTheme.dark.rawValue, AppTheme.slate.rawValue, AppTheme.mist.rawValue])
                 }) {
                     Text("Reset")
                         .font(.caption)
@@ -200,15 +204,19 @@ struct GeneralSettingsView: View {
                 }
                 
                 Button(action: {
-                    userSettings.lastCheckin = Date.distantPast
-                    userSettings.checkInButtonExpiryTimes = [:]
+                    // Set last check-in to yesterday
+                    let calendar = Calendar.current
+                    let yesterday = calendar.date(byAdding: .day, value: -1, to: Date()) ?? Date()
+                    userSettings.lastCheckin = yesterday
+                    // Add 10 to streak
+                    userSettings.streak += 7
                 }) {
-                    Text("Reset Check-in")
+                    Text("Streak +7")
                         .font(.caption)
                         .foregroundColor(.white)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.orange.opacity(0.3))
+                        .background(Color.purple.opacity(0.3))
                         .cornerRadius(6)
                 }
             }
@@ -331,6 +339,10 @@ struct GeneralSettingsView: View {
                         .colorScheme(.dark)
                         .tint(.blue)
                         .disabled(hasActiveCheckIn)
+                        .onChange(of: userSettings.checkInTime) { _, _ in
+                            // Clear all expiry times when check-in time changes
+                            userSettings.updateExpiryTimes([:])
+                        }
                 }
                 
                 if hasActiveCheckIn {
@@ -533,9 +545,6 @@ struct GeneralSettingsView: View {
         // Clear all expiry times when check-in time changes
         // We can do this because all check-ins must have been completed prior to clearing this out
         userSettings.updateExpiryTimes([:])
-        
-        // Update the check-in time
-        userSettings.checkInTime = newTime
     }
 }
 
@@ -595,19 +604,54 @@ struct ThemePreviewButton: View {
     let theme: AppTheme
     let isSelected: Bool
     let action: () -> Void
+    @StateObject private var userSettings = UserSettings.shared
+    @State private var showingUnlockPopover = false
+    
+    private var isUnlocked: Bool {
+        userSettings.unlockedThemes.contains(theme.rawValue)
+    }
     
     var body: some View {
-        Button(action: action) {
+        Button(action: {
+            if isUnlocked {
+                action()
+            } else {
+                showingUnlockPopover = true
+            }
+        }) {
             VStack {
-                // Theme thumbnail
-                theme.thumbnailView()
-                    .frame(width: 80, height: 80)
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .strokeBorder(isSelected ? Color.blue : Color.gray.opacity(0.3), lineWidth: isSelected ? 3 : 1)
-                    )
-                    .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+                // Theme thumbnail with lock overlay if not unlocked
+                ZStack {
+                    theme.thumbnailView()
+                        .frame(width: 80, height: 80)
+                        .cornerRadius(12)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .strokeBorder(isSelected ? Color.blue : Color.gray.opacity(0.3), 
+                                            lineWidth: isSelected ? 3 : 1)
+                        )
+                    
+                    if !isUnlocked {
+                        VStack {
+                            
+                            // Lock icon
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(.gray)
+                                .padding(.top, 20)
+                                .opacity(0.3)
+                            
+                            Spacer()
+                            // Cost
+                            Text("\(theme.cost)")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundColor(.gray)
+                                .padding(.bottom, 8)
+                        }
+
+                    }
+                }
                 
                 // Theme name
                 Text(theme.rawValue)
@@ -619,6 +663,38 @@ struct ThemePreviewButton: View {
             .frame(width: 90)
         }
         .buttonStyle(PlainButtonStyle())
+        .popover(isPresented: $showingUnlockPopover, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Unlock this theme for \(theme.cost) points?")
+                    .font(.body)
+                    .foregroundColor(.white.opacity(0.8))
+                    .lineSpacing(4)
+                
+                HStack {
+                    Spacer()
+                    
+                    Button("Unlock") {
+                        if userSettings.unlockTheme(theme) {
+                            action()
+                            showingUnlockPopover = false
+                        }
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .font(.caption)
+                    .background(Color.blue.opacity(0.3))
+                    .cornerRadius(6)
+                    
+                    Spacer()
+                }
+                .padding(.top, 8)
+            }
+            .padding()
+            .background(.ultraThinMaterial)
+            .cornerRadius(12)
+            .presentationCompactAdaptation(.none)
+        }
     }
 }
 
