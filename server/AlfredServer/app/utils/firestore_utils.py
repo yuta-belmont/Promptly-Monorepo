@@ -1,6 +1,9 @@
 import json
 from datetime import datetime
 from google.cloud.firestore_v1._helpers import DatetimeWithNanoseconds
+import logging
+
+logger = logging.getLogger(__name__)
 
 def convert_firestore_data(data):
     """
@@ -17,12 +20,16 @@ def convert_firestore_data(data):
     elif isinstance(data, list):
         return [convert_firestore_data(item) for item in data]
     elif isinstance(data, (DatetimeWithNanoseconds, datetime)):
-        return data.isoformat()
+        # Convert to Unix timestamp (float)
+        logger.debug(f"Converting datetime object to timestamp: {data}")
+        return data.timestamp()
     elif hasattr(data, 'seconds') and hasattr(data, 'nanos'):
         # This handles any Timestamp-like object with seconds and nanos attributes
-        dt = datetime.fromtimestamp(data.seconds + data.nanos / 1e9)
-        return dt.isoformat()
+        # Convert to Unix timestamp (float)
+        logger.debug(f"Converting timestamp object to float: {data}")
+        return data.seconds + data.nanos / 1e9
     else:
+        logger.debug(f"Returning data as-is: {data} (type: {type(data)})")
         return data
 
 def firestore_data_to_json(data):

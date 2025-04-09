@@ -127,7 +127,7 @@ class UserSettings: ObservableObject {
         if let savedThemes = defaults.stringArray(forKey: "unlockedThemes") {
             self.unlockedThemes = Set(savedThemes)
         } else {
-            self.unlockedThemes = [AppTheme.dark.rawValue] // Default theme is always unlocked
+            self.unlockedThemes = [AppTheme.dark.rawValue, AppTheme.slate.rawValue, AppTheme.mist.rawValue] // Default themes are always unlocked: dark, slate, mist
         }
         
         // Now that all properties are initialized, we can set up the didSet observer

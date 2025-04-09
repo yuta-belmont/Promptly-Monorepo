@@ -173,23 +173,33 @@ Groups can have any name as their key. Each group can contain multiple dates."""
 # -------------------------------------------------------------------------
 # Check-in Analysis Agent - Analyzes daily checklist completion and provides encouragement
 # -------------------------------------------------------------------------
-CHECKIN_ANALYSIS_INSTRUCTIONS = """You are Alfred, a wise and encouraging personal assistant analyzing a user's daily checklist completion.
-Your goal is to provide meaningful, personalized encouragement based on their progress.
+CHECKIN_ANALYSIS_INSTRUCTIONS = """You are Alfred, a personal assistant analyzing a user's daily checklist completion.
+Your goal is to provide meaningful, personalized feedback based on their progress and aid in accountability during a casual conversation.
+
+{personality_prompt}
+
+The user's objectives are: {user_objectives}
+Tailor your feedback to the user's objectives.
 
 Consider:
 1. Overall completion rate and patterns
 2. The nature and difficulty of completed vs incomplete tasks
-3. The user's effort and dedication shown
+3. The relationship between completed tasks and their stated objectives
 4. Potential challenges they might have faced
+5. The tasks in the context of the user's objectives
 
-Respond with a thoughtful, encouraging message that:
-- Acknowledges their progress and effort
-- Provides specific encouragement related to completed tasks
-- Offers gentle support for incomplete tasks
-- Includes actionable insights or tips when relevant
-- Maintains a supportive, non-judgmental tone
+Respond as concisely as possible with the following:
+- A summary of the user's progress with data and numbers and a piece of wisdom or analysis that might give the user a lightbulb moment.
+If there is nothing to report, respond with an EXTREMELY concise message and disregard the rest of the instructions."""
 
-Keep responses concise (2-3 sentences) but meaningful. If there is nothing to report, respond with an EXTREMELY concise message."""
+PERSONALITY_PROMPTS = {
+    "1": """You are enthusiastic and encouraging. Celebrate achievements with excitement and provide positive reinforcement. 
+           Use upbeat language and focus heavily on what was accomplished.""",
+    "2": """You are direct and concise. Keep responses brief and focused on essential information. 
+           Avoid unnecessary elaboration.""",
+    "3": """You are strict and focused on accountability like a drill sergeant. Maintain impossibly high standards and never be satisfied. 
+           Emphasize responsibility and the importance of following through on commitments and have distain for failure."""
+}
 
 # Pydantic models for structured responses
 class ChecklistSubItem(BaseModel):
@@ -993,13 +1003,16 @@ class AIService:
         logger.info("CHECKLIST DEBUG: Processed %d checklists in total", len(allChecklists))
         return None if not allChecklists else allChecklists 
 
-    def analyze_checkin(self, checklist_data: Dict[str, Any], user_full_name: Optional[str] = None) -> Optional[str]:
+    def analyze_checkin(self, checklist_data: Dict[str, Any], user_full_name: Optional[str] = None, 
+                       alfred_personality: Optional[str] = None, user_objectives: Optional[str] = None) -> Optional[str]:
         """
         Analyze a checklist and provide an encouraging response using GPT-4.
         
         Args:
             checklist_data: The checklist data to analyze
             user_full_name: The user's full name (optional)
+            alfred_personality: The personality setting for Alfred (1=cheerleader, 2=minimalist, 3=disciplinarian)
+            user_objectives: The user's stated objectives
             
         Returns:
             An encouraging response string, or None if analysis fails
@@ -1010,30 +1023,41 @@ class AIService:
             
             # If no items, return a concise message
             if not items:
-                return "Taking a break today? That's perfectly fine. Tomorrow is a fresh start!"
-            
+                checklist_summary = {
+                    "checklist" : "empty"
+                }
+            else:
             # Count completed and total items
-            completed = sum(1 for item in items if item.get('isCompleted', False))
-            total = len(items)
-            completion_percentage = (completed / total) * 100 if total > 0 else 0
+                completed = sum(1 for item in items if item.get('isCompleted', False))
+                total = len(items)
+                completion_percentage = (completed / total) * 100 if total > 0 else 0
             
-            # Create a summary of the checklist for the AI
-            checklist_summary = {
-                "total_tasks": total,
-                "completed_tasks": completed,
-                "completion_percentage": completion_percentage,
-                "tasks": [
-                    {
-                        "title": item.get('title', ''),
-                        "completed": item.get('isCompleted', False)
-                    }
-                    for item in items
-                ]
-            }
+                # Create a summary of the checklist for the AI
+                checklist_summary = {
+                    "total_tasks": total,
+                    "completed_tasks": completed,
+                    "completion_percentage": completion_percentage,
+                    "tasks": [
+                        {
+                            "title": item.get('title', ''),
+                            "completed": item.get('isCompleted', False)
+                        }
+                        for item in items
+                    ]
+                }
+            
+            # Get the personality prompt based on setting, default to minimalist if not specified
+            personality_prompt = PERSONALITY_PROMPTS.get(str(alfred_personality), PERSONALITY_PROMPTS["2"])
+            
+            # Format the instructions with personality and objectives
+            instructions = CHECKIN_ANALYSIS_INSTRUCTIONS.format(
+                personality_prompt=personality_prompt,
+                user_objectives=user_objectives if user_objectives else "not specified"
+            )
             
             # Create the messages for GPT-4
             messages = [
-                {"role": "system", "content": CHECKIN_ANALYSIS_INSTRUCTIONS},
+                {"role": "system", "content": instructions},
                 {"role": "user", "content": f"Please analyze this checklist completion data and provide encouragement:\n{json.dumps(checklist_summary, indent=2)}"}
             ]
             
@@ -1042,7 +1066,7 @@ class AIService:
                 model="gpt-4o-mini-2024-07-18",
                 messages=messages,
                 temperature=0.7,
-                max_tokens=150  # Keep responses concise
+                max_tokens=300 # Keep responses concise
             )
             
             analysis = response.choices[0].message.content.strip()

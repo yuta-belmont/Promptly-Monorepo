@@ -14,12 +14,13 @@ import psutil
 
 def get_worker_pid():
     """Get the worker PID from the PID file."""
-    pid_file = "server/AlfredServer/worker.pid"
+    # Get the absolute path to the script directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    alfred_server_dir = os.path.join(script_dir, "AlfredServer")
+    pid_file = os.path.join(alfred_server_dir, "worker.pid")
+    
     if not os.path.exists(pid_file):
-        # Try alternate location
-        pid_file = "worker.pid"
-        if not os.path.exists(pid_file):
-            return None
+        return None
     
     with open(pid_file, "r") as f:
         try:
@@ -49,10 +50,18 @@ def start_workers():
         return
     
     print("Starting unified worker...")
+    
+    # Get the absolute path to the script directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    alfred_server_dir = os.path.join(script_dir, "AlfredServer")
+    
+    # Change to the AlfredServer directory
+    os.chdir(alfred_server_dir)
+    
     # Start the worker process in the background
     subprocess.Popen(
-        ["python3", "server/AlfredServer/run_workers.py"],
-        stdout=open("server/worker.log", "a"),
+        ["python3", "run_workers.py"],
+        stdout=open("worker.log", "a"),
         stderr=subprocess.STDOUT,
         start_new_session=True
     )

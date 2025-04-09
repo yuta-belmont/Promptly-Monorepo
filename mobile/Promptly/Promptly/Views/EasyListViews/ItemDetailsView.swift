@@ -53,23 +53,44 @@ struct ItemDetailsView: View {
     // Function to synchronize focus state with editing state
     private func updateFocusState() {
         // First update the focus state
+        // We set the previous editing state false after a delay so we can ensure the keyboard isn't retracted
+        if focusRemovalState == FocusRemovalState.clearingFocus {
+            return
+        }
+        
+        focusRemovalState = FocusRemovalState.clearingFocus
+        
         switch editingState {
         case .none:
             titleFocused = false
             newSubitemFocused = false
             focusedSubitemId = nil
+            focusRemovalState = nil
+            
         case .title:
             titleFocused = true
-            newSubitemFocused = false
-            focusedSubitemId = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                newSubitemFocused = false
+                focusedSubitemId = nil
+                
+                focusRemovalState = nil
+            }
         case .newSubitem:
-            titleFocused = false
             newSubitemFocused = true
-            focusedSubitemId = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                titleFocused = false
+                focusedSubitemId = nil
+                
+                focusRemovalState = nil
+            }
         case .existingSubitem(let id):
-            titleFocused = false
-            newSubitemFocused = false
             focusedSubitemId = id
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                titleFocused = false
+                newSubitemFocused = false
+                
+                focusRemovalState = nil
+            }
         }
     }
     
@@ -301,17 +322,19 @@ struct ItemDetailsView: View {
                     )
                     
                     // First clear any current focus
+                    /*
                     if editingState != .newSubitem {
                         removeAllFocus()
                     }
+                     */
                     
                     // Then set new focus state
                     editingState = .newSubitem
                     
                     // Update focus after a short delay to ensure view is updated
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    //DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         updateFocusState()
-                    }
+                    //}
                 }
             }) {
                 Image(systemName: "plus")
@@ -327,6 +350,7 @@ struct ItemDetailsView: View {
             // Delete button
             Button(action: {
                 feedbackGenerator.impactOccurred()
+                removeAllFocus()
                 showingDeleteConfirmation = true
             }) {
                 Image(systemName: "trash")
@@ -342,6 +366,8 @@ struct ItemDetailsView: View {
                     isPresented: $showingDeleteConfirmation,
                     isConfirmationActive: $deleteConfirmationActive,
                     onDeleteAll: {
+                        // Clear focus before deleting all subitems
+                        removeAllFocus()
                         viewModel.deleteAllSubitems()
                     },
                     onDeleteCompleted: {
@@ -350,6 +376,7 @@ struct ItemDetailsView: View {
                     onDeleteIncomplete: {
                         viewModel.deleteIncompleteSubitems()
                     },
+                    
                     feedbackGenerator: feedbackGenerator
                 )
             }
@@ -364,9 +391,8 @@ struct ItemDetailsView: View {
                     removeAllFocus()
                 }) {
                     Text("Done")
-                        .foregroundColor(.blue)
-                        .font(.system(size: 17, weight: .regular))
-                        .padding(.horizontal, 8)
+                        .foregroundColor(.white)
+                        .dynamicTypeSize(.small...DynamicTypeSize.large)
                 }
             } else {
                 // Close button
@@ -397,8 +423,7 @@ struct ItemDetailsView: View {
         if !editedTitleText.isEmpty {
             viewModel.updateTitle(editedTitleText)
         }
-        isEditingTitle = false
-        isTitleFieldFocused = false
+        updateFocusState()
     }
     
     // Title view component
@@ -423,12 +448,6 @@ struct ItemDetailsView: View {
                             // Save the title
                             saveTitle()
                             removeAllFocus()
-                        }
-                    }
-                    .onAppear {
-                        // Set focus in the next run loop
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-                            titleFocused = true
                         }
                     }
                     .overlay(
@@ -491,7 +510,12 @@ struct ItemDetailsView: View {
                                         removeAllFocus()
                                     }
                                 },
-                                viewModel: viewModel
+                                viewModel: viewModel,
+                                onTap: {
+                                    // When tapped, call onTap to update editing state
+                                    editingState = .newSubitem
+                                    updateFocusState()
+                                }
                             )
                             .id("newSubItemRow")
                             .listRowBackground(Color.clear)
@@ -715,6 +739,7 @@ private struct NewSubItemRow: View {
     let isFocused: FocusState<Bool>.Binding
     let onSubmit: (Bool) -> Void
     let viewModel: ItemDetailsViewModel
+    let onTap: () -> Void  // Add onTap callback
     
     var body: some View {
         HStack(alignment: .top) {
@@ -722,12 +747,12 @@ private struct NewSubItemRow: View {
                 .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0))
                 .font(.system(size: 20))
                 .zIndex(2)
-                .padding(.top, 6)
+                .padding(.top, 8)
             
             ZStack(alignment: .leading) {
                 // Placeholder text
                 if text.isEmpty {
-                    Text("Add subitem...")
+                    Text("New subitem...")
                         .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0.7))
                         .padding(.leading, 4)
                         .padding(.top, 4)
@@ -743,9 +768,18 @@ private struct NewSubItemRow: View {
                     .onChange(of: text) { oldValue, newValue in
                         // Check if user pressed return (added a newline)
                         if newValue.contains("\n") {
-                            // Remove the newline character
+                            // Remove the newline character.
+                            // By replacing \n with " ", we allow copy-pasted with \n values
                             if oldValue.count == 0 {
                                 text = newValue.replacingOccurrences(of: "\n", with: " ")
+                                
+                                // But now that we replace \n with " ", we need to make sure we're not just submitting a " " field.
+                                // An empty field that a users presses return in should just remove focus and not submit anything.
+                                if text.count <= 1 {
+                                    text = ""
+                                    isFocused.wrappedValue = false
+                                    return
+                                }
                             } else {
                                 text = oldValue
                             }
@@ -763,6 +797,11 @@ private struct NewSubItemRow: View {
                         if !text.isEmpty {
                             onSubmit(false)
                         }
+                        
+                        // When focus is gained, update editing state
+                        if newValue {
+                            onTap()  // This will update the editing state in the parent
+                        }
                     }
             }
             .frame(width: UIScreen.main.bounds.width * 0.80, alignment: .topLeading)
@@ -770,6 +809,11 @@ private struct NewSubItemRow: View {
             .padding(.leading, 4)
             .zIndex(1)
             .accessibilityAddTraits(.isKeyboardKey)
+            .contentShape(Rectangle())  // Make entire area tappable
+            .onTapGesture {
+                // When tapped, call onTap to update editing state
+                onTap()
+            }
         }
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
@@ -836,6 +880,10 @@ private struct SubItemView: View {
                 withAnimation {
                     offset = 0
                     isSwiped = false
+                    // Clear focus if this subitem is currently being edited
+                    if isEditing {
+                        focusedSubitemId = nil
+                    }
                     viewModel.deleteSubitem(subitem.id)
                 }
             }) {
@@ -972,6 +1020,14 @@ private struct SubItemView: View {
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
         .listRowInsets(EdgeInsets())
+        // Add onDisappear handler for the entire view to clean up focus
+        .onDisappear {
+            // If this subitem was being edited when it disappeared,
+            // make sure to clear the focus state in the parent
+            if isEditing {
+                focusedSubitemId = nil
+            }
+        }
     }
     
     // Helper to save changes to a subitem

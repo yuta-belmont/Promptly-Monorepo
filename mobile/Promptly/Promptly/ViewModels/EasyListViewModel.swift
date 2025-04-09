@@ -46,47 +46,33 @@ class CounterStateManager: ObservableObject {
 }
 
 // Simple structure to hold group information for UI purposes
-struct GroupInfo {
-    let id: UUID
-    let title: String
-    let colorRed: Double
-    let colorGreen: Double
-    let colorBlue: Double
-    let hasColor: Bool
+public struct GroupInfo {
+    public let title: String
+    public let color: Color?
     
-    init(from group: Models.ItemGroup) {
-        self.id = group.id
-        self.title = group.title
-        self.colorRed = group.colorRed
-        self.colorGreen = group.colorGreen
-        self.colorBlue = group.colorBlue
-        self.hasColor = group.hasColor
-    }
-    
-    // Helper to convert to SwiftUI Color
-    var color: Color? {
-        guard hasColor else { return nil }
-        return Color(red: colorRed, green: colorGreen, blue: colorBlue)
+    public init(title: String, color: Color?) {
+        self.title = title
+        self.color = color
     }
 }
 
 // UI-only data structure for PlannerItemView
-struct PlannerItemDisplayData: Identifiable, Equatable {
-    let id: UUID
-    let title: String
-    let isCompleted: Bool
-    let notification: Date?
-    let groupId: UUID?
-    let groupTitle: String?
-    let groupColor: Color?
-    let subItems: [SubItemDisplayData]
-    let date: Date  // For API compatibility when needed
-    let lastModified: Date? // Optional timestamp for forcing view updates
+public struct PlannerItemDisplayData: Identifiable, Equatable {
+    public let id: UUID
+    public let title: String
+    public let isCompleted: Bool
+    public let notification: Date?
+    public let groupId: UUID?
+    public let groupTitle: String?
+    public let groupColor: Color?
+    public let subItems: [SubItemDisplayData]
+    public let date: Date  // For API compatibility when needed
+    public let lastModified: Date? // Optional timestamp for forcing view updates
     
-    struct SubItemDisplayData: Identifiable, Equatable {
-        let id: UUID
-        let title: String
-        let isCompleted: Bool
+    public struct SubItemDisplayData: Identifiable, Equatable {
+        public let id: UUID
+        public let title: String
+        public let isCompleted: Bool
     }
     
     // Create display data from a model item

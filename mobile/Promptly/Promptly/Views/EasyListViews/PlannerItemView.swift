@@ -78,6 +78,7 @@ private struct ItemMenuButton: View {
     @Binding var itemData: MutablePlannerItemData
     let metadataCallbacks: MetadataCallbacks
     let onDelete: (() -> Void)?  // Add onDelete callback
+    let isGroupDetailsView: Bool
     
     var body: some View {
         Button(action: {
@@ -88,9 +89,9 @@ private struct ItemMenuButton: View {
                 .rotationEffect(.degrees(90))
                 .foregroundColor(.white.opacity(0.6))
                 .font(.system(size: 16))
-                .frame(maxWidth: 30, maxHeight: .infinity, alignment: .top)
+                .padding(.trailing, 10)
+                .frame(maxWidth: 40, maxHeight: .infinity, alignment: .top)
                 .padding(.top, 16)
-                .padding(.trailing, 6)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -125,7 +126,8 @@ private struct ItemMenuButton: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                         onDelete?()  // This will trigger the actual deletion in the parent
                     }
-                }
+                },
+                isGroupDetailsView: isGroupDetailsView
             )
             .presentationCompactAdaptation(.none)
         }
@@ -141,6 +143,7 @@ private struct MainItemRow: View {
     let onToggleItem: ((UUID, Date?) -> Void)?
     let metadataCallbacks: MetadataCallbacks
     let onDelete: (() -> Void)?  // Add onDelete callback
+    let isGroupDetailsView: Bool
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
     var body: some View {
@@ -181,7 +184,8 @@ private struct MainItemRow: View {
             ItemMenuButton(
                 itemData: $itemData,
                 metadataCallbacks: metadataCallbacks,
-                onDelete: onDelete
+                onDelete: onDelete,
+                isGroupDetailsView: isGroupDetailsView
             )
         }
         // Add listRowSeparator to avoid rendering separators
@@ -265,23 +269,36 @@ private struct ExpandCollapseButton: View {
 private struct MetadataRow: View {
     @Binding var itemData: MutablePlannerItemData
     let groupInfo: (title: String?, color: Color?)
+    let isGroupDetailsView: Bool
     
     private var hasValidGroup: Bool {
         return groupInfo.title != nil
     }
     
+    private let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        return formatter
+    }()
+    
     var body: some View {
         // Only show notification or group info if not completed or if subitems are expanded
         let hasNotification = (!itemData.isCompletedLocally || itemData.areSubItemsExpanded) && 
                              itemData.notification != nil
-        let hasGroup = (!itemData.isCompletedLocally || itemData.areSubItemsExpanded) && hasValidGroup
+        let hasGroup = (!itemData.isCompletedLocally || itemData.areSubItemsExpanded) && hasValidGroup && !isGroupDetailsView
         
-        if hasNotification || hasGroup {
+        if hasNotification || hasGroup || isGroupDetailsView {
             HStack(spacing: 8) {
                 Spacer()
                     .frame(width: 30)
                 
-                if hasGroup, let groupTitle = groupInfo.title {
+                if isGroupDetailsView {
+                    Text(dateFormatter.string(from: itemData.date))
+                        .font(.footnote)
+                        .foregroundColor(.white.opacity(0.5))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                } else if hasGroup, let groupTitle = groupInfo.title {
                     Text(groupTitle)
                         .font(.footnote)
                         .foregroundColor(.white.opacity(0.5))
@@ -424,6 +441,7 @@ struct PlannerItemView: View, Equatable {
     @State private var itemData: MutablePlannerItemData
     @State private var isGlowing: Bool = false
     @State private var showOutline: Bool = false  // New state for outline
+    let isGroupDetailsView: Bool
     
     // Store the display data to observe changes
     let displayData: PlannerItemDisplayData
@@ -475,15 +493,17 @@ struct PlannerItemView: View, Equatable {
         onToggleItem: ((UUID, Date?) -> Void)? = nil,
         onToggleSubItem: ((UUID, UUID, Bool) -> Void)? = nil,
         onLoseFocus: ((String) -> Void)? = nil,
-        onDelete: (() -> Void)? = nil,  // New parameter
+        onDelete: (() -> Void)? = nil,
         onNotificationChange: ((Date?) -> Void)? = nil,
         onGroupChange: ((UUID?) -> Void)? = nil,
-        onItemTap: ((UUID) -> Void)? = nil
+        onItemTap: ((UUID) -> Void)? = nil,
+        isGroupDetailsView: Bool = false
     ) {        
         // Store the display data
         self.displayData = displayData
         // Initialize the itemData from displayData
         self._itemData = State(initialValue: MutablePlannerItemData(from: displayData))
+        self.isGroupDetailsView = isGroupDetailsView
         
         self.onToggleItem = onToggleItem
         self.onToggleSubItem = onToggleSubItem
@@ -503,12 +523,14 @@ struct PlannerItemView: View, Equatable {
                     onNotificationChange: onNotificationChange,
                     onGroupChange: onGroupChange
                 ),
-                onDelete: onDelete
+                onDelete: onDelete,
+                isGroupDetailsView: isGroupDetailsView
             )
             
             MetadataRow(
                 itemData: $itemData,
-                groupInfo: groupInfo
+                groupInfo: groupInfo,
+                isGroupDetailsView: isGroupDetailsView
             )
             .padding(.horizontal, 12)
             
@@ -527,7 +549,7 @@ struct PlannerItemView: View, Equatable {
                 if itemData.isDeleting {
                     RoundedRectangle(cornerRadius: 16)
                         .fill(Color.red.opacity(0.65 * itemData.opacity))
-                } else if let color = groupInfo.color {
+                } else if let color = groupInfo.color, !isGroupDetailsView {
                     RoundedRectangle(cornerRadius: 16)
                         .fill(color.opacity(0.25))
                 }
@@ -633,20 +655,22 @@ extension PlannerItemView {
         onToggleItem: ((UUID, Date?) -> Void)? = nil,
         onToggleSubItem: ((UUID, UUID, Bool) -> Void)? = nil,
         onLoseFocus: ((String) -> Void)? = nil,
-        onDelete: (() -> Void)? = nil,  // New parameter
+        onDelete: (() -> Void)? = nil,
         onNotificationChange: ((Date?) -> Void)? = nil,
         onGroupChange: ((UUID?) -> Void)? = nil,
-        onItemTap: ((UUID) -> Void)? = nil
+        onItemTap: ((UUID) -> Void)? = nil,
+        isGroupDetailsView: Bool = false
     ) -> PlannerItemView {
         return PlannerItemView(
             displayData: displayData,
             onToggleItem: onToggleItem,
             onToggleSubItem: onToggleSubItem,
             onLoseFocus: onLoseFocus,
-            onDelete: onDelete,  // Pass through new parameter
+            onDelete: onDelete,
             onNotificationChange: onNotificationChange,
             onGroupChange: onGroupChange,
-            onItemTap: onItemTap
+            onItemTap: onItemTap,
+            isGroupDetailsView: isGroupDetailsView
         )
     }
 }
@@ -683,5 +707,3 @@ struct SubItemsTransitionModifier: ViewModifier {
             .scaleEffect(y: animState ? 1 : 0.01, anchor: .top) // Start with minimal height from the top
     }
 }
-
-

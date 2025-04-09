@@ -23,7 +23,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Maximum time for processing a single task
-MAX_TASK_PROCESSING_TIME = 30  # 30 seconds per task
+MAX_TASK_PROCESSING_TIME = 60  # 60 seconds per task
+MAX_PENDING_TASK_AGE = 60  # 60 seconds
 
 class UnifiedWorker:
     """
@@ -71,9 +72,19 @@ class UnifiedWorker:
                 available_capacity = self.semaphore._value - total_active
                 
                 if available_capacity > 0:
-                    # Get pending tasks from both collections up to available capacity
+                    # IMPORTANT: We need to poll for all three types of tasks:
+                    # 1. Message tasks: Regular chat messages that need AI responses
+                    # 2. Checklist tasks: Tasks for generating checklists (created by message tasks when they detect a checklist request)
+                    # 3. Checkin tasks: Tasks for analyzing completed checklists and providing insights
+                    # DO NOT REMOVE any of these task types as they are all critical for the system to function properly
+                    
                     message_tasks = self.firebase_service.get_pending_tasks(
                         collection=self.firebase_service.MESSAGE_TASKS_COLLECTION,
+                        limit=available_capacity
+                    )
+                    
+                    checklist_tasks = self.firebase_service.get_pending_tasks(
+                        collection=self.firebase_service.CHECKLIST_TASKS_COLLECTION,
                         limit=available_capacity
                     )
                     
@@ -82,17 +93,61 @@ class UnifiedWorker:
                         limit=available_capacity
                     )
                     
-                    # Process all tasks
-                    for task in message_tasks + checkin_tasks:
+                    # Process all tasks from all collections
+                    for task in message_tasks + checklist_tasks + checkin_tasks:
                         task_id = task['id']
                         task_data = task
                         
+                        # Debug logging for timestamp
+                        logger.debug(f"Task {task_id} created_at type: {type(task_data.get('created_at'))}, value: {task_data.get('created_at')}")
+                        
+                        # Check task age
+                        created_at = task_data.get('created_at')
+                        if created_at:
+                            try:
+                                # Handle different timestamp formats
+                                if isinstance(created_at, str):
+                                    # Try to parse string timestamp
+                                    try:
+                                        # First try ISO format
+                                        dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                                        created_at = dt.timestamp()
+                                    except ValueError:
+                                        # If it fails, try to convert directly to float
+                                        created_at = float(created_at)
+                                
+                                # Now calculate task age
+                                task_age = time.time() - float(created_at)
+                                logger.debug(f"Task {task_id} age calculation: current_time={time.time()}, created_at={created_at}, age={task_age}")
+                                logger.debug(f"Task {task_id} age: {task_age:.1f} seconds")
+                                
+                                if task_age > MAX_PENDING_TASK_AGE:
+                                    # Task is too old, mark as failed without processing
+                                    collection = task_data.get('collection', self.firebase_service.MESSAGE_TASKS_COLLECTION)
+                                    logger.warning(f"Task {task_id} is too old ({task_age:.1f} seconds), marking as failed")
+                                    self.firebase_service.update_task_status(
+                                        collection=collection,
+                                        task_id=task_id,
+                                        status='failed',
+                                        data={
+                                            'error': f'Task expired after waiting in queue for {task_age:.1f} seconds'
+                                        }
+                                    )
+                                    continue
+                            except Exception as e:
+                                logger.error(f"Error calculating task age for task {task_id}: {e}")
+                                logger.error(f"created_at type: {type(created_at)}, value: {created_at}")
+                                # Don't skip processing the task if we can't calculate age
+                        
                         # Determine task type and process accordingly
                         if task.get('collection') == self.firebase_service.CHECKIN_TASKS_COLLECTION:
-                            # Process checkin task
+                            # Process checkin task (analyzing completed checklists)
                             task_coroutine = self.process_checkin_task(task_id, task_data)
+                        elif task.get('collection') == self.firebase_service.CHECKLIST_TASKS_COLLECTION:
+                            # Process checklist task (generating new checklists)
+                            task_coroutine = self.process_checklist_task(task_id, task_data)
                         else:
-                            # Process regular message task
+                            # Process regular message task (chat messages)
                             task_coroutine = self.process_message_task(task_id, task_data)
                         
                         # Create and start task with tracking
@@ -375,13 +430,17 @@ class UnifiedWorker:
             user_id = task_data.get('user_id')
             user_full_name = task_data.get('user_full_name')
             checklist_data = task_data.get('checklist_data', {})
+            alfred_personality = task_data.get('alfred_personality')
+            user_objectives = task_data.get('user_objectives')
             
             logger.info(f"Processing checkin task {task_id} for user {user_id}")
             
             # Generate analysis
             analysis = self.ai_service.analyze_checkin(
                 checklist_data=checklist_data,
-                user_full_name=user_full_name
+                user_full_name=user_full_name,
+                alfred_personality=alfred_personality,
+                user_objectives=user_objectives
             )
             
             if analysis:

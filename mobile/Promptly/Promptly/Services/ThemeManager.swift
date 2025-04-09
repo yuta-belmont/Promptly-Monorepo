@@ -12,10 +12,10 @@ enum AppTheme: String, CaseIterable, Identifiable {
     case lava = "Lava"
     case sunshine = "Sunshine"
     case bubblegum = "Bubblegum"
-    case sunrise = "Sunrise"
     case roseGold = "RoseGold"
     case emerald = "Emerald"
     case diamond = "Crystalline"
+    case sunrise = "Sunrise"
     case starryNight = "Starry"
     case vibrant = "Vibrant"
     case hallucination = "Daydream"
@@ -36,10 +36,10 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .lava: return 5
         case .sunshine: return 10
         case .bubblegum: return 20
-        case .sunrise: return 50
         case .roseGold: return 100
         case .emerald: return 100
         case .diamond: return 100
+        case .sunrise: return 200
         case .starryNight: return 500
         case .vibrant: return 1000
         case .hallucination: return 2000
@@ -448,13 +448,13 @@ class ThemeManager: ObservableObject {
     // Singleton instance
     static let shared = ThemeManager()
     
-    // Initialize with the saved theme or default to nature
+    // Initialize with the saved theme or default to slate
     private init() {
         let savedTheme = UserDefaults.standard.string(forKey: "appTheme") ?? AppTheme.nature.rawValue
         if let theme = AppTheme(rawValue: savedTheme) {
             self.currentTheme = theme
         } else {
-            self.currentTheme = .nature
+            self.currentTheme = .slate
         }
     }
 } 

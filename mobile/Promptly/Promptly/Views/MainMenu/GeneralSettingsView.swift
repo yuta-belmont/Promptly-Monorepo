@@ -354,6 +354,44 @@ struct GeneralSettingsView: View {
             }
             .padding(.horizontal)
             .transition(.opacity)
+        }
+    }
+    
+    // MARK: - Chat Section View
+    private var chatSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Section header
+            HStack {
+                Text("Chat")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                
+                Button(action: {
+                    showingChatInfo = true
+                }) {
+                    Image(systemName: "info.circle")
+                        .foregroundColor(.gray)
+                        .font(.system(size: 14))
+                }
+                .popover(isPresented: $showingChatInfo, arrowEdge: .bottom) {
+                    ChatInfoPopover()
+                }
+                
+                Spacer()
+            }
+            .padding(.horizontal)
+            
+            // Chat toggle
+            HStack {
+                Text("Show Chat")
+                    .foregroundColor(.white)
+                
+                Spacer()
+                
+                Toggle("", isOn: $userSettings.isChatEnabled)
+                    .labelsHidden()
+            }
+            .padding(.horizontal)
             
             // Personality selector
             VStack(alignment: .leading, spacing: 8) {
@@ -429,44 +467,6 @@ struct GeneralSettingsView: View {
                 }
             }
             .padding(.top, 8)
-        }
-    }
-    
-    // MARK: - Chat Section View
-    private var chatSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Section header
-            HStack {
-                Text("Chat")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                
-                Button(action: {
-                    showingChatInfo = true
-                }) {
-                    Image(systemName: "info.circle")
-                        .foregroundColor(.gray)
-                        .font(.system(size: 14))
-                }
-                .popover(isPresented: $showingChatInfo, arrowEdge: .bottom) {
-                    ChatInfoPopover()
-                }
-                
-                Spacer()
-            }
-            .padding(.horizontal)
-            
-            // Chat toggle
-            HStack {
-                Text("Show Chat")
-                    .foregroundColor(.white)
-                
-                Spacer()
-                
-                Toggle("", isOn: $userSettings.isChatEnabled)
-                    .labelsHidden()
-            }
-            .padding(.horizontal)
             
             // Clear chat button
             Button(action: {
@@ -719,7 +719,7 @@ struct CheckInInfoPopover: View {
 struct ChatInfoPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Chat allows you to interact with Alfred, your personalized assistant.\n\nAlfred keeps you accountable during check-ins, but he can also generate reminders, create tasks, and plan out daily steps towards long term goals.")
+            Text("Chat allows you to interact with Alfred.\n\nAlfred keeps you accountable during check-ins, but he can also generate reminders, create tasks, and plan out daily steps towards long term goals.")
                 .font(.body)
                 .foregroundColor(.white.opacity(0.8))
                 .lineSpacing(4)

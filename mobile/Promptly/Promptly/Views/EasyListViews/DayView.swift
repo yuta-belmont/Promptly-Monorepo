@@ -441,12 +441,24 @@ struct DayView: View, Hashable {
             // Get the current checklist data
             let checklist = easyListViewModel.getChecklistForCheckin()
             
-            // Try server check-in first
+            // Calculate and display analytics first
+            let stats = CheckInAnalytics.shared.calculateStats()
+            Task { @MainActor in
+                ChatViewModel.shared.handleMessage(stats.formattedString)
+            }
+            
+            // Try server check-in
             Task {
                 do {
                     let dictChecklist = easyListViewModel.getChecklistDictionaryForCheckin()
-                    try await _ = ChatService.shared.handleCheckin(checklist: dictChecklist)
+                    try await ChatService.shared.handleCheckin(checklist: dictChecklist)
                 } catch {
+                    print("❌ Check-in failed with error: \(error)")
+                    print("❌ Error type: \(type(of: error))")
+                    if let urlError = error as? URLError {
+                        print("❌ URLError code: \(urlError.code)")
+                        print("❌ URLError localizedDescription: \(urlError.localizedDescription)")
+                    }
                     // If server check-in fails, fall back to offline processing
                     await ChatViewModel.shared.handleOfflineCheckIn(checklist: checklist)
                 }
@@ -759,39 +771,25 @@ struct DayView: View, Hashable {
                         .padding(.bottom, 4)
                         .zIndex(1)
                     }
-                    
-                    // Wrap in Group with animation for smooth transitions
-                    Group {
-                        if !showingItemDetails {
-                            // Only show EasyListView when not showing item details
-                            EasyListView()
-                                .environmentObject(easyListViewModel) // Make the view model available
-                                .frame(height: max(0, geometry.size.height - (isDateHeaderExpanded ? 110 : 52))) // Adjust height when week view is visible
-                                .offset(x: dragOffset.width, y: dragOffset.height)
-                                .rotationEffect(rotation)
-                                .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                                .id("easyListView-\(currentDate.timeIntervalSince1970)") // Force complete view reconstruction
-                                .gesture(
-                                    DragGesture()
-                                        .onChanged { value in
-                                            // Only track horizontal movement, ignore vertical
-                                            dragOffset = CGSize(width: value.translation.width, height: 0)
-                                            // Calculate rotation based only on horizontal movement
-                                            let rotationFactor = Double(dragOffset.width / 40)
-                                            rotation = Angle(degrees: rotationFactor)
-                                        }
-                                        .onEnded { value in
-                                            handleSwipe(horizontalAmount: value.translation.width, in: geometry)
-                                        }
-                                )
-                        } else {
-                            // Using a clear spacer to maintain layout structure when EasyListView is removed
-                            Color.clear
-                                .frame(height: geometry.size.height - (isDateHeaderExpanded ? 110 : 52))
-                                .transition(.opacity)
-                        }
-                    }
-                    .animation(.easeInOut(duration: 0.25), value: showingItemDetails)
+                    EasyListView()
+                        .environmentObject(easyListViewModel) // Make the view model available
+                        .offset(x: dragOffset.width, y: dragOffset.height)
+                        .rotationEffect(rotation)
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                        .id("easyListView-\(currentDate.timeIntervalSince1970)") // Force complete view reconstruction
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    // Only track horizontal movement, ignore vertical
+                                    dragOffset = CGSize(width: value.translation.width, height: 0)
+                                    // Calculate rotation based only on horizontal movement
+                                    let rotationFactor = Double(dragOffset.width / 40)
+                                    rotation = Angle(degrees: rotationFactor)
+                                }
+                                .onEnded { value in
+                                    handleSwipe(horizontalAmount: value.translation.width, in: geometry)
+                                }
+                        )
                 }
                 .opacity(showingItemDetails ? 0 : 1) // Make the entire VStack transparent when showing item details
                 .animation(.easeInOut(duration: 0.25), value: showingItemDetails)
@@ -933,18 +931,6 @@ struct DayView: View, Hashable {
             
             // ItemDetails overlay
             if showingItemDetails, let item = selectedItem {
-                // Semi-transparent backdrop for closing the details view
-                Color.black.opacity(0.01)
-                    .edgesIgnoringSafeArea(.all)
-                    .allowsHitTesting(true)
-                    .transition(.opacity)
-                    .zIndex(998)
-                    .onTapGesture {
-                        // Close if tap is outside the details view
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            showingItemDetails = false
-                        }
-                    }
                 
                 // ItemDetailsView overlay with matching transition
                 ItemDetailsView(

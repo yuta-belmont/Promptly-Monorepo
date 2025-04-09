@@ -314,7 +314,6 @@ struct NewItemRow: View {
     let isFocused: FocusState<Bool>.Binding
     let onSubmit: () -> Void
     @Binding var isListEmpty: Bool
-    @State private var previousText: String = ""
     
     var body: some View {
         HStack(alignment: .top) {
@@ -327,7 +326,7 @@ struct NewItemRow: View {
             ZStack(alignment: .leading) {
                 // Placeholder text
                 if text.isEmpty {
-                    Text("New item")
+                    Text("New item...")
                         .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0.7))
                         .padding(.leading, 4)
                         .padding(.top, 4)
@@ -346,6 +345,14 @@ struct NewItemRow: View {
                             // Remove the newline character
                             if oldValue.count == 0 {
                                 text = newValue.replacingOccurrences(of: "\n", with: " ")
+                                
+                                // But now that we replace \n with " ", we need to make sure we're not just submitting a " " field.
+                                // An empty field that a users presses return in should just remove focus and not submit anything.
+                                if text.count <= 1 {
+                                    text = ""
+                                    isFocused.wrappedValue = false
+                                    return
+                                }
                             } else {
                                 text = oldValue
                             }
@@ -357,7 +364,6 @@ struct NewItemRow: View {
                                 isFocused.wrappedValue = false
                             }
                         }
-                        previousText = text
                     }
             }
             .frame(width: UIScreen.main.bounds.width * 0.80, alignment: .topLeading)
@@ -472,7 +478,7 @@ struct ListContent: View {
                 // Constrain the List to exactly match the available height
                 .frame(height: availableHeight)
                 // Use animation with structurally significant values only
-                .animation(.easeInOut(duration: 0.2), value: viewModel.items.count)
+                // .animation(.easeInOut(duration: 0.2), value: viewModel.items.count)
                 .environment(\.defaultMinListRowHeight, 0) // Minimize row height calculations
                 .onChange(of: isNewItemFocused) { oldValue, newValue in
                     // Only handle focus management
@@ -508,7 +514,9 @@ struct ListContent: View {
     
     private func deleteItem(_ item: Models.ChecklistItem) {
         if let index = viewModel.items.firstIndex(where: { $0.id == item.id }) {
-            viewModel.deleteItem(id: item.id)  // Use the regular deleteItem method that adds to undo stack
+            withAnimation {
+                viewModel.deleteItem(id: item.id)  // Use the regular deleteItem method that adds to undo stack
+            }
         }
     }
     

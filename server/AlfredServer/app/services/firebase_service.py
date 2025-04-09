@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 import logging
 from dotenv import load_dotenv
+import time  # Add import for time module
 from app.utils.firestore_utils import convert_firestore_data
 
 # Load environment variables
@@ -109,6 +110,9 @@ class FirebaseService:
             # Create a reference to the checklist tasks collection
             task_ref = self.db.collection('checklist_tasks').document()
             
+            # Get current Unix timestamp
+            current_time = time.time()
+            
             # Set the task data
             task_data = {
                 'status': 'pending',
@@ -117,8 +121,9 @@ class FirebaseService:
                 'message_id': message_id,
                 'message_content': message_content,
                 'message_history': message_history,
-                'created_at': firestore.SERVER_TIMESTAMP,
-                'updated_at': firestore.SERVER_TIMESTAMP
+                'created_at': current_time,
+                'updated_at': current_time,
+                'collection': self.CHECKLIST_TASKS_COLLECTION  # Add collection field
             }
             
             # Include client time if provided
@@ -162,6 +167,9 @@ class FirebaseService:
             # Create a reference to the message tasks collection
             task_ref = self.db.collection('message_tasks').document()
             
+            # Get current Unix timestamp
+            current_time = time.time()
+            
             # Set the task data
             task_data = {
                 'status': 'pending',
@@ -169,8 +177,9 @@ class FirebaseService:
                 'message_content': message_content,
                 'message_history': message_history,
                 'user_full_name': user_full_name,
-                'created_at': firestore.SERVER_TIMESTAMP,
-                'updated_at': firestore.SERVER_TIMESTAMP
+                'created_at': current_time,
+                'updated_at': current_time,
+                'collection': self.MESSAGE_TASKS_COLLECTION  # Add collection field
             }
             
             # Add optional fields if provided
@@ -198,7 +207,12 @@ class FirebaseService:
             print(f"[FIREBASE] Error adding message task: {e}")
             raise
     
-    def update_task_status(self, collection: str, task_id: str, status: str, data: Optional[Dict[str, Any]] = None) -> None:
+    def update_task_status(self, 
+                        collection: str, 
+                        task_id: str, 
+                        status: str, 
+                        data: Optional[Dict[str, Any]] = None,
+                        worker_id: Optional[str] = None) -> bool:
         """
         Update the status of a task in Firestore.
         
@@ -207,15 +221,31 @@ class FirebaseService:
             task_id: The ID of the task
             status: The new status ('pending', 'processing', 'completed', 'failed')
             data: Additional data to update (optional)
+            worker_id: ID of the worker updating the task (optional)
+            
+        Returns:
+            True if the update was successful, False otherwise
         """
         try:
             # Create a reference to the task document
             task_ref = self.db.collection(collection).document(task_id)
             
+            # If a worker_id is provided, verify this worker owns the task
+            if worker_id:
+                task_doc = task_ref.get()
+                if task_doc.exists:
+                    task_data = task_doc.to_dict()
+                    current_worker = task_data.get('worker_id')
+                    
+                    # If there's a different worker assigned, don't update
+                    if current_worker and current_worker != worker_id:
+                        logger.warning(f"Worker {worker_id} attempted to update task {task_id} owned by {current_worker}")
+                        return False
+            
             # Prepare the update data
             update_data = {
                 'status': status,
-                'updated_at': firestore.SERVER_TIMESTAMP
+                'updated_at': time.time()
             }
             
             # Add any additional data
@@ -230,26 +260,35 @@ class FirebaseService:
             task_ref.update(update_data)
             
             logger.info(f"Updated {collection} task {task_id} status to {status}")
+            return True
             
         except Exception as e:
             logger.error(f"Error updating task status: {e}")
             print(f"[FIREBASE] Error updating task status: {e}")
-            raise
+            return False
     
-    def get_pending_tasks(self, collection: str, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_pending_tasks(self, collection: str, limit: int = 25) -> List[Dict[str, Any]]:
         """
         Get pending tasks from Firestore.
         
         Args:
             collection: The collection name ('message_tasks' or 'checklist_tasks')
-            limit: The maximum number of tasks to return
+            limit: The maximum number of tasks to return (default: 25)
             
         Returns:
             A list of pending tasks
         """
+        # Return early if no capacity
+        if limit <= 0:
+            return []
+            
         try:
-            # Use a simpler query that doesn't require a composite index
-            query = self.db.collection(collection).where('status', '==', 'pending')
+            # Use an optimized query that directly gets the oldest pending tasks
+            # Note: This requires a composite index on (status, created_at)
+            query = self.db.collection(collection)\
+                .where('status', '==', 'pending')\
+                .order_by('created_at')\
+                .limit(limit)
             
             # Get the results
             tasks = []
@@ -258,23 +297,56 @@ class FirebaseService:
                 task_data['id'] = doc.id
                 # Add the collection name to the task data
                 task_data['collection'] = collection
+                
+                # Debug logging for timestamp before conversion
+                if 'created_at' in task_data:
+                    logger.debug(f"Before conversion - created_at type: {type(task_data['created_at'])}, value: {task_data['created_at']}")
+                
                 # Convert Firestore data types to JSON serializable types
                 task_data = convert_firestore_data(task_data)
+                
+                # Debug logging for timestamp after conversion
+                if 'created_at' in task_data:
+                    logger.debug(f"After conversion - created_at type: {type(task_data['created_at'])}, value: {task_data['created_at']}")
+                
                 tasks.append(task_data)
             
             if tasks:
-                # Sort tasks by created_at in Python instead of in the query
-                tasks.sort(key=lambda x: x.get('created_at', 0))
-                # Limit the number of tasks
-                tasks = tasks[:limit]
-                
                 logger.info(f"Found {len(tasks)} pending tasks in {collection}")
             
             return tasks
             
         except Exception as e:
             logger.error(f"Error getting pending tasks: {e}")
-            return []
+            # If we get an error (likely missing index), fall back to the old method
+            try:
+                # Use a simpler query without ordering
+                query = self.db.collection(collection).where('status', '==', 'pending')
+                
+                # Get the results
+                tasks = []
+                for doc in query.stream():
+                    task_data = doc.to_dict()
+                    task_data['id'] = doc.id
+                    task_data['collection'] = collection
+                    
+                    # Convert Firestore data types to JSON serializable types
+                    task_data = convert_firestore_data(task_data)
+                    
+                    tasks.append(task_data)
+                
+                if tasks:
+                    # Sort tasks by created_at in Python instead of in the query
+                    tasks.sort(key=lambda x: x.get('created_at', 0))
+                    # Limit the number of tasks
+                    tasks = tasks[:limit]
+                    
+                    logger.info(f"Found {len(tasks)} pending tasks in {collection} (using fallback method)")
+                
+                return tasks
+            except Exception as e2:
+                logger.error(f"Error in fallback query: {e2}")
+                return []
     
     def get_task_status(self, collection: str, task_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -319,7 +391,7 @@ class FirebaseService:
             # Update the message ID
             task_ref.update({
                 'message_id': message_id,
-                'updated_at': firestore.SERVER_TIMESTAMP
+                'updated_at': time.time()  # Use time.time() instead of SERVER_TIMESTAMP
             })
             
             logger.info(f"Updated checklist task {task_id} with message ID {message_id}")
@@ -347,8 +419,8 @@ class FirebaseService:
             task_data = {
                 'user_id': user_id,
                 'checklist_data': checklist_content,  # Store the entire checklist data structure
-                'created_at': firestore.SERVER_TIMESTAMP,
-                'updated_at': firestore.SERVER_TIMESTAMP,
+                'created_at': time.time(),
+                'updated_at': time.time(),
                 'status': 'completed'
             }
             
@@ -373,7 +445,9 @@ class FirebaseService:
                         user_id: str,
                         user_full_name: str,
                         checklist_data: Dict[str, Any],
-                        client_time: Optional[str] = None) -> str:
+                        client_time: Optional[str] = None,
+                        alfred_personality: Optional[str] = None,
+                        user_objectives: Optional[str] = None) -> str:
         """
         Add a checkin analysis task to Firestore.
         
@@ -382,13 +456,18 @@ class FirebaseService:
             user_full_name: The full name of the user
             checklist_data: The checklist data to analyze
             client_time: The current time on the client device (optional)
+            alfred_personality: The personality setting for Alfred (optional)
+            user_objectives: The user's objectives (optional)
             
         Returns:
             The ID of the created task
         """
         try:
             # Create a reference to the checkin tasks collection
-            task_ref = self.db.collection(self.CHECKIN_TASKS_COLLECTION).document()
+            task_ref = self.db.collection('checkin_tasks').document()
+            
+            # Get current Unix timestamp
+            current_time = time.time()
             
             # Set the task data
             task_data = {
@@ -396,13 +475,20 @@ class FirebaseService:
                 'user_id': user_id,
                 'user_full_name': user_full_name,
                 'checklist_data': checklist_data,
-                'created_at': firestore.SERVER_TIMESTAMP,
-                'updated_at': firestore.SERVER_TIMESTAMP
+                'created_at': current_time,
+                'updated_at': current_time,
+                'collection': self.CHECKIN_TASKS_COLLECTION  # Add collection field
             }
             
-            # Include client time if provided
+            # Add optional fields if provided
             if client_time:
                 task_data['client_time'] = client_time
+                
+            if alfred_personality:
+                task_data['alfred_personality'] = alfred_personality
+                
+            if user_objectives:
+                task_data['user_objectives'] = user_objectives
                 
             task_ref.set(task_data)
             
@@ -431,7 +517,7 @@ class FirebaseService:
             # Set the checkin data
             checkin_data.update({
                 'user_id': user_id,
-                'created_at': firestore.SERVER_TIMESTAMP
+                'created_at': time.time()  # Use time.time() instead of SERVER_TIMESTAMP
             })
             
             # Store the data
@@ -442,4 +528,99 @@ class FirebaseService:
         except Exception as e:
             logger.error(f"Error storing checkin data: {e}")
             print(f"[FIREBASE] Error storing checkin data: {e}")
-            raise 
+            raise
+
+    @firestore.transactional
+    def _claim_task_transaction(self, transaction, task_ref, worker_id):
+        """
+        Transaction function to claim a pending task.
+        
+        Args:
+            transaction: The Firestore transaction
+            task_ref: Reference to the task document
+            worker_id: ID of the worker claiming the task
+            
+        Returns:
+            True if the task was claimed, False otherwise
+        """
+        snapshot = task_ref.get(transaction=transaction)
+        if not snapshot.exists:
+            return False
+            
+        task_data = snapshot.to_dict()
+        if task_data.get('status') != 'pending':
+            return False
+            
+        # Claim the task
+        transaction.update(task_ref, {
+            'status': 'processing',
+            'updated_at': time.time(),
+            'worker_id': worker_id
+        })
+        
+        return True
+    
+    def claim_task(self, collection: str, task_id: str, worker_id: str) -> bool:
+        """
+        Claim a task for processing using a transaction to ensure only one worker
+        can claim it.
+        
+        Args:
+            collection: The collection name ('message_tasks' or 'checklist_tasks', etc.)
+            task_id: The ID of the task to claim
+            worker_id: Unique identifier for the worker claiming the task
+            
+        Returns:
+            True if the task was successfully claimed, False otherwise
+        """
+        try:
+            # Create a transaction
+            transaction = self.db.transaction()
+            
+            # Get a reference to the task
+            task_ref = self.db.collection(collection).document(task_id)
+            
+            # Attempt to claim the task in a transaction
+            claimed = self._claim_task_transaction(transaction, task_ref, worker_id)
+            
+            if claimed:
+                logger.info(f"Worker {worker_id} claimed task {task_id} in {collection}")
+            
+            return claimed
+            
+        except Exception as e:
+            logger.error(f"Error claiming task {task_id}: {e}")
+            return False
+    
+    def claim_next_pending_task(self, collection: str, worker_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Find and claim the next pending task in the specified collection.
+        
+        Args:
+            collection: The collection name ('message_tasks' or 'checklist_tasks', etc.)
+            worker_id: Unique identifier for the worker claiming the task
+            
+        Returns:
+            The claimed task data if successful, None otherwise
+        """
+        try:
+            # Get a single pending task
+            pending_tasks = self.get_pending_tasks(collection, limit=1)
+            
+            if not pending_tasks:
+                return None
+                
+            task = pending_tasks[0]
+            task_id = task['id']
+            
+            # Try to claim it
+            if self.claim_task(collection, task_id, worker_id):
+                # Re-fetch the task to get the updated data
+                updated_task = self.get_task_status(collection, task_id)
+                return updated_task
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error claiming next pending task in {collection}: {e}")
+            return None 

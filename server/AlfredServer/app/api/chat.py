@@ -58,6 +58,8 @@ class Checklist(BaseModel):
 class CheckinRequest(BaseModel):
     checklist: Checklist
     current_time: Optional[str] = None
+    alfred_personality: Optional[str] = None
+    user_objectives: Optional[str] = None
 
 # Stateless message endpoint that doesn't use the chat model
 @router.post("/messages", response_model=OptimizedChatResponse)
@@ -150,7 +152,9 @@ async def send_checkin(
             user_id=str(current_user.id),
             user_full_name=current_user.full_name,
             checklist_data=request_data.checklist.dict(),
-            client_time=request_data.current_time
+            client_time=request_data.current_time,
+            alfred_personality=request_data.alfred_personality,
+            user_objectives=request_data.user_objectives
         )
         
         # Create the optimized response with pending status and task_id

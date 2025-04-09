@@ -8,6 +8,7 @@ struct PopoverContentView: View {
     let itemNotification: Date?
     // Change from constant to state for UI updates
     @State private var currentGroupId: UUID?
+    let isGroupDetailsView: Bool
     
     @Binding var isGroupSectionExpanded: Bool
     let onNotificationChange: ((Date?) -> Void)?
@@ -33,7 +34,8 @@ struct PopoverContentView: View {
         onNotificationChange: ((Date?) -> Void)?,
         onGroupChange: ((UUID?) -> Void)? = nil,
         onDelete: @escaping () -> Void,
-        showDeleteOption: Bool = true
+        showDeleteOption: Bool = true,
+        isGroupDetailsView: Bool = false
     ) {
         self.itemId = itemId
         self.itemDate = itemDate
@@ -45,6 +47,7 @@ struct PopoverContentView: View {
         self.onGroupChange = onGroupChange
         self.onDelete = onDelete
         self.showDeleteOption = showDeleteOption
+        self.isGroupDetailsView = isGroupDetailsView
         _isNotificationEnabled = State(initialValue: itemNotification != nil)
         _selectedTime = State(initialValue: itemNotification ?? Date())
     }
@@ -56,7 +59,8 @@ struct PopoverContentView: View {
         onNotificationChange: ((Date?) -> Void)?,
         onGroupChange: ((UUID?) -> Void)? = nil,
         onDelete: @escaping () -> Void,
-        showDeleteOption: Bool = true
+        showDeleteOption: Bool = true,
+        isGroupDetailsView: Bool = false
     ) {
         self.init(
             itemId: displayData.id,
@@ -67,7 +71,8 @@ struct PopoverContentView: View {
             onNotificationChange: onNotificationChange,
             onGroupChange: onGroupChange,
             onDelete: onDelete,
-            showDeleteOption: showDeleteOption
+            showDeleteOption: showDeleteOption,
+            isGroupDetailsView: isGroupDetailsView
         )
     }
     
@@ -134,122 +139,124 @@ struct PopoverContentView: View {
                     }
             }
             
-            Divider()
-                .background(Color.white.opacity(0.2))
-            
-            // Group Row - Entire row is tappable
-            Button(action: {
-                withAnimation(.linear(duration: 0.1)) {
-                    isGroupSectionExpanded.toggle()
+            if !isGroupDetailsView {
+                Divider()
+                    .background(Color.white.opacity(0.2))
+                
+                // Group Row - Entire row is tappable
+                Button(action: {
+                    withAnimation(.linear(duration: 0.1)) {
+                        isGroupSectionExpanded.toggle()
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "folder")
+                            .frame(width: 24)
+                        Text("Group")
+                        Spacer()
+                        Image(systemName: isGroupSectionExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())  // Make entire area tappable
                 }
-            }) {
-                HStack {
-                    Image(systemName: "folder")
-                        .frame(width: 24)
-                    Text("Group")
-                    Spacer()
-                    Image(systemName: isGroupSectionExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.6))
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .contentShape(Rectangle())  // Make entire area tappable
-            }
-            .buttonStyle(.plain)
-            
-            // Group Section (expanded)
-            if isGroupSectionExpanded {
-                VStack(spacing: 0) {
-                    // Existing Groups List
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            ForEach(groupStore.groups) { group in
-                                Button(action: {
-                                    // If already in this group, remove from group (toggle behavior)
-                                    if currentGroupId == group.id {
-                                        feedbackGenerator.impactOccurred()
-                                        // Update local state first
-                                        currentGroupId = nil
-                                        // Then notify parent
-                                        onGroupChange?(nil)
-                                    } else {
-                                        feedbackGenerator.impactOccurred()
-                                        // Update local state first
-                                        currentGroupId = group.id
-                                        // Then notify parent
-                                        onGroupChange?(group.id)
-                                    }
-                                     
-                                }) {
-                                    HStack {
-                                        // Check if this is the current group
-                                        let isCurrentGroup = currentGroupId == group.id
-                                        
-                                        Image(systemName: isCurrentGroup ? "checkmark.circle.fill" : "circle")
-                                            .foregroundColor(isCurrentGroup ? .green : .gray)
-                                            .frame(width: 24)
-                                            .padding(.leading, 12)
-                                        
-                                        Text(group.title)
-                                            .font(.subheadline)
-                                            .lineLimit(1)
-                                        
-                                        Spacer()
-                                    }
-                                    .foregroundColor(.white)
-                                    .padding(.vertical, 8)
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            
-                            // Show a message if no groups exist
-                            if groupStore.groups.isEmpty {
-                                VStack(spacing: 8) {
-                                    Text("You have no groups.")
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
-                                    
+                .buttonStyle(.plain)
+                
+                // Group Section (expanded)
+                if isGroupSectionExpanded {
+                    VStack(spacing: 0) {
+                        // Existing Groups List
+                        ScrollView {
+                            VStack(spacing: 0) {
+                                ForEach(groupStore.groups) { group in
                                     Button(action: {
-                                        // Close the current popover
-                                        isGroupSectionExpanded = false
-                                        
-                                        // Dismiss the parent popover
-                                        dismiss()
-                                        
-                                        // Show the ManageGroupsView
-                                        NotificationCenter.default.post(
-                                            name: NSNotification.Name("ShowManageGroupsView"),
-                                            object: nil
-                                        )
-                                        
-                                        // Provide haptic feedback
-                                        feedbackGenerator.impactOccurred()
-                                    }) {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "line.3.horizontal")
-                                                .font(.caption)
-                                                .foregroundColor(.blue)
-                                            Text("Manage groups")
-                                                .font(.caption)
-                                                .foregroundColor(.blue)
-                                                .underline()
+                                        // If already in this group, remove from group (toggle behavior)
+                                        if currentGroupId == group.id {
+                                            feedbackGenerator.impactOccurred()
+                                            // Update local state first
+                                            currentGroupId = nil
+                                            // Then notify parent
+                                            onGroupChange?(nil)
+                                        } else {
+                                            feedbackGenerator.impactOccurred()
+                                            // Update local state first
+                                            currentGroupId = group.id
+                                            // Then notify parent
+                                            onGroupChange?(group.id)
                                         }
+                                         
+                                    }) {
+                                        HStack {
+                                            // Check if this is the current group
+                                            let isCurrentGroup = currentGroupId == group.id
+                                            
+                                            Image(systemName: isCurrentGroup ? "checkmark.circle.fill" : "circle")
+                                                .foregroundColor(isCurrentGroup ? .green : .gray)
+                                                .frame(width: 24)
+                                                .padding(.leading, 12)
+                                            
+                                            Text(group.title)
+                                                .font(.subheadline)
+                                                .lineLimit(1)
+                                            
+                                            Spacer()
+                                        }
+                                        .foregroundColor(.white)
+                                        .padding(.vertical, 8)
+                                        .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
                                 }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
+                                
+                                // Show a message if no groups exist
+                                if groupStore.groups.isEmpty {
+                                    VStack(spacing: 8) {
+                                        Text("You have no groups.")
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                        
+                                        Button(action: {
+                                            // Close the current popover
+                                            isGroupSectionExpanded = false
+                                            
+                                            // Dismiss the parent popover
+                                            dismiss()
+                                            
+                                            // Show the ManageGroupsView
+                                            NotificationCenter.default.post(
+                                                name: NSNotification.Name("ShowManageGroupsView"),
+                                                object: nil
+                                            )
+                                            
+                                            // Provide haptic feedback
+                                            feedbackGenerator.impactOccurred()
+                                        }) {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "line.3.horizontal")
+                                                    .font(.caption)
+                                                    .foregroundColor(.blue)
+                                                Text("Manage groups")
+                                                    .font(.caption)
+                                                    .foregroundColor(.blue)
+                                                    .underline()
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                }
                             }
                         }
+                        .frame(maxHeight: 150)  // Increased height since we removed the creation UI
                     }
-                    .frame(maxHeight: 150)  // Increased height since we removed the creation UI
+                    .background(Color.black.opacity(0.3))
+                    .cornerRadius(8)
+                    .padding(.horizontal, 4)
                 }
-                .background(Color.black.opacity(0.3))
-                .cornerRadius(8)
-                .padding(.horizontal, 4)
             }
 
             // Delete option

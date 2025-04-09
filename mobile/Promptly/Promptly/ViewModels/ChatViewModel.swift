@@ -276,7 +276,7 @@ final class ChatViewModel: ObservableObject {
     }
     
     // Add this new method to prepare recent messages for context
-    private func prepareRecentMessagesForContext(minutes: Int = 10) -> [[String: Any]] {
+    private func prepareRecentMessagesForContext(minutes: Int = 5) -> [[String: Any]] {
         // Get current time and calculate cutoff time
         let now = Date()
         let cutoffTime = now.addingTimeInterval(-60.0 * Double(minutes))
@@ -287,11 +287,11 @@ final class ChatViewModel: ObservableObject {
             return message.timestamp >= cutoffTime
         }
         
-        // Limit to a maximum of 50 messages to ensure we don't waste bandwidth
-        // This aligns with the server's expectation (mobile client limits to 50 max)
-        if recentMessages.count > 50 {
-            // Keep only the 50 most recent messages
-            recentMessages = Array(recentMessages.suffix(50))
+        // Limit to a maximum of 10 messages to ensure we don't waste bandwidth
+        // This aligns with the server's expectation (mobile client limits to 10 max)
+        if recentMessages.count > 10 {
+            // Keep only the 10 most recent messages
+            recentMessages = Array(recentMessages.suffix(10))
         }
         
         // Convert to dictionaries for the API - only include role and content
@@ -311,7 +311,8 @@ final class ChatViewModel: ObservableObject {
             return
         }
         
-        // No need to clear userInput here - it's already cleared in the view
+        // Explicitly clear the userInput to prevent refilling issues
+        self.userInput = ""
         
         let messageId = id ?? UUID()
         let userMsg = ChatMessage.create(
@@ -373,10 +374,9 @@ final class ChatViewModel: ObservableObject {
             
             do {
                 // Prepare context from recent messages (mobile-centric approach)
-                let contextMessages = prepareRecentMessagesForContext(minutes: 7)
+                let contextMessages = prepareRecentMessagesForContext(minutes: 5)
                 
                 // Send the message with context using the existing method
-                // This avoids the sendMessageWithContext error
                 let (responseMsg, _) = try await chatService.sendMessage(
                     messages: messages, 
                     additionalContext: contextMessages

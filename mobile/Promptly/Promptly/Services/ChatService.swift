@@ -1115,7 +1115,9 @@ final class ChatService {
         // Prepare the request data
         let requestData: [String: Any] = [
             "checklist": checklist,
-            "current_time": Date().ISO8601Format()
+            "current_time": Date().ISO8601Format(),
+            "alfred_personality": String(UserSettings.shared.alfredPersonality),
+            "user_objectives": UserSettings.shared.objectives
         ]
         
         // Convert request data to JSON

@@ -108,5 +108,9 @@ class ChatInputViewModel: ObservableObject {
     
     func sendMessage() {
         // Implementation of sendMessage method
+        
+        // Reset transcription state
+        isRecording = false
+        directUpdateHandler?("")
     }
 } 

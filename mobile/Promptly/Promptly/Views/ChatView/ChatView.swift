@@ -13,6 +13,7 @@ struct ChatView: View {
     @State private var isDragging = false
     @State private var viewUpdateTrigger: Bool = false
     @State private var currentGeometry: GeometryProxy?
+    @State private var lastInputClearTime: Date? = nil
     @Binding var isKeyboardActive: Bool
     @Binding var isExpanded: Bool
     
@@ -167,6 +168,7 @@ struct ChatView: View {
                                     
                                     // SYNCHRONOUSLY clear the input field before any async operations
                                     viewModel.userInput = ""
+                                    lastInputClearTime = Date()
                                     
                                     // Calculate the distance from bottom of screen to where message will appear
                                     let distanceFromBottom = geometry.size.height - inputFieldHeight
@@ -242,6 +244,20 @@ struct ChatView: View {
                         resetChatState()
                     }
                 }
+                /*
+                .onChange(of: viewModel.userInput) { oldValue, newValue in
+                    // If we just cleared the input but it's being populated again,
+                    // clear it again to prevent refilling
+                    if let clearTime = lastInputClearTime,
+                       Date().timeIntervalSince(clearTime) < 2.0, // Within 2 seconds of clearing
+                       oldValue.isEmpty && !newValue.isEmpty {
+                        // Something else is filling the input field right after clearing
+                        DispatchQueue.main.async {
+                            viewModel.userInput = ""
+                        }
+                    }
+                }
+                 */
                 .manageFocus(for: .chat)
                 .onDisappear {
                     removeKeyboardNotifications()
