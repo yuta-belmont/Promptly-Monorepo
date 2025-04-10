@@ -887,10 +887,9 @@ struct DayView: View, Hashable {
                 // Listen for ItemDetailsUpdated notification
                 .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ItemDetailsUpdated"))) { notification in
                     if let updatedItemId = notification.object as? UUID {
-                        // Reload the checklist data
+                        // Close the details view with animation without reloading the entire checklist
+                        // The ViewModel's updateSingleItem method will already have updated the specific item
                         DispatchQueue.main.async {
-                            easyListViewModel.reloadChecklist()
-                            
                             // Close the details view with animation
                             withAnimation(.easeInOut(duration: 0.25)) {
                                 showingItemDetails = false

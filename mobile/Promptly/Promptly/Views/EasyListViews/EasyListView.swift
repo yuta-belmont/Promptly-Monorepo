@@ -458,10 +458,10 @@ struct ListContent: View {
                     
                     ForEach(viewModel.items, id: \.id) { item in
                         makePlannerItemView(for: item)
-                            .id("item-\(item.id.uuidString)-\(item.isCompleted)-\(item.title.hashValue)-\(item.notification?.timeIntervalSince1970 ?? 0)-\(item.subItems.count)")
+                            .id("stable-item-\(item.id.uuidString)")
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets())
+                            .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 4, trailing: 4))
                             .padding(.horizontal, 0)
                             .padding(.vertical, 0)
                     }
@@ -540,12 +540,7 @@ struct ListContent: View {
                 viewModel.toggleSubItemCompletion(mainItemId, subItemId: subItemId, isCompleted: isCompleted)
                 // No need to post notification - view handles its own state
             },
-            onLoseFocus: { text in
-                // Only used for text-based deletion (e.g. when editing and clearing text)
-                if text.isEmpty {
-                    deleteItem(item)
-                }
-            },
+            onLoseFocus: nil,
             onDelete: {
                 // Used for menu-based deletion
                 deleteItem(item)
@@ -1017,7 +1012,6 @@ struct EasyListView: View {
         )
         .preference(key: IsEditingPreferenceKey.self, value: isEditing)
         .onChange(of: isEditing) { oldValue, newValue in
-            print("EasyList editing state changed: \(oldValue) -> \(newValue)")
             if newValue {
                 focusManager.requestFocus(for: .easyList)
             }
@@ -1028,9 +1022,7 @@ struct EasyListView: View {
             }
         }
         .onChange(of: focusManager.currentFocusedView) { oldValue, newValue in
-            print("FocusManager view changed: \(oldValue) -> \(newValue), will clear newItemFocus: \(newValue != .easyList)")
             if newValue != .easyList {
-                print("FocusManager onChange: Setting isEditing = false, isNewItemFocused = false, isNotesFocused = false")
                 isEditing = false
                 isNewItemFocused = false
                 isNotesFocused = false

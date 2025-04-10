@@ -18,8 +18,14 @@ final class GroupDetailsViewModel: ObservableObject {
     @Published var currentGroupTitle: String = ""
     @Published var selectedGroup: Models.ItemGroup?
     
+    // For item expansion state
+    @Published private var expandedItemIds: Set<UUID> = []
+    
     private let groupStore = GroupStore.shared
     private let persistence = ChecklistPersistence.shared
+    private let notificationManager = NotificationManager.shared
+    
+    // MARK: - Initialization and Setup
     
     func setSelectedGroup(_ group: Models.ItemGroup) {
         // Get the latest group data from the store to ensure we have the most up-to-date title
@@ -40,6 +46,95 @@ final class GroupDetailsViewModel: ObservableObject {
             selectedColorHasColor = group.hasColor
         }
         loadItems()
+        
+        // Listen for global item deletion notifications (from other views)
+        setupExternalNotificationObservers()
+    }
+    
+    // Setup notification observers for external changes only
+    private func setupExternalNotificationObservers() {
+        // Only observe notifications that come from outside this view
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleExternalItemDeleted(_:)),
+            name: NSNotification.Name("ItemDeleted"),
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleExternalGroupUpdates(_:)),
+            name: NSNotification.Name("GroupUpdated"),
+            object: nil
+        )
+        
+        // Listen for ItemDetailsUpdated notifications from ItemDetailsView
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleItemDetailsUpdated(_:)),
+            name: NSNotification.Name("ItemDetailsUpdated"),
+            object: nil
+        )
+    }
+    
+    @objc private func handleExternalItemDeleted(_ notification: Notification) {
+        if let itemId = notification.object as? UUID {
+            // Only reload if the deleted item was in our group
+            if groupItems.contains(where: { $0.id == itemId }) {
+                loadItems()
+            }
+        }
+    }
+    
+    @objc private func handleExternalGroupUpdates(_ notification: Notification) {
+        if let groupId = notification.object as? UUID, 
+           groupId == selectedGroup?.id {
+            // Only reload if it's our group that was updated externally
+            loadItems()
+        }
+    }
+    
+    @objc private func handleItemDetailsUpdated(_ notification: Notification) {
+        if let updatedItemId = notification.object as? UUID {
+            // Check if the updated item is in our group
+            if groupItems.contains(where: { $0.id == updatedItemId }) {
+                // Update just this specific item with fresh data from persistence
+                updateSingleItem(with: updatedItemId)
+                
+                // No need to reload the entire group - this targeted update is more efficient
+                // and ensures we have the latest data for just the item that changed
+            }
+        }
+    }
+    
+    // Update a single item in groupItems instead of reloading all items
+    private func updateSingleItem(with itemId: UUID) {
+        // Find the matching item
+        guard let itemIndex = groupItems.firstIndex(where: { $0.id == itemId }) else { return }
+        
+        // Get the date of the item so we can load the right checklist
+        let itemDate = groupItems[itemIndex].date
+        
+        // Debug: Print the current item state in ViewModel
+        
+        // Load only the checklist for this specific item's date
+        if let checklist = persistence.loadChecklist(for: itemDate) {
+            // Find the updated item in the checklist
+            if let updatedItem = checklist.items.first(where: { $0.id == itemId }) {
+                // Debug: Print the updated item from persistence
+                
+                // Replace the item in our local array with the fresh data
+                groupItems[itemIndex] = updatedItem
+                
+                // Ensure lastModified is updated to force an ID change in the view
+                groupItems[itemIndex].lastModified = Date()
+                
+                // Debug: Print the item after updating in ViewModel
+                
+                // Notify SwiftUI to update the view
+                objectWillChange.send()
+            }
+        }
     }
     
     func loadItems() {
@@ -48,24 +143,119 @@ final class GroupDetailsViewModel: ObservableObject {
         
         Task {
             // Get the latest group data from the store to ensure we have the most up-to-date items
-            if let updatedGroup = groupStore.getGroup(by: group.id) {
-                // Get all items from the updated group
-                let loadedItems = updatedGroup.getAllItems()
+            let updatedGroup = groupStore.getGroup(by: group.id) ?? group
+            
+            // Get all item references from the group
+            let itemReferences = updatedGroup.getAllItems()
+            
+            // Extract just the IDs from the references
+            let itemIds = itemReferences.map { $0.id }
+            
+            // Directly fetch the latest version of each item by ID from persistence
+            let freshItems = persistence.loadItemsByIds(itemIds)
+            
+            await MainActor.run {
+                self.groupItems = freshItems
+                self.isLoadingItems = false
+            }
+        }
+    }
+    
+    // MARK: - Item Management
+    
+    // Toggle completion state of an item
+    func toggleItemCompletion(itemId: UUID, notification: Date?) {
+        guard let index = groupItems.firstIndex(where: { $0.id == itemId }) else { return }
+        
+        // Toggle completion state locally and update lastModified for proper state refresh
+        groupItems[index].isCompleted.toggle()
+        groupItems[index].lastModified = Date() // Update timestamp to force data changes to propagate
+        
+        // Update in persistence
+        if var checklist = persistence.loadChecklist(for: groupItems[index].date) {
+            if let checklistIndex = checklist.items.firstIndex(where: { $0.id == itemId }) {
+                // Update both completion status and lastModified in the persisted item
+                checklist.items[checklistIndex].isCompleted.toggle()
+                checklist.items[checklistIndex].lastModified = Date()
                 
-                await MainActor.run {
-                    self.groupItems = loadedItems
-                    self.isLoadingItems = false
-                }
-            } else {
-                // Fallback to the original group if for some reason it's not in the store
-                let loadedItems = group.getAllItems()
+                // Save to persistence
+                persistence.saveChecklist(checklist)
                 
-                await MainActor.run {
-                    self.groupItems = loadedItems
-                    self.isLoadingItems = false
+                // Handle notification if needed
+                if let notification = notification, !groupItems[index].isCompleted {
+                    // Reschedule notification if item was marked incomplete
+                    notificationManager.scheduleNotification(for: groupItems[index], in: checklist)
+                } else if groupItems[index].isCompleted {
+                    // Remove notification if item was marked complete
+                    notificationManager.removeAllNotificationsForItem(groupItems[index])
                 }
             }
         }
+        
+        // Notify the UI to update
+        objectWillChange.send()
+    }
+
+    // Toggle sub-item completion
+    func toggleSubItemCompletion(mainItemId: UUID, subItemId: UUID, isCompleted: Bool) {
+        guard let mainIndex = groupItems.firstIndex(where: { $0.id == mainItemId }) else { return }
+        
+        // Update locally and set lastModified
+        if let localSubItemIndex = groupItems[mainIndex].subItems.firstIndex(where: { $0.id == subItemId }) {
+            groupItems[mainIndex].subItems[localSubItemIndex].isCompleted = isCompleted
+            groupItems[mainIndex].lastModified = Date() // Update parent's lastModified to trigger UI refresh
+        }
+        
+        // Update in persistence
+        if var checklist = persistence.loadChecklist(for: groupItems[mainIndex].date) {
+            if let checklistIndex = checklist.items.firstIndex(where: { $0.id == mainItemId }) {
+                if let subItemIndex = checklist.items[checklistIndex].subItems.firstIndex(where: { $0.id == subItemId }) {
+                    // Update in persistence
+                    checklist.items[checklistIndex].subItems[subItemIndex].isCompleted = isCompleted
+                    checklist.items[checklistIndex].lastModified = Date() // Update parent's lastModified
+                    persistence.saveChecklist(checklist)
+                }
+            }
+        }
+        
+        // Notify the UI to update
+        objectWillChange.send()
+    }
+
+    // Update notification
+    func updateItemNotification(itemId: UUID, notification: Date?) {
+        guard let index = groupItems.firstIndex(where: { $0.id == itemId }) else { return }
+        
+        // Update locally first for immediate UI feedback
+        groupItems[index].notification = notification
+        
+        // Update in persistence
+        if var checklist = persistence.loadChecklist(for: groupItems[index].date) {
+            if let checklistIndex = checklist.items.firstIndex(where: { $0.id == itemId }) {
+                checklist.items[checklistIndex].notification = notification
+                
+                // Update notification manager
+                let item = checklist.items[checklistIndex]
+                notificationManager.updateNotificationForEditedItem(item, in: checklist)
+                
+                persistence.saveChecklist(checklist)
+            }
+        }
+        
+        // No notifications - rely on SwiftUI's natural binding for UI updates
+    }
+    
+    // Toggle item expansion
+    func toggleItemExpanded(_ itemId: UUID) {
+        if expandedItemIds.contains(itemId) {
+            expandedItemIds.remove(itemId)
+        } else {
+            // Only add if item has subitems
+            if let item = groupItems.first(where: { $0.id == itemId }), !item.subItems.isEmpty {
+                expandedItemIds.insert(itemId)
+            }
+        }
+        objectWillChange.send()
     }
     
     func deleteAllItems() {
@@ -88,8 +278,14 @@ final class GroupDetailsViewModel: ObservableObject {
             groupStore.clearItemsFromGroup(groupId: group.id) { [weak self] in
                 guard let self = self else { return }
                 
-                // Clear the local items array
+                // Clear the local items array directly
                 self.groupItems = []
+                
+                // Notify other views that may be showing these items
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("GroupItemsDeleted"),
+                    object: group.id
+                )
             }
         }
     }
@@ -160,12 +356,12 @@ final class GroupDetailsViewModel: ObservableObject {
                 groupStore.removeItemFromGroup(itemId: item.id, groupId: group.id) { [weak self] in
                     guard let self = self else { return }
                     
-                    // Update the groupItems array by removing the item
+                    // Update the groupItems array by removing the item locally
                     if let itemIndex = self.groupItems.firstIndex(where: { $0.id == item.id }) {
                         self.groupItems.remove(at: itemIndex)
                     }
                     
-                    // Notify that the item was removed from the group
+                    // Notify other views of group structure change
                     NotificationCenter.default.post(
                         name: NSNotification.Name("ItemRemovedFromGroup"),
                         object: item.id
@@ -188,12 +384,12 @@ final class GroupDetailsViewModel: ObservableObject {
                 groupStore.removeItemFromAllGroups(itemId: item.id) { [weak self] in
                     guard let self = self else { return }
                     
-                    // Update the groupItems array by removing the item
+                    // Update the groupItems array by removing the item locally first
                     if let itemIndex = self.groupItems.firstIndex(where: { $0.id == item.id }) {
                         self.groupItems.remove(at: itemIndex)
                     }
                     
-                    // Notify that the item was deleted
+                    // Notify other views that this item was deleted
                     NotificationCenter.default.post(
                         name: NSNotification.Name("ItemDeleted"),
                         object: item.id
@@ -217,7 +413,11 @@ final class GroupDetailsViewModel: ObservableObject {
             return [group.id: groupInfo]
         }()
         
-        return PlannerItemDisplayData.from(item: item, groupsCache: groupsCache)
+        return PlannerItemDisplayData.from(
+            item: item, 
+            groupsCache: groupsCache,
+            expandedItems: expandedItemIds
+        )
     }
     
     /// Gets display data for all items

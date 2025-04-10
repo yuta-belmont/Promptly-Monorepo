@@ -625,6 +625,9 @@ final class EasyListViewModel: ObservableObject {
         // Toggle the item's completion state
         checklist.itemCollection.items[itemIndex].isCompleted.toggle()
         
+        // Update the lastModified timestamp to ensure view updates properly
+        checklist.itemCollection.items[itemIndex].lastModified = Date()
+        
         // Clear the undo cache when toggling items
         undoManager.clearCache()
         
@@ -645,6 +648,9 @@ final class EasyListViewModel: ObservableObject {
         
         // Update the sub-item's completion state
         checklist.itemCollection.items[itemIndex].subItemCollection.items[subItemIndex].isCompleted = isCompleted
+        
+        // Update the parent item's lastModified timestamp to ensure view updates properly
+        checklist.itemCollection.items[itemIndex].lastModified = Date()
         
         // Clear the undo cache when toggling sub-items
         undoManager.clearCache()
@@ -675,14 +681,42 @@ final class EasyListViewModel: ObservableObject {
     @objc private func handleItemDetailsUpdated(_ notification: Notification) {
         // Get the item ID from the notification
         if let itemId = notification.object as? UUID {
+            // Update only the specific item with fresh data from persistence
+            updateSingleItem(with: itemId)
+            
             // Check and update the item's expanded state
             checkAndUpdateSubitemsState(itemId)
             
             // Mark changes for later saving
             hasUnsavedChanges = true
-            
-            // Force a refresh of the UI
-            objectWillChange.send()
+        }
+    }
+    
+    // Update a single item in the checklist instead of reloading all items
+    private func updateSingleItem(with itemId: UUID) {
+        // Find the matching item
+        guard let itemIndex = checklist.itemCollection.items.firstIndex(where: { $0.id == itemId }) else { return }
+                
+        // Get the date of the item
+        let itemDate = checklist.date
+        
+        // Load only the checklist for this specific item's date
+        if let freshChecklist = persistence.loadChecklist(for: itemDate) {
+            // Find the updated item in the fresh checklist
+            if let updatedItem = freshChecklist.items.first(where: { $0.id == itemId }) {
+                // Debug: Print the updated item from persistence
+                
+                // Replace the item in our local array with the fresh data
+                checklist.itemCollection.items[itemIndex] = updatedItem
+                
+                // Ensure lastModified is updated to force an ID change in the view
+                checklist.itemCollection.items[itemIndex].lastModified = Date()
+                
+                // Debug: Print the item after updating in ViewModel
+                
+                // Notify SwiftUI to update the view
+                objectWillChange.send()
+            } 
         }
     }
     
@@ -715,20 +749,6 @@ final class EasyListViewModel: ObservableObject {
         hasUnsavedChanges = true
         
         // Clear the undo cache when updating item notification
-        undoManager.clearCache()
-    }
-    
-    /// Updates the title for a specific item by ID
-    func updateItemTitle(itemId: UUID, with title: String) {
-        guard let itemIndex = checklist.itemCollection.items.firstIndex(where: { $0.id == itemId }) else { return }
-        
-        // Update the title
-        checklist.itemCollection.items[itemIndex].title = title
-        
-        // Mark changes for later saving
-        hasUnsavedChanges = true
-        
-        // Clear the undo cache when updating item title
         undoManager.clearCache()
     }
     

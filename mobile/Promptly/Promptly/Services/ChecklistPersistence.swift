@@ -156,11 +156,9 @@ final class ChecklistPersistence {
             if let existingGroup = results.first {
                 // Update existing group
                 existingGroup.update(from: structGroup, context: context)
-                print("GROUP DEBUG: ChecklistPersistence found existing group - ID: \(structGroup.id), Title: \(structGroup.title)")
                 return existingGroup
             } else {
                 // Create new group
-                print("GROUP DEBUG: ChecklistPersistence creating new group - ID: \(structGroup.id), Title: \(structGroup.title)")
                 let newGroup = ItemGroup.create(from: structGroup, context: context)
                 
                 // Ensure GroupStore is updated about this new group
@@ -175,7 +173,6 @@ final class ChecklistPersistence {
             print("Error finding/creating group: \(error)")
             
             // Create new group as fallback
-            print("GROUP DEBUG: ChecklistPersistence creating fallback group - ID: \(structGroup.id), Title: \(structGroup.title)")
             let newGroup = ItemGroup.create(from: structGroup, context: context)
             
             // Ensure GroupStore is updated about this new group
@@ -213,6 +210,51 @@ final class ChecklistPersistence {
             try context.save()
         } catch {
             print("Error deleting checklist: \(error)")
+        }
+    }
+    
+    // MARK: - Direct Item Operations
+    
+    /// Load a single ChecklistItem directly by its ID without needing to know its date
+    /// This is more efficient when you only need one specific item
+    func loadItemById(_ itemId: UUID) -> Models.ChecklistItem? {
+        let context = persistenceController.container.viewContext
+        
+        // Create fetch request for ChecklistItem with the given ID
+        let fetchRequest: NSFetchRequest<ChecklistItem> = ChecklistItem.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "id == %@", itemId.uuidString)
+        
+        do {
+            let results = try context.fetch(fetchRequest)
+            if let coreDataItem = results.first {
+                return coreDataItem.toStruct()
+            } else {
+                return nil
+            }
+        } catch {
+            print("Error loading item by ID: \(error)")
+            return nil
+        }
+    }
+    
+    /// Load multiple ChecklistItems directly by their IDs
+    /// More efficient than loading each one individually or loading entire checklists
+    func loadItemsByIds(_ itemIds: [UUID]) -> [Models.ChecklistItem] {
+        guard !itemIds.isEmpty else { return [] }
+        
+        let context = persistenceController.container.viewContext
+        
+        // Create fetch request for ChecklistItems with the given IDs
+        let fetchRequest: NSFetchRequest<ChecklistItem> = ChecklistItem.fetchRequest()
+        let uuidStrings = itemIds.map { $0.uuidString }
+        fetchRequest.predicate = NSPredicate(format: "id IN %@", uuidStrings)
+        
+        do {
+            let results = try context.fetch(fetchRequest)
+            return results.compactMap { $0.toStruct() }
+        } catch {
+            print("Error loading items by IDs: \(error)")
+            return []
         }
     }
 } 

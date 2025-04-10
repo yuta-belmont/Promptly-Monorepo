@@ -25,6 +25,9 @@ struct PopoverContentView: View {
     @State private var deleteTimer: Timer?
     @Environment(\.dismiss) private var dismiss
     
+    // Add callback for go to date action
+    let onGoToDate: (() -> Void)?
+    
     init(
         itemId: UUID,
         itemDate: Date,
@@ -35,7 +38,8 @@ struct PopoverContentView: View {
         onGroupChange: ((UUID?) -> Void)? = nil,
         onDelete: @escaping () -> Void,
         showDeleteOption: Bool = true,
-        isGroupDetailsView: Bool = false
+        isGroupDetailsView: Bool = false,
+        onGoToDate: (() -> Void)? = nil
     ) {
         self.itemId = itemId
         self.itemDate = itemDate
@@ -48,6 +52,7 @@ struct PopoverContentView: View {
         self.onDelete = onDelete
         self.showDeleteOption = showDeleteOption
         self.isGroupDetailsView = isGroupDetailsView
+        self.onGoToDate = onGoToDate
         _isNotificationEnabled = State(initialValue: itemNotification != nil)
         _selectedTime = State(initialValue: itemNotification ?? Date())
     }
@@ -60,7 +65,8 @@ struct PopoverContentView: View {
         onGroupChange: ((UUID?) -> Void)? = nil,
         onDelete: @escaping () -> Void,
         showDeleteOption: Bool = true,
-        isGroupDetailsView: Bool = false
+        isGroupDetailsView: Bool = false,
+        onGoToDate: (() -> Void)? = nil
     ) {
         self.init(
             itemId: displayData.id,
@@ -72,7 +78,8 @@ struct PopoverContentView: View {
             onGroupChange: onGroupChange,
             onDelete: onDelete,
             showDeleteOption: showDeleteOption,
-            isGroupDetailsView: isGroupDetailsView
+            isGroupDetailsView: isGroupDetailsView,
+            onGoToDate: onGoToDate
         )
     }
     
@@ -137,6 +144,34 @@ struct PopoverContentView: View {
                             }
                         }
                     }
+            }
+            
+            // Go To option - Only shown in GroupDetailsView
+            if isGroupDetailsView {
+                Divider()
+                    .background(Color.white.opacity(0.2))
+                
+                Button(action: {
+                    feedbackGenerator.impactOccurred()
+                    dismiss() // Dismiss the popover first
+                    
+                    // Call the onGoToDate callback after a slight delay to allow popover to dismiss
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        onGoToDate?()
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "calendar")
+                            .frame(width: 24)
+                        Text("Go to")
+                        Spacer()
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
             
             if !isGroupDetailsView {

@@ -26,7 +26,6 @@ struct ItemDetailsView: View {
     @FocusState private var isTitleFieldFocused: Bool
     @State private var editingSubitemId: UUID? //we use this as the initial variable to set editing when we first tap a subitem. This is important because subitems must transition from text to texteditors.
     @FocusState private var focusedSubitemId: UUID?
-    @State private var borderOpacity: Double = 0
     
     // Add focus removal state
     private enum FocusRemovalState {
@@ -121,7 +120,6 @@ struct ItemDetailsView: View {
                 Divider()
                     .background(Color.white.opacity(0.2))
                 titleView
-                 
                 
                 // Main list content
                 listContentView
@@ -137,10 +135,6 @@ struct ItemDetailsView: View {
                     // Static border
                     RoundedRectangle(cornerRadius: 16)
                         .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
-                    
-                    // Animated border
-                    RoundedRectangle(cornerRadius: 16)
-                        .strokeBorder(.white.opacity(borderOpacity), lineWidth: 0.5)
                 }
             )
             .offset(x: dragOffset.width)
@@ -211,55 +205,56 @@ struct ItemDetailsView: View {
     
     private var headerView: some View {
         HStack(alignment: .center, spacing: 8) {
+            // Back chevron on the left
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    isPresented = false
+                }
+            }) {
+                Image(systemName: "chevron.left")
+                    .foregroundColor(.white.opacity(0.8))
+                    .font(.system(size: 18, weight: .semibold))
+                    .padding(.leading, 12)
+                    .contentShape(Rectangle())
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            
             // Checkbox
             checkboxButton
+                .padding(.trailing, 4)
             
-            // Metadata
+            // Metadata with flexible space
             MetadataRowCompact(item: viewModel.item)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .id("metadata-\(viewModel.item.id)-\(viewModel.item.groupId?.uuidString ?? "none")-\(viewModel.item.notification?.timeIntervalSince1970 ?? 0)-\(viewModel.item.isCompleted)")
-                .animation(.easeInOut, value: viewModel.item.isCompleted)
+                .id("metadata-\(viewModel.item.id.uuidString)")
             
             // Action buttons
-            actionButtons
-            
-            // Menu and close buttons
-            menuAndCloseButtons
+            headerButtons
         }
-        .padding(.horizontal)
-        .padding(.top, 10)
-        .padding(.bottom, 10)
+        .padding(.horizontal, 0)
+        .padding(.vertical, 8)
     }
     
     private var checkboxButton: some View {
         Button(action: {
             feedbackGenerator.impactOccurred()
-            let wasCompleted = viewModel.item.isCompleted
             viewModel.toggleCompleted()
-            
-            // Only animate when completing, not uncompleting
-            if !wasCompleted {
-                // Trigger border animation
-                borderOpacity = 0.4
-                // Reset opacity after delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    withAnimation(.easeInOut(duration: 0.5)) {
-                        borderOpacity = 0
-                    }
-                }
-            }
         }) {
             Image(systemName: viewModel.item.isCompleted ? "checkmark.circle.fill" : "circle")
                 .foregroundColor(viewModel.item.isCompleted ? .green : .gray)
                 .font(.system(size: 24))
+                // Add a simple scale transition for the icon
+                .animation(.spring(response: 0.2, dampingFraction: 0.7), value: viewModel.item.isCompleted)
         }
         .buttonStyle(.plain)
     }
     
-    private var actionButtons: some View {
-        Group {
+    // Combined header buttons (without the close button)
+    private var headerButtons: some View {
+        HStack(spacing: 0) {
+            // Undo button (conditionally shown)
             if viewModel.canUndo {
-                // Undo button
                 Button(action: {
                     feedbackGenerator.impactOccurred()
                     viewModel.undo()
@@ -267,10 +262,9 @@ struct ItemDetailsView: View {
                     Image(systemName: "arrow.uturn.backward")
                         .foregroundColor(.white.opacity(0.6))
                         .font(.system(size: 20))
-                        .frame(width: 30, height: 30)
+                        .frame(width: 56, height: 30)
                         .contentShape(Rectangle())
                 }
-                .padding(.horizontal, 4)
                 .buttonStyle(.plain)
             }
             
@@ -283,14 +277,11 @@ struct ItemDetailsView: View {
                     .rotationEffect(.degrees(90))
                     .foregroundColor(.white.opacity(0.6))
                     .font(.system(size: 16))
-                    .frame(width: 30)
+                    .frame(width: 40)
                     .contentShape(Rectangle())
             }
-            .padding(.horizontal, 4)
             .buttonStyle(.plain)
-            .popover(isPresented: $showingPopover,
-                     attachmentAnchor: .point(.center),
-                     arrowEdge: .top) {
+            .popover(isPresented: $showingPopover, arrowEdge: .top) {
                 PopoverContentView(
                     itemId: viewModel.item.id,
                     itemDate: viewModel.item.date,
@@ -318,10 +309,9 @@ struct ItemDetailsView: View {
                 Image(systemName: "trash")
                     .foregroundColor(.white.opacity(0.6))
                     .font(.system(size: 20))
-                    .frame(width: 30, height: 30)
+                    .frame(width: 48, height: 30)
                     .contentShape(Rectangle())
             }
-            .padding(.horizontal, 4)
             .buttonStyle(.plain)
             .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .top) {
                 SubitemDeleteConfirmationView(
@@ -338,12 +328,11 @@ struct ItemDetailsView: View {
                     onDeleteIncomplete: {
                         viewModel.deleteIncompleteSubitems()
                     },
-                    
                     feedbackGenerator: feedbackGenerator
                 )
             }
             
-            // Add button - always show it
+            // Add button
             Button(action: {
                 feedbackGenerator.impactOccurred()
                 if viewModel.item.subItems.count < 50 {
@@ -361,17 +350,14 @@ struct ItemDetailsView: View {
                 Image(systemName: "plus.circle")
                     .foregroundColor(viewModel.item.subItems.count >= 50 ? .white.opacity(0.3) : .white.opacity(0.6))
                     .font(.system(size: 20))
-                    .frame(width: 30, height: 30)
+                    .frame(width: 48, height: 30)
+                    .padding(.trailing, 8)
                     .contentShape(Rectangle())
             }
-            .padding(.horizontal, 4)
             .buttonStyle(.plain)
             .disabled(viewModel.item.subItems.count >= 50)
-        }
-    }
-    
-    private var menuAndCloseButtons: some View {
-        Group {
+            
+            // Only show Done button when editing (no Close button since we now have the chevron)
             if editingState.isFocused {
                 // Done button
                 Button(action: {
@@ -380,20 +366,10 @@ struct ItemDetailsView: View {
                     Text("Done")
                         .foregroundColor(.white)
                         .dynamicTypeSize(.small...DynamicTypeSize.large)
+                        .padding(.trailing, 12)
                 }
-            } else {
-                // Close button
-                Button(action: {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        isPresented = false
-                    }
-                }) {
-                    Image(systemName: "xmark")
-                        .foregroundColor(.white.opacity(0.6))
-                        .font(.system(size: 18, weight: .medium))
-                        .padding(.trailing, 4)
-                }
-                .padding(.leading, 4)
+                .frame(minWidth: 60)
+
             }
         }
     }
@@ -751,10 +727,10 @@ private struct MetadataRowCompact: View {
                     Text(formatNotificationTime(notification))
                         .font(.caption)
                         .foregroundColor(isPastDue ? .red.opacity(0.5) : .white.opacity(0.5))
+                        // Only apply animation to the strikethrough, not the entire text
                         .strikethrough(item.isCompleted, color: .gray)
                         .lineLimit(1)
                         .layoutPriority(1)
-                        .animation(.easeInOut(duration: 0.2), value: item.isCompleted)
                 }
                 .foregroundColor(notification < Date() ? .red.opacity(0.5) : .white.opacity(0.5))
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1039,7 +1015,7 @@ private struct SubItemView: View {
                                 }
                             }
                     }
-                    
+           
                     if isEditing || isPreloading {
                         TextEditor(text: $editedText)
                             .font(.body)

@@ -85,7 +85,7 @@ struct ManageGroupsView: View {
                                 })
                                 .contentShape(Rectangle())
                                 .listRowBackground(Color.clear)
-                                .listRowInsets(EdgeInsets(top: 2, leading: 4, bottom: 2, trailing: 4))
+                                .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 0, trailing: 4))
                                 .listRowSeparator(.hidden)
                                 .id("\(group.id)-\(refreshCounter)") // Force refresh when counter changes
                             } else {
@@ -149,14 +149,14 @@ struct ManageGroupsView: View {
                 .gesture(
                     DragGesture()
                         .onChanged { value in
-                            // Only allow dragging to the right
-                            if value.translation.width > 0 {
+                            // Only allow dragging from the left edge (first 66 points) and only to the right
+                            if value.startLocation.x < 66 && value.translation.width > 0 {
                                 dragOffset = value.translation
                             }
                         }
                         .onEnded { value in
-                            // If dragged more than 100 points to the right, dismiss
-                            if value.translation.width > 100 {
+                            // If dragged more than 50 points to the right, dismiss
+                            if value.startLocation.x < 66 && value.translation.width > 50 {
                                 // Use animation to ensure smooth transition
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                     isPresented = false
@@ -283,7 +283,7 @@ struct GroupRow: View {
                     } else {
                         Image(systemName: "folder")
                             .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.5))
+                            .foregroundColor(.gray.opacity(0.2))
                             .padding(.trailing, 4)
                     }
                     

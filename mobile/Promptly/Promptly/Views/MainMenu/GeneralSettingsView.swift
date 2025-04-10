@@ -88,8 +88,8 @@ struct GeneralSettingsView: View {
             .gesture(
                 DragGesture()
                     .onChanged { value in
-                        // Only allow dragging to the right if we're not already animating
-                        if !isAnimating && value.translation.width > 0 {
+                        // Only allow dragging from the left edge (first 66 points) and only to the right
+                        if !isAnimating && value.startLocation.x < 66 && value.translation.width > 0 {
                             dragOffset = value.translation
                         }
                     }
@@ -100,7 +100,7 @@ struct GeneralSettingsView: View {
                         
                         // Use a single animation block for both dismissal and reset
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            if value.translation.width > 100 {
+                            if value.startLocation.x < 66 && value.translation.width > 50 {
                                 isPresented = false
                             } else {
                                 dragOffset = .zero

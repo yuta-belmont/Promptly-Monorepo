@@ -842,7 +842,6 @@ final class ChatService {
                 // Store group info for later use - we'll create the actual group later
                 groupsByKey[groupKey] = (groupId, groupName)
                 
-                print("GROUP DEBUG: Prepared group info - Key: \(groupKey), ID: \(groupId), Title: \(groupName)")
             }
         }
         
@@ -857,7 +856,6 @@ final class ChatService {
                     // Create a temporary group object for item creation
                     // We'll handle the actual GroupStore registration separately
                     group = Models.ItemGroup(id: groupId, title: groupTitle, items: [:])
-                    print("GROUP DEBUG: Using group info for items - Key: \(groupKey), ID: \(groupId), Title: \(groupTitle)")
                 }
                 
                 // Process dates within the group
@@ -865,13 +863,11 @@ final class ChatService {
                     for (dateString, dateData) in dates {
                         // Skip any keys that aren't date strings
                         guard dateFormatter.date(from: dateString) != nil else {
-                            print("CHECKLIST DEBUG: Skipping non-date key: \(dateString)")
                             continue
                         }
                         
                         // Parse the date
                         guard let date = dateFormatter.date(from: dateString) else {
-                            print("CHECKLIST DEBUG: Failed to parse date: \(dateString)")
                             continue
                         }
                         

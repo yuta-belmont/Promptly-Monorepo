@@ -6,13 +6,16 @@ import Combine
 struct MetadataCallbacks {
     let onNotificationChange: ((Date?) -> Void)?
     let onGroupChange: ((UUID?) -> Void)?
+    let onGoToDate: (() -> Void)?
     
     init(
         onNotificationChange: ((Date?) -> Void)? = nil,
-        onGroupChange: ((UUID?) -> Void)? = nil
+        onGroupChange: ((UUID?) -> Void)? = nil,
+        onGoToDate: (() -> Void)? = nil
     ) {
         self.onNotificationChange = onNotificationChange
         self.onGroupChange = onGroupChange
+        self.onGoToDate = onGoToDate
     }
 }
 
@@ -128,7 +131,8 @@ private struct ItemMenuButton: View {
                         onDelete?()  // This will trigger the actual deletion in the parent
                     }
                 },
-                isGroupDetailsView: isGroupDetailsView
+                isGroupDetailsView: isGroupDetailsView,
+                onGoToDate: metadataCallbacks.onGoToDate
             )
             .presentationCompactAdaptation(.none)
         }
@@ -480,22 +484,25 @@ struct PlannerItemView: View, Equatable {
     let onGroupChange: ((UUID?) -> Void)?
     let onItemTap: ((UUID) -> Void)?
     let onToggleExpanded: ((UUID) -> Void)?  // New callback
+    let onGoToDate: (() -> Void)?
     
     // MARK: - Equatable Implementation
     static func == (lhs: PlannerItemView, rhs: PlannerItemView) -> Bool {
         // If both have lastModified timestamps, compare them
         if let lhsModified = lhs.displayData.lastModified,
            let rhsModified = rhs.displayData.lastModified {
-            return lhs.itemData.id == rhs.itemData.id && 
+            let result = lhs.itemData.id == rhs.itemData.id && 
                    lhs.itemData.isCompleted == rhs.itemData.isCompleted && 
                    lhs.itemData.title == rhs.itemData.title &&
                    lhsModified == rhsModified
+            return result
         }
         
         // If either doesn't have lastModified, just compare the other fields
-        return lhs.itemData.id == rhs.itemData.id && 
+        let result = lhs.itemData.id == rhs.itemData.id && 
                lhs.itemData.isCompleted == rhs.itemData.isCompleted && 
                lhs.itemData.title == rhs.itemData.title
+        return result
     }
     
     init(
@@ -508,6 +515,7 @@ struct PlannerItemView: View, Equatable {
         onGroupChange: ((UUID?) -> Void)? = nil,
         onItemTap: ((UUID) -> Void)? = nil,
         onToggleExpanded: ((UUID) -> Void)? = nil,
+        onGoToDate: (() -> Void)? = nil,
         isGroupDetailsView: Bool = false
     ) {        
         // Store the display data
@@ -524,6 +532,7 @@ struct PlannerItemView: View, Equatable {
         self.onGroupChange = onGroupChange
         self.onItemTap = onItemTap
         self.onToggleExpanded = onToggleExpanded
+        self.onGoToDate = onGoToDate
     }
     
     var body: some View {
@@ -533,7 +542,8 @@ struct PlannerItemView: View, Equatable {
                 onToggleItem: onToggleItem,
                 metadataCallbacks: MetadataCallbacks(
                     onNotificationChange: onNotificationChange,
-                    onGroupChange: onGroupChange
+                    onGroupChange: onGroupChange,
+                    onGoToDate: onGoToDate
                 ),
                 onDelete: onDelete,
                 isGroupDetailsView: isGroupDetailsView,
@@ -592,8 +602,6 @@ struct PlannerItemView: View, Equatable {
             }
         )
         .opacity(itemData.opacity)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 2)
         .contentShape(Rectangle()) // Make the entire view tappable
         .onTapGesture {
             // Trigger tap glow animation and outline
@@ -646,8 +654,22 @@ struct PlannerItemView: View, Equatable {
                 itemData.groupColor = nil
             }
         }
-        .onChange(of: displayData) { oldValue, newValue in            
-            itemData = MutablePlannerItemData(from: newValue)
+        .onChange(of: displayData) { oldValue, newValue in                        
+            // Update model data while preserving local UI state where appropriate
+            var updatedItemData = MutablePlannerItemData(from: newValue)
+            
+            // Preserve local UI states that shouldn't be reset
+            updatedItemData.isDeleting = itemData.isDeleting
+            updatedItemData.showingPopover = itemData.showingPopover
+            updatedItemData.opacity = itemData.opacity
+            updatedItemData.isGroupSectionExpanded = itemData.isGroupSectionExpanded
+            
+            // If isCompletedLocally is different from the model, sync it with the model
+            // This ensures UI and model stay in sync during completion toggles
+            updatedItemData.isCompletedLocally = newValue.isCompleted
+            
+            // Update our state
+            itemData = updatedItemData
         }
     }
     
@@ -675,6 +697,7 @@ extension PlannerItemView {
         onGroupChange: ((UUID?) -> Void)? = nil,
         onItemTap: ((UUID) -> Void)? = nil,
         onToggleExpanded: ((UUID) -> Void)? = nil,
+        onGoToDate: (() -> Void)? = nil,
         isGroupDetailsView: Bool = false
     ) -> PlannerItemView {
         return PlannerItemView(
@@ -687,6 +710,7 @@ extension PlannerItemView {
             onGroupChange: onGroupChange,
             onItemTap: onItemTap,
             onToggleExpanded: onToggleExpanded,
+            onGoToDate: onGoToDate,
             isGroupDetailsView: isGroupDetailsView
         )
     }
