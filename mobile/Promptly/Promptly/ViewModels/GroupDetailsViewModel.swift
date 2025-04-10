@@ -16,15 +16,15 @@ final class GroupDetailsViewModel: ObservableObject {
     @Published var selectedColorBlue: Double = 0
     @Published var selectedColorHasColor: Bool = false
     @Published var currentGroupTitle: String = ""
+    @Published var selectedGroup: Models.ItemGroup?
     
     private let groupStore = GroupStore.shared
     private let persistence = ChecklistPersistence.shared
-    var selectedGroup: Models.ItemGroup?
     
     func setSelectedGroup(_ group: Models.ItemGroup) {
-        selectedGroup = group
         // Get the latest group data from the store to ensure we have the most up-to-date title
         if let updatedGroup = groupStore.getGroup(by: group.id) {
+            selectedGroup = updatedGroup
             currentGroupTitle = updatedGroup.title
             selectedColorRed = updatedGroup.colorRed
             selectedColorGreen = updatedGroup.colorGreen
@@ -32,6 +32,7 @@ final class GroupDetailsViewModel: ObservableObject {
             selectedColorHasColor = updatedGroup.hasColor
         } else {
             // Fall back to the provided group if not found in the store
+            selectedGroup = group
             currentGroupTitle = group.title
             selectedColorRed = group.colorRed
             selectedColorGreen = group.colorGreen
@@ -100,6 +101,11 @@ final class GroupDetailsViewModel: ObservableObject {
             guard let self = self else { return }
             // Update the local state to reflect the change immediately
             self.currentGroupTitle = newName
+            
+            // Update the selectedGroup with the new name
+            if let updatedGroup = groupStore.getGroup(by: group.id) {
+                self.selectedGroup = updatedGroup
+            }
         }
     }
     
@@ -113,6 +119,11 @@ final class GroupDetailsViewModel: ObservableObject {
             self.selectedColorGreen = green
             self.selectedColorBlue = blue
             self.selectedColorHasColor = true
+            
+            // Get the updated group from the store
+            if let updatedGroup = groupStore.getGroup(by: group.id) {
+                self.selectedGroup = updatedGroup
+            }
         }
     }
     
@@ -126,6 +137,11 @@ final class GroupDetailsViewModel: ObservableObject {
             self.selectedColorGreen = 0
             self.selectedColorBlue = 0
             self.selectedColorHasColor = false
+            
+            // Get the updated group from the store
+            if let updatedGroup = groupStore.getGroup(by: group.id) {
+                self.selectedGroup = updatedGroup
+            }
         }
     }
     

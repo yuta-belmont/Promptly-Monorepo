@@ -40,7 +40,7 @@ struct MutablePlannerItemData {
     var showingPopover: Bool = false
     var opacity: Double = 1.0
     var isGroupSectionExpanded: Bool = false
-    var areSubItemsExpanded: Bool = false
+    var areSubItemsExpanded: Bool
     var isCompletedLocally: Bool
     var subItemsCompletedLocally: [UUID: Bool] = [:]
     
@@ -58,6 +58,7 @@ struct MutablePlannerItemData {
         
         // Set initial UI state
         self.isCompletedLocally = displayData.isCompleted
+        self.areSubItemsExpanded = displayData.areSubItemsExpanded
     }
     
     mutating func startDeletingAnimation() {
@@ -144,6 +145,7 @@ private struct MainItemRow: View {
     let metadataCallbacks: MetadataCallbacks
     let onDelete: (() -> Void)?  // Add onDelete callback
     let isGroupDetailsView: Bool
+    let onToggleExpanded: (() -> Void)?
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
     var body: some View {
@@ -176,7 +178,10 @@ private struct MainItemRow: View {
             if !itemData.subItems.isEmpty {
                 ExpandCollapseButton(
                     hasSubItems: !itemData.subItems.isEmpty,
-                    areSubItemsExpanded: $itemData.areSubItemsExpanded
+                    areSubItemsExpanded: $itemData.areSubItemsExpanded,
+                    onToggleExpanded: {
+                        onToggleExpanded?()
+                    }
                 )
             }
             
@@ -233,6 +238,7 @@ private struct ItemTextInputArea: View {
 private struct ExpandCollapseButton: View {
     let hasSubItems: Bool
     @Binding var areSubItemsExpanded: Bool
+    let onToggleExpanded: () -> Void
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
     var body: some View {
@@ -241,8 +247,11 @@ private struct ExpandCollapseButton: View {
             Button(action: {
                 feedbackGenerator.impactOccurred()
                 
-                // Toggle expanded state
+                // Toggle expanded state locally
                 areSubItemsExpanded.toggle()
+                
+                // Call the callback to persist the state
+                onToggleExpanded()
                 
                 // Animate UI changes
                 withAnimation(.easeOut(duration: 0.25)) {
@@ -470,6 +479,7 @@ struct PlannerItemView: View, Equatable {
     let onNotificationChange: ((Date?) -> Void)?
     let onGroupChange: ((UUID?) -> Void)?
     let onItemTap: ((UUID) -> Void)?
+    let onToggleExpanded: ((UUID) -> Void)?  // New callback
     
     // MARK: - Equatable Implementation
     static func == (lhs: PlannerItemView, rhs: PlannerItemView) -> Bool {
@@ -497,6 +507,7 @@ struct PlannerItemView: View, Equatable {
         onNotificationChange: ((Date?) -> Void)? = nil,
         onGroupChange: ((UUID?) -> Void)? = nil,
         onItemTap: ((UUID) -> Void)? = nil,
+        onToggleExpanded: ((UUID) -> Void)? = nil,
         isGroupDetailsView: Bool = false
     ) {        
         // Store the display data
@@ -512,6 +523,7 @@ struct PlannerItemView: View, Equatable {
         self.onNotificationChange = onNotificationChange
         self.onGroupChange = onGroupChange
         self.onItemTap = onItemTap
+        self.onToggleExpanded = onToggleExpanded
     }
     
     var body: some View {
@@ -524,7 +536,10 @@ struct PlannerItemView: View, Equatable {
                     onGroupChange: onGroupChange
                 ),
                 onDelete: onDelete,
-                isGroupDetailsView: isGroupDetailsView
+                isGroupDetailsView: isGroupDetailsView,
+                onToggleExpanded: {
+                    onToggleExpanded?(itemData.id)
+                }
             )
             
             MetadataRow(
@@ -659,6 +674,7 @@ extension PlannerItemView {
         onNotificationChange: ((Date?) -> Void)? = nil,
         onGroupChange: ((UUID?) -> Void)? = nil,
         onItemTap: ((UUID) -> Void)? = nil,
+        onToggleExpanded: ((UUID) -> Void)? = nil,
         isGroupDetailsView: Bool = false
     ) -> PlannerItemView {
         return PlannerItemView(
@@ -670,6 +686,7 @@ extension PlannerItemView {
             onNotificationChange: onNotificationChange,
             onGroupChange: onGroupChange,
             onItemTap: onItemTap,
+            onToggleExpanded: onToggleExpanded,
             isGroupDetailsView: isGroupDetailsView
         )
     }

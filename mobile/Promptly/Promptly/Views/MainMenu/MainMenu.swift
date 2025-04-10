@@ -41,7 +41,7 @@ struct MainMenu: View {
                     Divider()
                         .background(.white.opacity(0.2))
                     
-                    MenuButton(title: "Manage Groups", icon: "folder", isDisabled: isAnimating) {
+                    MenuButton(title: "Groups", icon: "folder", isDisabled: isAnimating) {
                         onMenuAction(.manageGroups)
                     }
                     

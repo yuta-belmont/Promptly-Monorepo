@@ -29,20 +29,10 @@ extension CheckInStats {
         7-Day Average: \(String(format: "%.1f", itemVolume.sevenDayAvg)) items/day
         30-Day Average: \(String(format: "%.1f", itemVolume.thirtyDayAvg)) items/day
 
-        SUBITEM VOLUME
-        Today: \(subitemVolume.today) subitems
-        7-Day Average: \(String(format: "%.1f", subitemVolume.sevenDayAvg)) subitems/day
-        30-Day Average: \(String(format: "%.1f", subitemVolume.thirtyDayAvg)) subitems/day
-
         ITEM COMPLETION RATES
         Today: \(String(format: "%.0f%%", itemCompletionRates.today * 100))
         7-Day Average: \(String(format: "%.0f%%", itemCompletionRates.sevenDayAvg * 100))
         30-Day Average: \(String(format: "%.0f%%", itemCompletionRates.thirtyDayAvg * 100))
-
-        SUBITEM COMPLETION RATES
-        Today: \(String(format: "%.0f%%", subitemCompletionRates.today * 100))
-        7-Day Average: \(String(format: "%.0f%%", subitemCompletionRates.sevenDayAvg * 100))
-        30-Day Average: \(String(format: "%.0f%%", subitemCompletionRates.thirtyDayAvg * 100))
         """
     }
 }

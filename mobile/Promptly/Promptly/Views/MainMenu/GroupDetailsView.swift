@@ -4,7 +4,6 @@ import SwiftUI
 struct GroupDetailsView: View {
     @ObservedObject var viewModel: GroupDetailsViewModel
     @Binding var isPresented: Bool
-    @State private var colorUpdateCounter: Int = 0 // Add a counter to force view updates
     @State private var dragOffset = CGSize.zero // Track drag gesture offset
     let closeAllViews: () -> Void
     let onNavigateToDate: ((Date) -> Void)?
@@ -23,15 +22,21 @@ struct GroupDetailsView: View {
                         Image(systemName: "chevron.left")
                             .foregroundColor(.white)
                             .font(.system(size: 16, weight: .semibold))
+                            .padding(8)
+
                     }
-                    .padding(.trailing, 8)
                     
                     // Add color indicator next to the title
                     if let group = viewModel.selectedGroup, group.hasColor {
-                        Circle()
-                            .fill(Color(red: group.colorRed, green: group.colorGreen, blue: group.colorBlue))
-                            .frame(width: 12, height: 12)
-                            .shadow(color: Color.black.opacity(0.1), radius: 1, x: 0, y: 1)
+                        // Add folder icon
+                        Image(systemName: "folder")
+                            .font(.headline)
+                            .foregroundColor(Color(red: group.colorRed, green: group.colorGreen, blue: group.colorBlue).opacity(0.8))
+                            .padding(.trailing, 4)
+                    } else {
+                        Image(systemName: "folder")
+                            .font(.headline)
+                            .foregroundColor(.white.opacity(0.5))
                             .padding(.trailing, 4)
                     }
                     
@@ -46,9 +51,11 @@ struct GroupDetailsView: View {
                         GroupOptionsMenu(viewModel: viewModel, group: selectedGroup)
                     }
                 }
-                .padding()
-                .padding(.top, 0)
-                .id("header-\(colorUpdateCounter)") // Force refresh when color changes
+                .padding(10)
+                .padding(.trailing, 4)
+                
+                Divider()
+                    .background(Color.white.opacity(0.2))
                 
                 // Items in group
                 if viewModel.isLoadingItems {
@@ -91,9 +98,17 @@ struct GroupDetailsView: View {
                                 isGroupDetailsView: true
                             )
                             .listRowBackground(Color.clear)
-                            .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
+                            .listRowInsets(EdgeInsets())
                             .listRowSeparator(.hidden)
+                            .padding(.horizontal, 0)
+                            .padding(.vertical, 0)
                         }
+                        
+                        // Add spacer at bottom of list for better scrolling
+                        Color.clear.frame(height: 250)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets())
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
@@ -103,7 +118,7 @@ struct GroupDetailsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
-                .ultraThinMaterial
+                Color.black.opacity(0.4)
             )
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(
@@ -120,8 +135,8 @@ struct GroupDetailsView: View {
                         }
                     }
                     .onEnded { value in
-                        // If dragged more than 100 points to the right, dismiss
-                        if value.translation.width > 100 {
+                        // If dragged more than 50 points to the right, dismiss
+                        if value.translation.width > 50 {
                             // Use animation to ensure smooth transition
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                 isPresented = false
@@ -182,8 +197,6 @@ struct GroupDetailsView: View {
                     } else {
                         viewModel.removeGroupColor()
                     }
-                    // Increment counter to force UI refresh
-                    colorUpdateCounter += 1
                 }
             )
             .zIndex(9999) // Ensure this is higher than GroupDetailsView's zIndex
@@ -203,14 +216,16 @@ struct GroupOptionsMenu: View {
         Button(action: {
             showingPopover = true
         }) {
-            Image(systemName: "ellipsis.circle")
-                .foregroundColor(.white)
+            Image(systemName: "ellipsis")
+                .rotationEffect(.degrees(90))
+                .foregroundColor(.white.opacity(0.6))
                 .font(.system(size: 18))
-                .frame(width: 44, height: 36)
+                .contentShape(Rectangle())
+                .padding(.trailing, 6)
         }
         .popover(isPresented: $showingPopover,
                 attachmentAnchor: .point(.center),
-                arrowEdge: .trailing) {
+                arrowEdge: .top) {
             VStack(spacing: 0) {
                 // Edit Group Name option
                 Button(action: {
@@ -284,6 +299,5 @@ struct GroupOptionsMenu: View {
                 feedbackGenerator.prepare()
             }
         }
-        .contentShape(Rectangle())
     }
 } 

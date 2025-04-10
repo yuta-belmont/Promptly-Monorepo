@@ -39,15 +39,12 @@ struct GeneralSettingsView: View {
                             Text("Done")
                         } else {
                             Image(systemName: "xmark")
-                                .font(.system(size: 22))
-                                .foregroundColor(.white)
-                                .opacity(0.7)
-                                .padding(.trailing, 12)
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundColor(.white.opacity(0.8))
                         }
                     }
                 }
                 .padding()
-                .padding(.top, 8)
                 
                 Divider()
                     .background(Color.white.opacity(0.2))

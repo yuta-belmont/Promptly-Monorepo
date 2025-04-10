@@ -118,12 +118,10 @@ struct ItemDetailsView: View {
             // Main content
             VStack(spacing: 0) {
                 headerView
-                titleView
-                
-                // Divider between header section and content
                 Divider()
                     .background(Color.white.opacity(0.2))
-                    .padding(.horizontal)
+                titleView
+                 
                 
                 // Main list content
                 listContentView
@@ -142,7 +140,7 @@ struct ItemDetailsView: View {
                     
                     // Animated border
                     RoundedRectangle(cornerRadius: 16)
-                        .strokeBorder(.white.opacity(borderOpacity), lineWidth: 1.5)
+                        .strokeBorder(.white.opacity(borderOpacity), lineWidth: 0.5)
                 }
             )
             .offset(x: dragOffset.width)
@@ -230,7 +228,7 @@ struct ItemDetailsView: View {
         }
         .padding(.horizontal)
         .padding(.top, 10)
-        .padding(.bottom, 12)
+        .padding(.bottom, 10)
     }
     
     private var checkboxButton: some View {
@@ -285,7 +283,7 @@ struct ItemDetailsView: View {
                     .rotationEffect(.degrees(90))
                     .foregroundColor(.white.opacity(0.6))
                     .font(.system(size: 16))
-                    .frame(width: 30, height: 30)
+                    .frame(width: 30)
                     .contentShape(Rectangle())
             }
             .padding(.horizontal, 4)
@@ -310,42 +308,6 @@ struct ItemDetailsView: View {
                 )
                 .presentationCompactAdaptation(.none)
             }
-            
-            // Add button - always show it
-            Button(action: {
-                feedbackGenerator.impactOccurred()
-                if viewModel.item.subItems.count < 50 {
-                    // First post notification to show and scroll to the field
-                    NotificationCenter.default.post(
-                        name: NSNotification.Name("ScrollToNewSubitemRow"),
-                        object: nil
-                    )
-                    
-                    // First clear any current focus
-                    /*
-                    if editingState != .newSubitem {
-                        removeAllFocus()
-                    }
-                     */
-                    
-                    // Then set new focus state
-                    editingState = .newSubitem
-                    
-                    // Update focus after a short delay to ensure view is updated
-                    //DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        updateFocusState()
-                    //}
-                }
-            }) {
-                Image(systemName: "plus")
-                    .foregroundColor(viewModel.item.subItems.count >= 50 ? .white.opacity(0.3) : .white.opacity(0.6))
-                    .font(.system(size: 20))
-                    .frame(width: 30, height: 30)
-                    .contentShape(Rectangle())
-            }
-            .padding(.horizontal, 4)
-            .buttonStyle(.plain)
-            .disabled(viewModel.item.subItems.count >= 50)
             
             // Delete button
             Button(action: {
@@ -380,6 +342,31 @@ struct ItemDetailsView: View {
                     feedbackGenerator: feedbackGenerator
                 )
             }
+            
+            // Add button - always show it
+            Button(action: {
+                feedbackGenerator.impactOccurred()
+                if viewModel.item.subItems.count < 50 {
+                    // First post notification to show and scroll to the field
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("ScrollToNewSubitemRow"),
+                        object: nil
+                    )
+                    
+                    // Then set new focus state
+                    editingState = .newSubitem
+                    updateFocusState()
+                }
+            }) {
+                Image(systemName: "plus.circle")
+                    .foregroundColor(viewModel.item.subItems.count >= 50 ? .white.opacity(0.3) : .white.opacity(0.6))
+                    .font(.system(size: 20))
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .padding(.horizontal, 4)
+            .buttonStyle(.plain)
+            .disabled(viewModel.item.subItems.count >= 50)
         }
     }
     
@@ -397,16 +384,16 @@ struct ItemDetailsView: View {
             } else {
                 // Close button
                 Button(action: {
-                    withAnimation(.easeInOut(duration: 0.25)) {
+                    withAnimation(.easeInOut(duration: 0.3)) {
                         isPresented = false
                     }
                 }) {
                     Image(systemName: "xmark")
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundColor(.white.opacity(0.6))
                         .font(.system(size: 18, weight: .medium))
-                        .padding(6)
+                        .padding(.trailing, 4)
                 }
-                .padding(.horizontal, 4)
+                .padding(.leading, 4)
             }
         }
     }
@@ -469,8 +456,10 @@ struct ItemDetailsView: View {
                         .padding(.horizontal)
                         .padding(.bottom, 8)
                         .contentShape(Rectangle())
+
                 }
                 .buttonStyle(.plain)
+                .padding(.top, 8)
             }
         }
     }
@@ -561,7 +550,7 @@ struct ItemDetailsView: View {
                                 .listRowInsets(EdgeInsets())
                         }
                         
-                        Color.clear.frame(height: 100)
+                        Color.clear.frame(height: 250)
                             .listRowBackground(Color.clear)
                             .listRowInsets(EdgeInsets())
                             .listRowSeparator(.hidden)
@@ -597,7 +586,129 @@ struct ItemDetailsView: View {
                         }
                     }
                 }
+                /*
+                
+                // Add floating action buttons at the bottom right
+                VStack(spacing: 6) {
+                    // Close button
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            isPresented = false
+                        }
+                    }) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.7))
+                            .frame(width: 24, height: 24)
+                            .background(.ultraThinMaterial.opacity(0.7))
+                            .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
+                            .cornerRadius(6)
+                            .frame(width: 50, height: 50)
+                    }
+                    
+                    // Add button
+                    Button(action: {
+                        feedbackGenerator.impactOccurred()
+                        if viewModel.item.subItems.count < 50 {
+                            // First post notification to show and scroll to the field
+                            NotificationCenter.default.post(
+                                name: NSNotification.Name("ScrollToNewSubitemRow"),
+                                object: nil
+                            )
+                            // Then set new focus state
+                            editingState = .newSubitem
+                            
+                            updateFocusState()
+                        }
+                    }) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.7))
+                            .frame(width: 24, height: 24)
+                            .background(.ultraThinMaterial.opacity(0.7))
+                            .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
+                            .cornerRadius(6)
+                            .frame(width: 50, height: 50)
+                    }
+                    .disabled(viewModel.item.subItems.count >= 50)
+                    
+                    // Checkbox button
+                    Button(action: {
+                        feedbackGenerator.impactOccurred()
+                        let wasCompleted = viewModel.item.isCompleted
+                        viewModel.toggleCompleted()
+                        
+                        // Only animate when completing, not uncompleting
+                        if !wasCompleted {
+                            // Trigger border animation
+                            borderOpacity = 0.4
+                            // Reset opacity after delay
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                withAnimation(.easeInOut(duration: 0.5)) {
+                                    borderOpacity = 0
+                                }
+                            }
+                        }
+                    }) {
+                        Image(systemName: viewModel.item.isCompleted ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(viewModel.item.isCompleted ? .green.opacity(0.8) : .white.opacity(0.7))
+                            .frame(width: 24, height: 24)
+                            .background(.ultraThinMaterial.opacity(0.7))
+                            .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
+                            .cornerRadius(6)
+                            .frame(width: 50, height: 50)
+                    }
+                    
+                    // Ellipsis menu button
+                    Button(action: {
+                        isGroupSectionExpanded = false
+                        showingPopover = true
+                    }) {
+                        Image(systemName: "ellipsis")
+                            .rotationEffect(.degrees(90))
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.7))
+                            .frame(width: 24, height: 24)
+                            .background(.ultraThinMaterial.opacity(0.7))
+                            .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
+                            .cornerRadius(6)
+                            .frame(width: 50, height: 50)
+                    }
+                    
+                    // Trash button
+                    Button(action: {
+                        feedbackGenerator.impactOccurred()
+                        removeAllFocus()
+                        showingDeleteConfirmation = true
+                    }) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.7))
+                            .frame(width: 24, height: 24)
+                            .background(.ultraThinMaterial.opacity(0.7))
+                            .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
+                            .cornerRadius(6)
+                            .frame(width: 50, height: 50)
+                    }
+                }
+                /*
+                .background(
+                    CustomRoundedRectangle(topRight: 0, bottomRight: 0, topLeft: 12, bottomLeft: 12)
+                        .fill(.ultraThinMaterial.opacity(0.2))
+                )
+                .overlay(
+                    CustomRoundedRectangle(topRight: 0, bottomRight: 0, topLeft: 12, bottomLeft: 12)
+                        .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
+                )
+                 */
+                .padding(.bottom, editingState.isFocused ? 0 : 100)
+                .padding(.trailing, -4)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .animation(.easeInOut(duration: 0.3), value: editingState.isFocused)
+                 */
             }
+            
         }
     }
 }
@@ -978,12 +1089,12 @@ private struct SubItemView: View {
                     if (horizontalAmount > verticalAmount * 2) && (translation < -50) {
                         guard !isEditing else { return }
                         // Only allow left swipe (negative values)
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             // Add some resistance to the drag
                             offset = max(-deleteWidth, translation)
                         }
                     } else if isSwiped {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             offset = 0
                             isSwiped = false
                         }
@@ -1167,6 +1278,72 @@ private struct SubitemDeleteConfirmationView: View {
         deleteTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { _ in
             isConfirmationActive = false
         }
+    }
+}
+
+// MARK: - Custom Shape for Side-Rounded Rectangle
+private struct CustomRoundedRectangle: Shape {
+    var topRight: CGFloat = 0
+    var bottomRight: CGFloat = 0
+    var topLeft: CGFloat = 0
+    var bottomLeft: CGFloat = 0
+    
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        
+        // Start from top left with potential corner
+        path.move(to: CGPoint(x: rect.minX + topLeft, y: rect.minY))
+        
+        // Top right
+        path.addLine(to: CGPoint(x: rect.maxX - topRight, y: rect.minY))
+        if topRight > 0 {
+            path.addArc(
+                center: CGPoint(x: rect.maxX - topRight, y: rect.minY + topRight),
+                radius: topRight,
+                startAngle: Angle(degrees: -90),
+                endAngle: Angle(degrees: 0),
+                clockwise: false
+            )
+        }
+        
+        // Bottom right
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - bottomRight))
+        if bottomRight > 0 {
+            path.addArc(
+                center: CGPoint(x: rect.maxX - bottomRight, y: rect.maxY - bottomRight),
+                radius: bottomRight,
+                startAngle: Angle(degrees: 0),
+                endAngle: Angle(degrees: 90),
+                clockwise: false
+            )
+        }
+        
+        // Bottom left
+        path.addLine(to: CGPoint(x: rect.minX + bottomLeft, y: rect.maxY))
+        if bottomLeft > 0 {
+            path.addArc(
+                center: CGPoint(x: rect.minX + bottomLeft, y: rect.maxY - bottomLeft),
+                radius: bottomLeft,
+                startAngle: Angle(degrees: 90),
+                endAngle: Angle(degrees: 180),
+                clockwise: false
+            )
+        }
+        
+        // Top left
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + topLeft))
+        if topLeft > 0 {
+            path.addArc(
+                center: CGPoint(x: rect.minX + topLeft, y: rect.minY + topLeft),
+                radius: topLeft,
+                startAngle: Angle(degrees: 180),
+                endAngle: Angle(degrees: 270),
+                clockwise: false
+            )
+        }
+        
+        path.closeSubpath()
+        return path
     }
 } 
 

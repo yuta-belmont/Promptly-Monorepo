@@ -68,6 +68,7 @@ public struct PlannerItemDisplayData: Identifiable, Equatable {
     public let subItems: [SubItemDisplayData]
     public let date: Date  // For API compatibility when needed
     public let lastModified: Date? // Optional timestamp for forcing view updates
+    public let areSubItemsExpanded: Bool // New property to track expansion state
     
     public struct SubItemDisplayData: Identifiable, Equatable {
         public let id: UUID
@@ -76,7 +77,7 @@ public struct PlannerItemDisplayData: Identifiable, Equatable {
     }
     
     // Create display data from a model item
-    static func from(item: Models.ChecklistItem, groupsCache: [UUID: GroupInfo]) -> PlannerItemDisplayData {
+    static func from(item: Models.ChecklistItem, groupsCache: [UUID: GroupInfo], expandedItems: Set<UUID> = []) -> PlannerItemDisplayData {
         // Look up group information if present
         let groupInfo: GroupInfo? = item.groupId.flatMap { groupsCache[$0] }
         
@@ -91,6 +92,9 @@ public struct PlannerItemDisplayData: Identifiable, Equatable {
             groupColor = groupInfo?.color
             groupTitle = groupInfo?.title
         }
+        
+        // Check if this item's ID is in the expanded set
+        let isExpanded = expandedItems.contains(item.id)
         
         return PlannerItemDisplayData(
             id: item.id,
@@ -108,7 +112,8 @@ public struct PlannerItemDisplayData: Identifiable, Equatable {
                 )
             },
             date: item.date,
-            lastModified: item.lastModified // Pass through the optional lastModified
+            lastModified: item.lastModified,
+            areSubItemsExpanded: isExpanded
         )
     }
 }
@@ -146,11 +151,17 @@ final class EasyListViewModel: ObservableObject {
         return checklist.items.count >= maxItemsPerDay
     }
     
+    // Add a set to track which item IDs are expanded
+    @Published private var expandedItemIds: Set<UUID> = []
+    
     init(date: Date = Date()) {
         self.date = date
         // Initialize with empty checklist instead of loading data immediately
         self.checklist = Models.Checklist(date: date)
         self.isShowingNotes = UserDefaults.standard.bool(forKey: "isShowingNotes")
+        
+        // Set up notification listeners for subitem changes
+        setupSubitemChangeListeners()
     }
     
     // New method to load data - this will be called from the view's onAppear
@@ -166,6 +177,9 @@ final class EasyListViewModel: ObservableObject {
         if !emptyIndices.isEmpty {
             deleteItems(at: IndexSet(emptyIndices))
         }
+        
+        // Clean up expanded states for items that no longer exist or have no subitems
+        cleanupExpandedStates()
         
         // Update counter state
         counterManager.updateCounts(completed: checklist.items.filter { $0.isCompleted }.count, total: checklist.items.count)
@@ -189,6 +203,9 @@ final class EasyListViewModel: ObservableObject {
                 
         // Clear the undo cache when switching days
         undoManager.clearCache()
+        
+        // Clear expanded states when switching dates
+        expandedItemIds.removeAll()
         
         // Update the date first
         self.date = newDate
@@ -293,6 +310,9 @@ final class EasyListViewModel: ObservableObject {
         // Use the direct reference to delete items
         checklist.deleteItems(at: indexSet)
         hasUnsavedChanges = true
+        
+        // Clean up expanded states
+        cleanupExpandedStates()
         
         // Update counter state after deletion
         counterManager.updateCounts(completed: checklist.items.filter { $0.isCompleted }.count, total: checklist.items.count)
@@ -589,6 +609,9 @@ final class EasyListViewModel: ObservableObject {
         // Process notifications for the loaded checklist
         _ = notificationManager.processNotificationsForChecklist(reloadedChecklist)
         
+        // Clean up expanded states for items that no longer exist or have no subitems
+        cleanupExpandedStates()
+        
         // Update counter state
         counterManager.updateCounts(completed: checklist.items.filter { $0.isCompleted }.count, total: checklist.items.count)
     }
@@ -633,11 +656,41 @@ final class EasyListViewModel: ObservableObject {
         counterManager.updateCounts(completed: checklist.items.filter { $0.isCompleted }.count, total: checklist.items.count)
     }
     
+    // Add a new method to manage subitem state and clean up expanded state if needed
+    func checkAndUpdateSubitemsState(_ itemId: UUID) {
+        guard let item = getItem(id: itemId) else { return }
+        
+        // If the item has no subitems but is in the expanded set, remove it
+        if item.subItems.isEmpty && expandedItemIds.contains(itemId) {
+            expandedItemIds.remove(itemId)
+            objectWillChange.send()
+        }
+    }
+    
+    // Listen for notifications from ItemDetailsView about subitem changes
+    func setupSubitemChangeListeners() {
+        NotificationCenter.default.addObserver(self, selector: #selector(handleItemDetailsUpdated(_:)), name: Notification.Name("ItemDetailsUpdated"), object: nil)
+    }
+    
+    @objc private func handleItemDetailsUpdated(_ notification: Notification) {
+        // Get the item ID from the notification
+        if let itemId = notification.object as? UUID {
+            // Check and update the item's expanded state
+            checkAndUpdateSubitemsState(itemId)
+            
+            // Mark changes for later saving
+            hasUnsavedChanges = true
+            
+            // Force a refresh of the UI
+            objectWillChange.send()
+        }
+    }
+    
     // MARK: - Display Data
     
     /// Converts a ChecklistItem to a PlannerItemDisplayData for UI rendering
     func getDisplayData(for item: Models.ChecklistItem) -> PlannerItemDisplayData {
-        return PlannerItemDisplayData.from(item: item, groupsCache: groupsCache)
+        return PlannerItemDisplayData.from(item: item, groupsCache: groupsCache, expandedItems: expandedItemIds)
     }
     
     /// Gets display data for all items
@@ -695,6 +748,9 @@ final class EasyListViewModel: ObservableObject {
         // Use the direct reference to delete items
         checklist.deleteItems(at: indexSet)
         hasUnsavedChanges = true
+        
+        // Clean up expanded states
+        cleanupExpandedStates()
         
         // Update counter state after deletion
         counterManager.updateCounts(completed: checklist.items.filter { $0.isCompleted }.count, total: checklist.items.count)
@@ -756,5 +812,48 @@ final class EasyListViewModel: ObservableObject {
                 return itemDict
             }
         ]
+    }
+    
+    // Add methods to toggle and get expansion state
+    func toggleItemExpanded(_ itemId: UUID) {
+        if expandedItemIds.contains(itemId) {
+            expandedItemIds.remove(itemId)
+        } else {
+            // Only add to expanded set if the item has subitems
+            if let item = getItem(id: itemId), !item.subItems.isEmpty {
+                expandedItemIds.insert(itemId)
+            }
+        }
+        objectWillChange.send()
+    }
+    
+    func isItemExpanded(_ itemId: UUID) -> Bool {
+        // Only return true if the item has subitems and is in the expanded set
+        if let item = getItem(id: itemId), item.subItems.isEmpty {
+            // If item has no subitems, remove it from expanded set if it's there
+            if expandedItemIds.contains(itemId) {
+                expandedItemIds.remove(itemId)
+            }
+            return false
+        }
+        return expandedItemIds.contains(itemId)
+    }
+    
+    // Add a method to clean up expanded states that are no longer valid
+    private func cleanupExpandedStates() {
+        // Find all items in expanded set that no longer exist or have no subitems
+        let invalidIds = expandedItemIds.filter { itemId in
+            guard let item = getItem(id: itemId) else {
+                // Item doesn't exist anymore
+                return true
+            }
+            // Item exists but has no subitems
+            return item.subItems.isEmpty
+        }
+        
+        // Remove invalid IDs from expanded set
+        for id in invalidIds {
+            expandedItemIds.remove(id)
+        }
     }
 } 

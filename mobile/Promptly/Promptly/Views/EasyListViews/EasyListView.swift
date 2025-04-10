@@ -210,19 +210,9 @@ struct EasyListHeader: View {
                             onUndo()
                         }) {
                             Image(systemName: "arrow.uturn.backward")
-                                .foregroundColor(.white)
+                                .foregroundColor(.white.opacity(0.8))
                                 .padding(.bottom, 2)
                         }
-                    }
-                    
-                    // Add item button
-                    Button(action: {
-                        feedbackGenerator.impactOccurred()
-                        onAddItem()
-                    }) {
-                        Image(systemName: "plus")
-                            .foregroundColor(.white)
-                            .padding(.bottom, 2)
                     }
                     
                     Button(action: {
@@ -231,7 +221,7 @@ struct EasyListHeader: View {
                         showingDeleteConfirmation = true
                     }) {
                         Image(systemName: "trash")
-                            .foregroundColor(.white)
+                            .foregroundColor(.white.opacity(0.8))
                             .padding(.bottom, 2)
                     }
                     .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .top) {
@@ -252,7 +242,7 @@ struct EasyListHeader: View {
                         showingImportPopover = true
                     }) {
                         Image(systemName: "square.and.arrow.down")
-                            .foregroundColor(.white)
+                            .foregroundColor(.white.opacity(0.8))
                             .padding(.bottom, 2)
                     }
                     .popover(isPresented: $showingImportPopover, arrowEdge: .top) {
@@ -263,14 +253,27 @@ struct EasyListHeader: View {
                         )
                         .presentationCompactAdaptation(.none)
                     }
+                    
+                    // Add item button
+                    Button(action: {
+                        if !showingNotes {
+                            feedbackGenerator.impactOccurred()
+
+                            onAddItem()
+                        }
+                    }) {
+                        Image(systemName: "plus.circle")
+                            .foregroundColor(.white.opacity(0.8))
+                    }
                 }
+                
                 
                 Button(action: {
                     feedbackGenerator.impactOccurred()
                     onNotesToggle()
                 }) {
                     Image(systemName: "arrow.2.squarepath")
-                        .foregroundColor(.white)
+                        .foregroundColor(.white.opacity(0.8))
                         .rotationEffect(.degrees(showingNotes ? 180 : 0))
                         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showingNotes)
                 }
@@ -468,7 +471,7 @@ struct ListContent: View {
                     .id("items-\(viewModel.date.timeIntervalSince1970)-\(viewModel.items.count)")
                     
                     // Add spacer at bottom of list for better scrolling
-                    Color.clear.frame(height: 100)
+                    Color.clear.frame(height: 250)
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets())
@@ -568,6 +571,10 @@ struct ListContent: View {
                     name: Notification.Name("ShowItemDetails"),
                     object: itemId
                 )
+            },
+            onToggleExpanded: { itemId in
+                // Update the expanded state in the ViewModel
+                viewModel.toggleItemExpanded(itemId)
             }
         )
         // Individual ID is now set on the row above
@@ -840,6 +847,7 @@ struct EasyListView: View {
     @EnvironmentObject private var focusManager: FocusManager
     @ObservedObject private var groupStore = GroupStore.shared
     @State private var keyboardHeight: CGFloat = 0
+    @State private var isInViewTransition: Bool = false // Add flag to track transition state
     
     init() {
         // No need to create a view model here anymore
@@ -861,6 +869,14 @@ struct EasyListView: View {
                     focusManager.isEasyListFocused = false
                 },
                 onNotesToggle: {
+                    // Prevent multiple taps during transition
+                    if isInViewTransition {
+                        return
+                    }
+                    
+                    // Set transition flag
+                    isInViewTransition = true
+                    
                     // Remove focus
                     print("onNotesToggle: Setting isEditing = false, isNewItemFocused = false, isNotesFocused = false")
                     isEditing = false
@@ -872,25 +888,50 @@ struct EasyListView: View {
                     withAnimation(.easeInOut(duration: 0.4)) {
                         viewModel.toggleNotesView()
                     }
+                    
+                    // Reset transition flag after animation completes
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        isInViewTransition = false
+                    }
                 },
                 onImport: { sourceDate, importIncompleteOnly in
-                    viewModel.importItems(from: sourceDate, importIncompleteOnly: importIncompleteOnly)
+                    // Only allow import if not in transition
+                    if !isInViewTransition {
+                        viewModel.importItems(from: sourceDate, importIncompleteOnly: importIncompleteOnly)
+                    }
                 },
                 onDeleteAll: {
-                    viewModel.deleteAllItems()
+                    // Only allow delete if not in transition
+                    if !isInViewTransition {
+                        viewModel.deleteAllItems()
+                    }
                 },
                 onDeleteCompleted: {
-                    viewModel.deleteCompletedItems()
+                    // Only allow delete if not in transition
+                    if !isInViewTransition {
+                        viewModel.deleteCompletedItems()
+                    }
                 },
                 onDeleteIncomplete: {
-                    viewModel.deleteIncompleteItems()
+                    // Only allow delete if not in transition
+                    if !isInViewTransition {
+                        viewModel.deleteIncompleteItems()
+                    }
                 },
                 onUndo: {
-                    viewModel.undo()
+                    // Only allow undo if not in transition
+                    if !isInViewTransition {
+                        viewModel.undo()
+                    }
                 },
                 canUndo: viewModel.canUndo,
                 currentDate: viewModel.date,
                 onAddItem: {
+                    // Only allow add item if not in transition
+                    if isInViewTransition {
+                        return
+                    }
+                    
                     print("onAddItem called - setting newItemFocused to true")
                     // Set focus first
                     print("onAddItem: Setting isNewItemFocused = true")
@@ -905,6 +946,7 @@ struct EasyListView: View {
                 }
             )
             .environmentObject(viewModel.undoManager)
+            .disabled(isInViewTransition) // Disable the entire header during transitions
             
             // Use GeometryReader to coordinate the size of the background and the scrollable content
             GeometryReader { geometry in
@@ -958,6 +1000,13 @@ struct EasyListView: View {
                     }
                     // Constrain the content to the available space
                     .frame(width: geometry.size.width, height: geometry.size.height)
+                    // Track the animation state to update the transition flag
+                    .onChange(of: viewModel.isShowingNotes) { _, _ in
+                        // Reset transition flag after a delay to ensure animation completes
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            isInViewTransition = false
+                        }
+                    }
                 }
             }
         }

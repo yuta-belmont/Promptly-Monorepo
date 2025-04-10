@@ -8,188 +8,207 @@ struct ManageGroupsView: View {
     @State private var refreshCounter: Int = 0 // Add a counter to force refresh
     @State private var dragOffset = CGSize.zero // Add drag offset for swipe gesture
     @State private var detailsViewModel: GroupDetailsViewModel? = nil
+    @State private var activeView: ActiveView = .manageGroups // Track which view is active
     var onNavigateToDate: ((Date) -> Void)? = nil
+    
+    // Define an enum for the possible views
+    enum ActiveView {
+        case manageGroups
+        case groupDetails
+    }
     
     var body: some View {
         ZStack {
-            // Main content
-            VStack(spacing: 0) {
-                // Header
-                HStack {
-                    // Add folder icon
-                    Image(systemName: "folder")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding(.trailing, 4)
-                    
-                    Text("Manage Groups")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                    
-                    Button(action: {
-                        showingInfoPopover = true
-                    }) {
-                        Image(systemName: "info.circle")
-                            .foregroundColor(.white.opacity(0.6))
-                            .font(.system(size: 14))
-                    }
-                    .popover(isPresented: $showingInfoPopover) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Groups are used to organize tasks.")
-                                .fixedSize(horizontal: false, vertical: true)
-                            
-                            Text("Grouped items can be color coded or deleted as a group.")
-                                .fixedSize(horizontal: false, vertical: true)
+            // Conditionally show either the ManageGroupsView content or GroupDetailsView
+            if activeView == .manageGroups {
+                // Main content - ManageGroupsView
+                VStack(spacing: 0) {
+                    // Header
+                    HStack {
+                        Text("Manage Groups")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        
+                        Button(action: {
+                            showingInfoPopover = true
+                        }) {
+                            Image(systemName: "info.circle")
+                                .foregroundColor(.white.opacity(0.6))
+                                .font(.system(size: 14))
                         }
-                        .padding()
-                        .frame(width: 300)
-                        .presentationCompactAdaptation(.none)
+                        .popover(isPresented: $showingInfoPopover) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Groups are used to organize tasks together.")
+                            }
+                            .padding()
+                            .frame(width: 250)
+                            .background(.ultraThinMaterial)
+                            .presentationCompactAdaptation(.none)
+                        }
+                        
+                        Spacer()
+                        
+                        Button(action: {
+                            viewModel.saveNewGroupIfNeeded()
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                isPresented = false
+                            }
+                        }) {
+                            Image(systemName: "xmark")
+                                .foregroundColor(.white.opacity(0.8))
+                                .font(.system(size: 18, weight: .medium))
+                        }
+                        .padding(.horizontal, 4)
                     }
+                    .padding()
                     
-                    Spacer()
+                    Divider()
+                        .background(Color.white.opacity(0.2))
+
                     
-                    Button("Done") {
+                    // List content
+                    List {
+                        
+                        ForEach(viewModel.groups) { group in
+                            // Only show the group if it's not pending deletion
+                            if viewModel.groupIdToRemove != group.id {
+                                GroupRow(group: group, viewModel: viewModel, onGroupTap: { tappedGroup in
+                                    // Create a new details view model
+                                    let newViewModel = GroupDetailsViewModel()
+                                    newViewModel.setSelectedGroup(tappedGroup)
+                                    detailsViewModel = newViewModel
+                                    
+                                    // Switch to details view with animation
+                                    withAnimation(.easeOut(duration: 0.2)) {
+                                        activeView = .groupDetails
+                                    }
+                                })
+                                .contentShape(Rectangle())
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(EdgeInsets(top: 2, leading: 4, bottom: 2, trailing: 4))
+                                .listRowSeparator(.hidden)
+                                .id("\(group.id)-\(refreshCounter)") // Force refresh when counter changes
+                            } else {
+                                // This is a placeholder that will get removed with animation
+                                // when groupIdToRemove is set
+                                EmptyView()
+                                    .id("\(group.id)-tobedeleted")
+                                    .listRowBackground(Color.clear)
+                                    .listRowInsets(EdgeInsets())
+                                    .listRowSeparator(.hidden)
+                                    .frame(height: 0)
+                            }
+                        }
+                        .animation(.easeInOut, value: viewModel.groupIdToRemove)
+                        
+                        // New Group Row
+                        HStack {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundColor(viewModel.isAddingNewGroup ? .gray : .blue)
+                                .font(.system(size: 18))
+                            
+                            if viewModel.isAddingNewGroup {
+                                TextField("Group Name", text: $viewModel.newGroupName)
+                                    .focused($isNewGroupFieldFocused)
+                                    .submitLabel(.done)
+                                    .onSubmit {
+                                        viewModel.addGroup()
+                                    }
+                            } else {
+                                Text("New Group")
+                                    .foregroundColor(.blue)
+                                    .font(.system(size: 16, weight: .medium))
+                            }
+                        }
+                        .padding(.vertical, 0)
+                        .padding(.horizontal, 0)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if !viewModel.isAddingNewGroup {
+                                viewModel.isAddingNewGroup = true
+                                isNewGroupFieldFocused = true
+                            }
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .listRowSeparator(.hidden)
+                    }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(
+                        Color.black.opacity(0.4)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
+                )
+                .offset(x: dragOffset.width)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            // Only allow dragging to the right
+                            if value.translation.width > 0 {
+                                dragOffset = value.translation
+                            }
+                        }
+                        .onEnded { value in
+                            // If dragged more than 100 points to the right, dismiss
+                            if value.translation.width > 100 {
+                                // Use animation to ensure smooth transition
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    isPresented = false
+                                }
+                            }
+                            // If not dragged far enough, animate back to original position
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                dragOffset = .zero
+                            }
+                        }
+                )
+                .transition(.opacity)
+                .zIndex(999)
+            } else if activeView == .groupDetails, let detailsVM = detailsViewModel {
+                // Show the Group details view
+                GroupDetailsView(
+                    viewModel: detailsVM,
+                    isPresented: Binding(
+                        get: { activeView == .groupDetails },
+                        set: { if !$0 { 
+                            // Switch back to manage groups view with animation
+                            withAnimation(.easeIn(duration: 0.2)) {
+                                activeView = .manageGroups
+                            }
+                            // Clean up
+                            refreshCounter += 1
+                        }}
+                    ),
+                    closeAllViews: {
                         viewModel.saveNewGroupIfNeeded()
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             isPresented = false
                         }
-                    }
-                }
-                .padding()
-                .padding(.top, 8)
-                
-                // List content
-                List {
-                    ForEach(viewModel.groups) { group in
-                        // Only show the group if it's not pending deletion
-                        if viewModel.groupIdToRemove != group.id {
-                            GroupRow(group: group, viewModel: viewModel)
-                                .contentShape(Rectangle())
-                                .listRowBackground(Color.clear)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                                .listRowSeparator(.hidden)
-                                .id("\(group.id)-\(refreshCounter)") // Force refresh when counter changes
-                        } else {
-                            // This is a placeholder that will get removed with animation
-                            // when groupIdToRemove is set
-                            EmptyView()
-                                .id("\(group.id)-tobedeleted")
-                                .listRowBackground(Color.clear)
-                                .listRowInsets(EdgeInsets())
-                                .listRowSeparator(.hidden)
-                                .frame(height: 0)
-                        }
-                    }
-                    .animation(.easeInOut, value: viewModel.groupIdToRemove)
-                    
-                    // New Group Row
-                    HStack {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundColor(viewModel.isAddingNewGroup ? .gray : .blue)
-                            .font(.system(size: 18))
+                    },
+                    onNavigateToDate: { date in
+                        // Clean up
+                        viewModel.saveNewGroupIfNeeded()
                         
-                        if viewModel.isAddingNewGroup {
-                            TextField("Group Name", text: $viewModel.newGroupName)
-                                .focused($isNewGroupFieldFocused)
-                                .submitLabel(.done)
-                                .onSubmit {
-                                    viewModel.addGroup()
-                                }
-                        } else {
-                            Text("New Group")
-                                .foregroundColor(.blue)
-                                .font(.system(size: 16, weight: .medium))
-                        }
-                    }
-                    .padding(.vertical, 12)
-                    .padding(.horizontal, 16)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if !viewModel.isAddingNewGroup {
-                            viewModel.isAddingNewGroup = true
-                            isNewGroupFieldFocused = true
-                        }
-                    }
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                    .listRowSeparator(.hidden)
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                    Color.black.opacity(0.4)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
-            )
-            .offset(x: dragOffset.width)
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        // Only allow dragging to the right
-                        if value.translation.width > 0 {
-                            dragOffset = value.translation
-                        }
-                    }
-                    .onEnded { value in
-                        // If dragged more than 100 points to the right, dismiss
-                        if value.translation.width > 100 {
-                            // Use animation to ensure smooth transition
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                isPresented = false
+                        // Handle navigation (which will close all views)
+                        DispatchQueue.main.async {
+                            if let parentNavigate = onNavigateToDate {
+                                parentNavigate(date)
                             }
                         }
-                        // If not dragged far enough, animate back to original position
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            dragOffset = .zero
-                        }
                     }
-            )
-            .transition(.move(edge: .trailing))
-            .zIndex(999)
-            
-            // Group details overlay
-            if viewModel.selectedGroup != nil {
-                if let detailsViewModel = detailsViewModel {
-                    GroupDetailsView(
-                        viewModel: detailsViewModel, 
-                        isPresented: Binding(
-                            get: { viewModel.selectedGroup != nil },
-                            set: { if !$0 { 
-                                viewModel.selectedGroup = nil
-                                self.detailsViewModel = nil
-                                refreshCounter += 1
-                            }}
-                        ),
-                        closeAllViews: {
-                            viewModel.selectedGroup = nil
-                            self.detailsViewModel = nil
-                            viewModel.saveNewGroupIfNeeded()
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                isPresented = false
-                            }
-                        },
-                        onNavigateToDate: { date in
-                            viewModel.selectedGroup = nil
-                            self.detailsViewModel = nil
-                            viewModel.saveNewGroupIfNeeded()
-                            
-                            DispatchQueue.main.async {
-                                if let parentNavigate = onNavigateToDate {
-                                    parentNavigate(date)
-                                }
-                            }
-                        }
-                    )
-                    .transition(.move(edge: .trailing))
-                }
+                )
+                .transition(.move(edge: .trailing))
+                .zIndex(999)
             }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.selectedGroup)
+        // Apply animation to the ZStack for view transitions
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: activeView)
         .onAppear {
             viewModel.loadGroups()
         }
@@ -216,13 +235,6 @@ struct ManageGroupsView: View {
                 viewModel.saveNewGroupIfNeeded()
             }
         }
-        .onChange(of: viewModel.selectedGroup) { _, newGroup in
-            if newGroup != nil {
-                let newViewModel = GroupDetailsViewModel()
-                newViewModel.setSelectedGroup(newGroup!)
-                detailsViewModel = newViewModel
-            }
-        }
     }
 }
 
@@ -233,10 +245,12 @@ struct GroupRow: View {
     @ObservedObject private var groupStore = GroupStore.shared
     @State private var isGlowing: Bool = false
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
+    let onGroupTap: (Models.ItemGroup) -> Void
     
-    init(group: Models.ItemGroup, viewModel: ManageGroupsViewModel) {
+    init(group: Models.ItemGroup, viewModel: ManageGroupsViewModel, onGroupTap: @escaping (Models.ItemGroup) -> Void) {
         self.group = group
         self.viewModel = viewModel
+        self.onGroupTap = onGroupTap
     }
     
     var body: some View {
@@ -246,8 +260,6 @@ struct GroupRow: View {
         HStack(spacing: 12) {
             // Main content with navigation
             Button(action: {
-                // Trigger haptic feedback
-                feedbackGenerator.impactOccurred()
                 
                 // Start the glow animation
                 isGlowing = true
@@ -257,20 +269,22 @@ struct GroupRow: View {
                     }
                 }
                 
-                // Select the group
-                viewModel.selectGroup(currentGroup)
+                // Call the tap handler which will switch to the details view
+                onGroupTap(currentGroup)
             }) {
                 HStack {
                     // Color indicator
                     if currentGroup.hasColor {
-                        Circle()
-                            .fill(Color(red: currentGroup.colorRed, green: currentGroup.colorGreen, blue: currentGroup.colorBlue))
-                            .frame(width: 16, height: 16)
-                            .shadow(color: Color.black.opacity(0.1), radius: 1, x: 0, y: 1)
+                        // Add folder icon
+                        Image(systemName: "folder")
+                            .font(.subheadline)
+                            .foregroundColor(Color(red: currentGroup.colorRed, green: currentGroup.colorGreen, blue: currentGroup.colorBlue))
+                            .padding(.trailing, 4)
                     } else {
-                        Circle()
-                            .strokeBorder(Color.gray.opacity(0.5), lineWidth: 1.5)
-                            .frame(width: 16, height: 16)
+                        Image(systemName: "folder")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.5))
+                            .padding(.trailing, 4)
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
@@ -298,10 +312,6 @@ struct GroupRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(PlainButtonStyle())
-            .onAppear {
-                // Prepare the feedback generator when the view appears
-                feedbackGenerator.prepare()
-            }
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
