@@ -26,6 +26,7 @@ struct ItemDetailsView: View {
     @FocusState private var isTitleFieldFocused: Bool
     @State private var editingSubitemId: UUID? //we use this as the initial variable to set editing when we first tap a subitem. This is important because subitems must transition from text to texteditors.
     @FocusState private var focusedSubitemId: UUID?
+    @State private var isTitlePreloading = false // Add preloading state for title
     
     // Add focus removal state
     private enum FocusRemovalState {
@@ -141,13 +142,13 @@ struct ItemDetailsView: View {
             .gesture(
                 DragGesture()
                     .onChanged { value in
-                        // Only allow dragging from the left edge (first 88 points) and only to the right
+                        // Only allow dragging from the left edge (first 66 points) and only to the right
                         if value.startLocation.x < 66 && value.translation.width > 0 {
                             dragOffset = value.translation
                         }
                     }
                     .onEnded { value in
-                        // If dragged more than 100 points to the right, dismiss
+                        // If dragged more than 66 points to the right, dismiss
                         if value.startLocation.x < 66 && value.translation.width > 50 {
                             // Use animation to ensure smooth transition back to EasyListView
                             withAnimation(.easeInOut(duration: 0.25)) {
@@ -213,10 +214,10 @@ struct ItemDetailsView: View {
             }) {
                 Image(systemName: "chevron.left")
                     .foregroundColor(.white.opacity(0.8))
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 18, weight: .medium))
+                    .padding(.horizontal, 4)
                     .padding(.leading, 12)
                     .contentShape(Rectangle())
-                    .frame(width: 32, height: 32)
             }
             .buttonStyle(.plain)
             
@@ -245,7 +246,7 @@ struct ItemDetailsView: View {
                 .foregroundColor(viewModel.item.isCompleted ? .green : .gray)
                 .font(.system(size: 24))
                 // Add a simple scale transition for the icon
-                .animation(.spring(response: 0.2, dampingFraction: 0.7), value: viewModel.item.isCompleted)
+                .animation(.spring(response: 0.01, dampingFraction: 1), value: viewModel.item.isCompleted)
         }
         .buttonStyle(.plain)
     }
@@ -262,7 +263,7 @@ struct ItemDetailsView: View {
                     Image(systemName: "arrow.uturn.backward")
                         .foregroundColor(.white.opacity(0.6))
                         .font(.system(size: 20))
-                        .frame(width: 56, height: 30)
+                        .frame(width: 56)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -277,7 +278,7 @@ struct ItemDetailsView: View {
                     .rotationEffect(.degrees(90))
                     .foregroundColor(.white.opacity(0.6))
                     .font(.system(size: 16))
-                    .frame(width: 40)
+                    .frame(width: 55)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -377,8 +378,14 @@ struct ItemDetailsView: View {
     // Start editing title
     private func startEditingTitle() {
         editedTitleText = viewModel.item.title
-        editingState = .title
-        updateFocusState()
+        isTitlePreloading = true
+        
+        // Use async to allow the UI to update first
+        DispatchQueue.main.async {
+            self.editingState = .title
+            self.updateFocusState()
+            self.isTitlePreloading = false
+        }
     }
     
     // Save title
@@ -386,57 +393,61 @@ struct ItemDetailsView: View {
         if !editedTitleText.isEmpty {
             viewModel.updateTitle(editedTitleText)
         }
-        updateFocusState()
     }
     
     // Title view component
     private var titleView: some View {
         ZStack {
-            if case .title = editingState {
-                // Editable title field
-                TextEditor(text: $editedTitleText)
+            // Static title text (always present, but hidden when editing and not preloading)
+            Button(action: {
+                startEditingTitle()
+            }) {
+                Text(viewModel.item.title)
                     .font(.title3)
                     .foregroundColor(.white)
-                    .scrollContentBackground(.hidden)
-                    .background(Color.clear)
-                    .padding(.horizontal, 8)
-                    .frame(maxHeight: 96)
-                    .focused($titleFocused)
-                    .onChange(of: editedTitleText) {_, newValue in
-                        // Check for Enter key
-                        if newValue.contains("\n") {
-                            // Remove the newline character
-                            editedTitleText = newValue.replacingOccurrences(of: "\n", with: "")
-                            
-                            // Save the title
-                            saveTitle()
-                            removeAllFocus()
+                    .lineLimit(4)
+                    .strikethrough(viewModel.item.isCompleted, color: .gray)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 8)
+            .opacity((editingState != .title) || isTitlePreloading ? 1 : 0)
+            
+            // Editable title field (always present, but only visible when editing and not preloading)
+            TextField("Title", text: $editedTitleText, axis: .vertical)
+                .font(.title3)
+                .foregroundColor(.white)
+                .lineLimit(1...6)
+                .textFieldStyle(.plain)
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .focused($titleFocused)
+                .submitLabel(.done)
+                .onChange(of: editedTitleText) {_, newValue in
+                    // Check for Enter key
+                    if newValue.contains("\n") {
+                        // Remove the newline character
+                        editedTitleText = newValue.replacingOccurrences(of: "\n", with: "")
+                        
+                        // Save the title
+                        removeAllFocus()
+                    }
+                }
+                .onChange(of: titleFocused) {
+                    saveTitle()
+                }
+                .opacity(editingState == .title && !isTitlePreloading ? 1 : 0)
+                .onChange(of: isTitlePreloading) { oldValue, newValue in
+                    // When preloading ends, update focus
+                    if oldValue == true && newValue == false, case .title = editingState {
+                        DispatchQueue.main.async {
+                            titleFocused = true
                         }
                     }
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                            .padding(.horizontal, 4)
-                    )
-            } else {
-                // Static title text (tappable)
-                Button(action: {
-                    startEditingTitle()
-                }) {
-                    Text(viewModel.item.title)
-                        .font(.title3)
-                        .foregroundColor(.white)
-                        .lineLimit(4)
-                        .strikethrough(viewModel.item.isCompleted, color: .gray)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal)
-                        .padding(.bottom, 8)
-                        .contentShape(Rectangle())
-
                 }
-                .buttonStyle(.plain)
-                .padding(.top, 8)
-            }
         }
     }
     
@@ -562,129 +573,7 @@ struct ItemDetailsView: View {
                         }
                     }
                 }
-                /*
-                
-                // Add floating action buttons at the bottom right
-                VStack(spacing: 6) {
-                    // Close button
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            isPresented = false
-                        }
-                    }) {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.7))
-                            .frame(width: 24, height: 24)
-                            .background(.ultraThinMaterial.opacity(0.7))
-                            .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
-                            .cornerRadius(6)
-                            .frame(width: 50, height: 50)
-                    }
-                    
-                    // Add button
-                    Button(action: {
-                        feedbackGenerator.impactOccurred()
-                        if viewModel.item.subItems.count < 50 {
-                            // First post notification to show and scroll to the field
-                            NotificationCenter.default.post(
-                                name: NSNotification.Name("ScrollToNewSubitemRow"),
-                                object: nil
-                            )
-                            // Then set new focus state
-                            editingState = .newSubitem
-                            
-                            updateFocusState()
-                        }
-                    }) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.7))
-                            .frame(width: 24, height: 24)
-                            .background(.ultraThinMaterial.opacity(0.7))
-                            .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
-                            .cornerRadius(6)
-                            .frame(width: 50, height: 50)
-                    }
-                    .disabled(viewModel.item.subItems.count >= 50)
-                    
-                    // Checkbox button
-                    Button(action: {
-                        feedbackGenerator.impactOccurred()
-                        let wasCompleted = viewModel.item.isCompleted
-                        viewModel.toggleCompleted()
-                        
-                        // Only animate when completing, not uncompleting
-                        if !wasCompleted {
-                            // Trigger border animation
-                            borderOpacity = 0.4
-                            // Reset opacity after delay
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                withAnimation(.easeInOut(duration: 0.5)) {
-                                    borderOpacity = 0
-                                }
-                            }
-                        }
-                    }) {
-                        Image(systemName: viewModel.item.isCompleted ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(viewModel.item.isCompleted ? .green.opacity(0.8) : .white.opacity(0.7))
-                            .frame(width: 24, height: 24)
-                            .background(.ultraThinMaterial.opacity(0.7))
-                            .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
-                            .cornerRadius(6)
-                            .frame(width: 50, height: 50)
-                    }
-                    
-                    // Ellipsis menu button
-                    Button(action: {
-                        isGroupSectionExpanded = false
-                        showingPopover = true
-                    }) {
-                        Image(systemName: "ellipsis")
-                            .rotationEffect(.degrees(90))
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.7))
-                            .frame(width: 24, height: 24)
-                            .background(.ultraThinMaterial.opacity(0.7))
-                            .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
-                            .cornerRadius(6)
-                            .frame(width: 50, height: 50)
-                    }
-                    
-                    // Trash button
-                    Button(action: {
-                        feedbackGenerator.impactOccurred()
-                        removeAllFocus()
-                        showingDeleteConfirmation = true
-                    }) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.7))
-                            .frame(width: 24, height: 24)
-                            .background(.ultraThinMaterial.opacity(0.7))
-                            .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
-                            .cornerRadius(6)
-                            .frame(width: 50, height: 50)
-                    }
-                }
-                /*
-                .background(
-                    CustomRoundedRectangle(topRight: 0, bottomRight: 0, topLeft: 12, bottomLeft: 12)
-                        .fill(.ultraThinMaterial.opacity(0.2))
-                )
-                .overlay(
-                    CustomRoundedRectangle(topRight: 0, bottomRight: 0, topLeft: 12, bottomLeft: 12)
-                        .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
-                )
-                 */
-                .padding(.bottom, editingState.isFocused ? 0 : 100)
-                .padding(.trailing, -4)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                .animation(.easeInOut(duration: 0.3), value: editingState.isFocused)
-                 */
             }
-            
         }
     }
 }
@@ -834,24 +723,16 @@ private struct NewSubItemRow: View {
                 .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0))
                 .font(.system(size: 20))
                 .zIndex(2)
-                .padding(.top, 8)
+                .padding(.trailing, 4)
+                .padding(.bottom, 6)
             
             ZStack(alignment: .leading) {
-                // Placeholder text
-                if text.isEmpty {
-                    Text("New subitem...")
-                        .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0.7))
-                        .padding(.leading, 4)
-                        .padding(.top, 4)
-                        .allowsHitTesting(false)
-                }
-                
-                TextEditor(text: $text)
+                TextField("New subitem...", text: $text, axis: .vertical)
                     .foregroundColor(isFocused.wrappedValue ? .white : .gray)
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
                     .focused(isFocused)
-                    .frame(maxHeight: 80)
+                    //.frame(maxHeight: 80)
                     .onChange(of: text) { oldValue, newValue in
                         // Check if user pressed return (added a newline)
                         if newValue.contains("\n") {
@@ -992,7 +873,8 @@ private struct SubItemView: View {
                     Image(systemName: subitem.isCompleted ? "checkmark.circle.fill" : "circle")
                         .foregroundColor(subitem.isCompleted ? .green : .gray)
                         .font(.system(size: 20))
-                        .padding(.top, 8)
+                        .padding(.trailing, 4)
+                        .padding(.vertical, 6)
                 }
                 .buttonStyle(.plain)
                 
@@ -1004,8 +886,8 @@ private struct SubItemView: View {
                             .lineLimit(4)
                             .strikethrough(subitem.isCompleted, color: .gray)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 5)
+                            .padding(.vertical, 6)
+                            .padding(.leading, 0)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 isPreloading = true
@@ -1017,12 +899,12 @@ private struct SubItemView: View {
                     }
            
                     if isEditing || isPreloading {
-                        TextEditor(text: $editedText)
+                        TextField("",text: $editedText, axis: .vertical)
                             .font(.body)
                             .foregroundColor(.white)
                             .scrollContentBackground(.hidden)
                             .background(Color.clear)
-                            .padding(.vertical, 0)
+                            .padding(.vertical, 6)
                             .padding(.leading, 0)
                             .focused($focusedSubitemId, equals: subitem.id)
                             .onChange(of: editedText) { oldValue, newValue in
@@ -1062,7 +944,7 @@ private struct SubItemView: View {
                     // Only respond if:
                     // 1. The gesture is primarily horizontal (horizontal movement is at least 3x the vertical movement)
                     // 2. Has moved at least 25 points
-                    if (horizontalAmount > verticalAmount * 2) && (translation < -50) {
+                    if (horizontalAmount > verticalAmount * 2) && (translation < -25) {
                         guard !isEditing else { return }
                         // Only allow left swipe (negative values)
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
@@ -1088,7 +970,7 @@ private struct SubItemView: View {
                     // 1. It was primarily horizontal
                     // 2. Moved enough distance (in the negative direction)
                     // 3. Has sufficient velocity or distance
-                    if (horizontalAmount > verticalAmount * 2) && (translation < -100) {
+                    if (horizontalAmount > verticalAmount * 2) && (translation < -50) {
                         guard !isEditing else { return }
                         // Determine if we should open or close based on velocity and position
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {

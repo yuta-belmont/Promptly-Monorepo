@@ -93,8 +93,8 @@ private struct ItemMenuButton: View {
                 .rotationEffect(.degrees(90))
                 .foregroundColor(.white.opacity(0.6))
                 .font(.system(size: 16))
-                .padding(.trailing, 10)
-                .frame(maxWidth: 40, maxHeight: .infinity, alignment: .top)
+                .padding(.trailing, 4)
+                .frame(maxWidth: 36, maxHeight: .infinity, alignment: .top)
                 .padding(.top, 16)
                 .contentShape(Rectangle())
         }
@@ -250,25 +250,17 @@ private struct ExpandCollapseButton: View {
         if hasSubItems {
             Button(action: {
                 feedbackGenerator.impactOccurred()
-                
-                // Toggle expanded state locally
+                // No animation here - just toggle the state
                 areSubItemsExpanded.toggle()
-                
-                // Call the callback to persist the state
                 onToggleExpanded()
-                
-                // Animate UI changes
-                withAnimation(.easeOut(duration: 0.25)) {
-                    // Empty animation block to handle view updates
-                }
             }) {
                 Image(systemName: areSubItemsExpanded ? "chevron.up" : "chevron.down")
                     .foregroundColor(.white.opacity(0.8))
                     .font(.system(size: 16))
                     .padding(.horizontal, 50)
                     .frame(maxWidth: 40, maxHeight: .infinity, alignment: .top)
-                    .contentShape(Rectangle())
                     .padding(.top, 14)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .onAppear {
@@ -374,7 +366,6 @@ private struct SubItemRowView: View {
                     .frame(width: 44, height: 30)
                     .contentShape(Rectangle())
                     .scaleEffect(isSubItemCompletedLocally ? 1.1 : 1.0)
-                    .rotationEffect(.degrees(isSubItemCompletedLocally ? 360 : 0))
                     .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isSubItemCompletedLocally)
             }
             .buttonStyle(.plain)
@@ -420,30 +411,50 @@ private struct SubItemListView: View {
 private struct SubItemsSection: View {
     @Binding var itemData: MutablePlannerItemData
     let onToggleSubItem: ((UUID, UUID, Bool) -> Void)?
+    @State private var animationState: Bool = false
+    @State private var didJustExpand: Bool = false
     
     var body: some View {
-        if itemData.areSubItemsExpanded {
-            VStack(spacing: 0) {
-                Divider()
-                    .background(Color.white.opacity(0.3))
-                    .padding(.horizontal, 16)
-                    .padding(.top, 0)
-                    .padding(.bottom, 0)
-                
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    SubItemListView(
-                        itemData: $itemData,
-                        onToggleSubItem: onToggleSubItem
-                    )
-                    .id("subitems-list-\(itemData.id.uuidString)-\(itemData.subItems.count)")
+        Group {
+            if itemData.areSubItemsExpanded {
+                VStack(spacing: 0) {
+                    Divider()
+                        .background(Color.white.opacity(0.3))
+                        .padding(.horizontal, 16)
+                        .padding(.top, 0)
+                        .padding(.bottom, 0)
+                    
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        SubItemListView(
+                            itemData: $itemData,
+                            onToggleSubItem: onToggleSubItem
+                        )
+                        .id("subitems-list-\(itemData.id.uuidString)-\(itemData.subItems.count)")
+                    }
+                    .padding(.leading, 4)
+                    .padding(.trailing, 0)
+                    .padding(.top, 2)
+                    .opacity(animationState ? 1 : 0)
+                    .scaleEffect(y: animationState ? 1 : 0.01, anchor: .top)
                 }
-                .padding(.leading, 4)
-                .padding(.trailing, 0)
-                .padding(.top, 2)
-                .animation(.linear(duration: 0.15), value: itemData.subItems.count)
+                .id("subitems-section-\(itemData.id.uuidString)-\(itemData.areSubItemsExpanded)-\(itemData.subItems.count)")
+                .onAppear {
+                    if didJustExpand {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            didJustExpand = false
+                            animationState = true
+                        }
+                    } else {
+                        animationState = true
+                    }
+                }
+                .onDisappear {
+                    animationState = false
+                }
             }
-            .modifier(SubItemsTransitionModifier())
-            .id("subitems-section-\(itemData.id.uuidString)-\(itemData.areSubItemsExpanded)-\(itemData.subItems.count)")
+        }
+        .onChange(of: itemData.areSubItemsExpanded) { oldValue, newValue in
+            didJustExpand = (oldValue != newValue) && itemData.areSubItemsExpanded
         }
     }
 }
@@ -455,6 +466,12 @@ struct PlannerItemView: View, Equatable {
     @State private var isGlowing: Bool = false
     @State private var showOutline: Bool = false  // New state for outline
     let isGroupDetailsView: Bool
+    
+    // Track whether expansion state changes are from user interaction
+    // This helps differentiate between:
+    // 1. Initial load/scroll recycling (don't animate)
+    // 2. User tapping expand/collapse (do animate)
+    @State private var shouldAnimateExpansion: Bool = false
     
     // Store the display data to observe changes
     let displayData: PlannerItemDisplayData
@@ -548,6 +565,8 @@ struct PlannerItemView: View, Equatable {
                 onDelete: onDelete,
                 isGroupDetailsView: isGroupDetailsView,
                 onToggleExpanded: {
+                    // User initiated the expansion change
+                    shouldAnimateExpansion = true
                     onToggleExpanded?(itemData.id)
                 }
             )
@@ -654,7 +673,7 @@ struct PlannerItemView: View, Equatable {
                 itemData.groupColor = nil
             }
         }
-        .onChange(of: displayData) { oldValue, newValue in                        
+        .onChange(of: displayData) { oldValue, newValue in
             // Update model data while preserving local UI state where appropriate
             var updatedItemData = MutablePlannerItemData(from: newValue)
             
@@ -664,8 +683,13 @@ struct PlannerItemView: View, Equatable {
             updatedItemData.opacity = itemData.opacity
             updatedItemData.isGroupSectionExpanded = itemData.isGroupSectionExpanded
             
-            // If isCompletedLocally is different from the model, sync it with the model
-            // This ensures UI and model stay in sync during completion toggles
+            // If expansion state changed from data update (not user interaction),
+            // we don't want to animate
+            if oldValue.areSubItemsExpanded != newValue.areSubItemsExpanded {
+                shouldAnimateExpansion = false
+            }
+            
+            // If isCompletedLocally is different from the model, sync it
             updatedItemData.isCompletedLocally = newValue.isCompleted
             
             // Update our state
@@ -713,38 +737,5 @@ extension PlannerItemView {
             onGoToDate: onGoToDate,
             isGroupDetailsView: isGroupDetailsView
         )
-    }
-}
-
-// Define a custom transition modifier for SubItems to have different animations for expand/contract
-struct SubItemsTransitionModifier: ViewModifier {
-    @State private var animState: Bool = false
-    @State private var hasAnimatedBefore: Bool = false
-    
-    func body(content: Content) -> some View {
-        content
-            .onAppear {
-                if !hasAnimatedBefore {
-                    // Only animate the first time it appears after being added to the view hierarchy
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        animState = true
-                    }
-                    // Mark that we've animated once
-                    hasAnimatedBefore = true
-                } else {
-                    // If reappearing due to scrolling, just set the final state without animation
-                    animState = true
-                }
-            }
-            .onDisappear {
-                // Don't reset the hasAnimatedBefore flag on disappear
-                // But we do need to reset animState so the transition works properly
-                animState = false
-            }
-            // Simplify transition to basic move and opacity
-            .transition(.move(edge: .top).combined(with: .opacity))
-            // Apply simpler transformations without the 3D effect for better performance
-            .opacity(animState ? 1 : 0)
-            .scaleEffect(y: animState ? 1 : 0.01, anchor: .top) // Start with minimal height from the top
     }
 }

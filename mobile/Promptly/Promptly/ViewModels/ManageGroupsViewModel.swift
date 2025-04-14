@@ -18,6 +18,25 @@ final class ManageGroupsViewModel: ObservableObject {
     
     init() {
         loadGroups()
+        setupExternalNotificationObservers()
+    }
+    
+    // Setup notification observers for external changes
+    private func setupExternalNotificationObservers() {
+        // Listen for group changes from ItemDetailsView
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleItemGroupUpdated(_:)),
+            name: NSNotification.Name("ItemGroupUpdated"),
+            object: nil
+        )
+    }
+    
+    @objc private func handleItemGroupUpdated(_ notification: Notification) {
+        if let itemId = notification.object as? UUID {
+            // Reload groups to ensure we have the latest data
+            loadGroups()
+        }
     }
     
     func loadGroups() {
@@ -31,11 +50,16 @@ final class ManageGroupsViewModel: ObservableObject {
     
     func addGroup() {
         guard !newGroupName.isEmpty else { return }
+        
+        // Create group through GroupStore
         _ = groupStore.createGroup(title: newGroupName) { [weak self] in
             guard let self = self else { return }
-            self.newGroupName = ""
-            self.isAddingNewGroup = false
+            
+            // Update our local state directly from the store
             self.groups = self.groupStore.groups
+            
+            // Clear the input
+            self.newGroupName = ""
         }
     }
     
@@ -208,14 +232,14 @@ final class ManageGroupsViewModel: ObservableObject {
         }
     }
     
-    func updateGroupName(_ newName: String) {
-        guard !newName.isEmpty, let group = selectedGroup else { return }
+    func updateGroupName(_ group: Models.ItemGroup, newName: String) {
+        guard !newName.isEmpty else { return }
         
+        // Update in GroupStore directly
         groupStore.updateGroupTitle(group, newTitle: newName) { [weak self] in
             guard let self = self else { return }
-            // Update the local state to reflect the change immediately
-            self.currentGroupTitle = newName
-            // Update local groups array directly from the store
+            
+            // Update our local state from the store
             self.groups = self.groupStore.groups
         }
     }
@@ -367,6 +391,44 @@ final class ManageGroupsViewModel: ObservableObject {
                     )
                 }
             }
+        }
+    }
+    
+    // MARK: - Group Management
+    
+    func reorderGroups(from sourceIndex: Int, to destinationIndex: Int) {
+        // Adjust destination index based on move direction
+        let adjustedDestinationIndex = sourceIndex < destinationIndex ? destinationIndex - 1 : destinationIndex
+        
+        // Create a new array with the group moved in a single operation
+        var newGroups = groups
+        let groupToMove = newGroups.remove(at: sourceIndex)
+        newGroups.insert(groupToMove, at: adjustedDestinationIndex)
+        
+        // Update the groups array atomically
+        groups = newGroups
+        
+        // Then update store
+        groupStore.reorderGroups(from: sourceIndex, to: adjustedDestinationIndex) { [weak self] in
+            guard let self = self else { return }
+        }
+    }
+    
+    func removeGroup() {
+        guard let groupId = groupIdToRemove,
+              let group = groups.first(where: { $0.id == groupId }) else { return }
+        
+        // Delete from GroupStore directly
+        groupStore.deleteGroup(group) { [weak self] in
+            guard let self = self else { return }
+            
+            // Update our local state directly
+            if let index = self.groups.firstIndex(where: { $0.id == groupId }) {
+                self.groups.remove(at: index)
+            }
+            
+            // Clear the group to remove
+            self.groupIdToRemove = nil
         }
     }
 } 

@@ -182,7 +182,7 @@ struct RootView: View {
                                 todayID: animation,
                                 onDateSelected: { date in
                                     print("[RootView] Calendar selected date: \(dateFormatter.string(from: date))")
-                                    withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                         viewState = .dayView(date: date)
                                     }
                                 }
@@ -195,7 +195,7 @@ struct RootView: View {
                                 date: date,
                                 onBack: {
                                     print("[RootView] DayView back button pressed")
-                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                    withAnimation(.easeInOut(duration: 0.3)) {
                                         viewState = .calendar
                                     }
                                 },
@@ -216,7 +216,7 @@ struct RootView: View {
                                 ),
                                 onNavigateToDate: { date in
                                     print("[RootView] ManageGroups navigating to date: \(dateFormatter.string(from: date))")
-                                    withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                         viewState = .dayView(date: date)
                                     }
                                 }
@@ -333,7 +333,7 @@ struct RootView: View {
                 print("[RootView] Received NavigateToDayView notification with date: \(DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short))")
                 
                 // Update the view state to show day view with the correct date
-                withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     viewState = .dayView(date: date)
                 }
             }

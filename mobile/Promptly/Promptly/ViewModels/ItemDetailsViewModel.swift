@@ -195,7 +195,6 @@ final class ItemDetailsViewModel: ObservableObject {
     
     // Update group for the item
     func updateGroup(_ newGroupId: UUID?) {
-        
         // Create a mutable copy of the item
         var mutableItem = item
         
@@ -218,6 +217,12 @@ final class ItemDetailsViewModel: ObservableObject {
         
         // Save changes to persistence
         saveItem()
+        
+        // Post notification that group was updated
+        NotificationCenter.default.post(
+            name: NSNotification.Name("ItemGroupUpdated"),
+            object: item.id
+        )
     }
     
     // Toggle the completed state of the item

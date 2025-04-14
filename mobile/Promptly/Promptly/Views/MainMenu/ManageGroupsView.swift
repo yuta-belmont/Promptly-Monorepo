@@ -5,10 +5,10 @@ struct ManageGroupsView: View {
     @StateObject private var viewModel = ManageGroupsViewModel()
     @State private var showingInfoPopover = false
     @FocusState private var isNewGroupFieldFocused: Bool
-    @State private var refreshCounter: Int = 0 // Add a counter to force refresh
-    @State private var dragOffset = CGSize.zero // Add drag offset for swipe gesture
+    @State private var refreshCounter: Int = 0
+    @State private var dragOffset = CGSize.zero
     @State private var detailsViewModel: GroupDetailsViewModel? = nil
-    @State private var activeView: ActiveView = .manageGroups // Track which view is active
+    @State private var activeView: ActiveView = .manageGroups
     var onNavigateToDate: ((Date) -> Void)? = nil
     
     // Define an enum for the possible views
@@ -25,7 +25,9 @@ struct ManageGroupsView: View {
                 VStack(spacing: 0) {
                     // Header
                     HStack {
-                        Text("Manage Groups")
+
+                        
+                        Text("Groups")
                             .font(.headline)
                             .foregroundColor(.white)
                         
@@ -48,17 +50,28 @@ struct ManageGroupsView: View {
                         
                         Spacer()
                         
-                        Button(action: {
-                            viewModel.saveNewGroupIfNeeded()
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                isPresented = false
+                        
+                        
+                        if isNewGroupFieldFocused {
+                            Button(action: {
+                                isNewGroupFieldFocused = false
+                                viewModel.isAddingNewGroup = false
+                            }) {
+                                Text("Done")
+                                    .foregroundColor(.white)
                             }
-                        }) {
-                            Image(systemName: "xmark")
-                                .foregroundColor(.white.opacity(0.8))
-                                .font(.system(size: 18, weight: .medium))
+                        } else {
+                            Button(action: {
+                                viewModel.saveNewGroupIfNeeded()
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    isPresented = false
+                                }
+                            }) {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
                         }
-                        .padding(.horizontal, 4)
                     }
                     .padding()
                     
@@ -68,7 +81,6 @@ struct ManageGroupsView: View {
                     
                     // List content
                     List {
-                        
                         ForEach(viewModel.groups) { group in
                             // Only show the group if it's not pending deletion
                             if viewModel.groupIdToRemove != group.id {
@@ -79,13 +91,13 @@ struct ManageGroupsView: View {
                                     detailsViewModel = newViewModel
                                     
                                     // Switch to details view with animation
-                                    withAnimation(.easeOut(duration: 0.2)) {
+                                    withAnimation(.easeOut(duration: 0.4)) {
                                         activeView = .groupDetails
                                     }
                                 })
                                 .contentShape(Rectangle())
                                 .listRowBackground(Color.clear)
-                                .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 0, trailing: 4))
+                                .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 0, trailing: 8))
                                 .listRowSeparator(.hidden)
                                 .id("\(group.id)-\(refreshCounter)") // Force refresh when counter changes
                             } else {
@@ -99,39 +111,66 @@ struct ManageGroupsView: View {
                                     .frame(height: 0)
                             }
                         }
+                        .onMove { from, to in
+                            viewModel.reorderGroups(from: from.first!, to: to)
+                        }
                         .animation(.easeInOut, value: viewModel.groupIdToRemove)
                         
                         // New Group Row
                         HStack {
-                            Image(systemName: "plus.circle.fill")
-                                .foregroundColor(viewModel.isAddingNewGroup ? .gray : .blue)
-                                .font(.system(size: 18))
-                            
-                            if viewModel.isAddingNewGroup {
-                                TextField("Group Name", text: $viewModel.newGroupName)
-                                    .focused($isNewGroupFieldFocused)
-                                    .submitLabel(.done)
-                                    .onSubmit {
-                                        viewModel.addGroup()
+                            Image(systemName: "folder.badge.plus")
+                                .foregroundColor(isNewGroupFieldFocused ? .blue : .gray)
+                                .font(.subheadline)
+
+                            TextField("Group Name", text: $viewModel.newGroupName, axis: .vertical)
+                                .focused($isNewGroupFieldFocused)
+                                .onChange(of: viewModel.newGroupName) { oldValue, newValue in
+                                    // Check if user pressed return (added a newline)
+                                    if newValue.contains("\n") {
+                                        // Remove the newline character.
+                                        // By replacing \n with " ", we allow copy-pasted with \n values
+                                        if oldValue.count == 0 {
+                                            viewModel.newGroupName = newValue.replacingOccurrences(of: "\n", with: " ")
+                                            
+                                            // But now that we replace \n with " ", we need to make sure we're not just submitting a " " field.
+                                            // An empty field that a users presses return in should just remove focus and not submit anything.
+                                            if viewModel.newGroupName.count <= 1 {
+                                                viewModel.newGroupName = ""
+                                                isNewGroupFieldFocused = false
+                                                return
+                                            }
+                                        } else {
+                                            viewModel.newGroupName = oldValue
+                                        }
+                                        
+                                        // Submit if text is not empty
+                                        if !viewModel.newGroupName.isEmpty {
+                                            viewModel.addGroup()
+                                            // Keep focus after adding
+                                            isNewGroupFieldFocused = true
+                                        } else {
+                                            isNewGroupFieldFocused = false
+                                        }
                                     }
-                            } else {
-                                Text("New Group")
-                                    .foregroundColor(.blue)
-                                    .font(.system(size: 16, weight: .medium))
-                            }
+                                }
                         }
-                        .padding(.vertical, 0)
-                        .padding(.horizontal, 0)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 12)
                         .contentShape(Rectangle())
                         .onTapGesture {
                             if !viewModel.isAddingNewGroup {
-                                viewModel.isAddingNewGroup = true
                                 isNewGroupFieldFocused = true
                             }
                         }
                         .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 0, trailing: 8))
                         .listRowSeparator(.hidden)
+                        
+                        // Add spacer at bottom of list for better scrolling
+                        Color.clear.frame(height: 250)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets())
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
@@ -158,7 +197,7 @@ struct ManageGroupsView: View {
                             // If dragged more than 50 points to the right, dismiss
                             if value.startLocation.x < 66 && value.translation.width > 50 {
                                 // Use animation to ensure smooth transition
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                                     isPresented = false
                                 }
                             }
@@ -178,7 +217,7 @@ struct ManageGroupsView: View {
                         get: { activeView == .groupDetails },
                         set: { if !$0 { 
                             // Switch back to manage groups view with animation
-                            withAnimation(.easeIn(duration: 0.2)) {
+                            withAnimation(.easeIn(duration: 0.4)) {
                                 activeView = .manageGroups
                             }
                             // Clean up
@@ -187,7 +226,7 @@ struct ManageGroupsView: View {
                     ),
                     closeAllViews: {
                         viewModel.saveNewGroupIfNeeded()
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                             isPresented = false
                         }
                     },
@@ -222,12 +261,14 @@ struct ManageGroupsView: View {
                 viewModel.cancelDelete()
             }
             Button("Delete", role: .destructive) {
-                // The animation and deletion will be handled by the viewModel
-                // via the groupIdToRemove property
                 viewModel.deleteGroupKeepItems()
             }
         } message: {
-            Text("Are you sure you want to delete this group? The items will remain but will no longer be grouped.")
+            if let group = viewModel.groupToDelete {
+                Text("Are you sure you want to delete the group \"\(group.title)\"? The items will remain but will no longer be grouped.")
+            } else {
+                Text("Are you sure you want to delete this group? The items will remain but will no longer be grouped.")
+            }
         }
         .onChange(of: isPresented) { oldValue, newValue in
             if oldValue && !newValue {
@@ -259,8 +300,59 @@ struct GroupRow: View {
         
         HStack(spacing: 12) {
             // Main content with navigation
-            Button(action: {
+            HStack {
+                // Color indicator
+                if currentGroup.hasColor {
+                    // Add folder icon
+                    Image(systemName: "folder")
+                        .font(.subheadline)
+                        .foregroundColor(Color(red: currentGroup.colorRed, green: currentGroup.colorGreen, blue: currentGroup.colorBlue))
+                        .padding(.trailing, 4)
+                } else {
+                    Image(systemName: "folder")
+                        .font(.subheadline)
+                        .foregroundColor(.gray.opacity(0.2))
+                        .padding(.trailing, 4)
+                }
                 
+                VStack(alignment: .leading, spacing: 4) {
+                    // Get the current title from the group store to ensure it's up-to-date
+                    let currentTitle = currentGroup.title
+                    
+                    Text(currentTitle)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white)
+                    
+                    // Item count
+                    let itemCount = currentGroup.getAllItems().count
+                    Text("\(itemCount) \(itemCount == 1 ? "item" : "items")")
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
+                }
+                
+                Spacer()
+                
+                // Add trash icon button
+                Button(action: {
+                    feedbackGenerator.impactOccurred()
+                    // Start the glow animation
+                    isGlowing = true
+                    DispatchQueue.main.asyncAfter(deadline: .now()) {
+                        withAnimation(.easeInOut(duration: 0.5)) {
+                            isGlowing = false
+                        }
+                    }
+                    viewModel.confirmDeleteGroup(currentGroup)
+                }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 18))
+                        .foregroundColor(.gray.opacity(0.3))
+                        .padding(.trailing, 8)
+                }
+                .buttonStyle(.plain)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
                 // Start the glow animation
                 isGlowing = true
                 DispatchQueue.main.asyncAfter(deadline: .now()) {
@@ -271,47 +363,7 @@ struct GroupRow: View {
                 
                 // Call the tap handler which will switch to the details view
                 onGroupTap(currentGroup)
-            }) {
-                HStack {
-                    // Color indicator
-                    if currentGroup.hasColor {
-                        // Add folder icon
-                        Image(systemName: "folder")
-                            .font(.subheadline)
-                            .foregroundColor(Color(red: currentGroup.colorRed, green: currentGroup.colorGreen, blue: currentGroup.colorBlue))
-                            .padding(.trailing, 4)
-                    } else {
-                        Image(systemName: "folder")
-                            .font(.subheadline)
-                            .foregroundColor(.gray.opacity(0.2))
-                            .padding(.trailing, 4)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        // Get the current title from the group store to ensure it's up-to-date
-                        let currentTitle = currentGroup.title
-                        
-                        Text(currentTitle)
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.white)
-                        
-                        // Item count
-                        let itemCount = currentGroup.getAllItems().count
-                        Text("\(itemCount) \(itemCount == 1 ? "item" : "items")")
-                            .font(.system(size: 12))
-                            .foregroundColor(.gray)
-                    }
-                    
-                    Spacer()
-                    
-                    // Chevron to indicate navigation
-                    Image(systemName: "chevron.right")
-                        .foregroundColor(.gray)
-                        .font(.system(size: 14))
-                }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(PlainButtonStyle())
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 12)

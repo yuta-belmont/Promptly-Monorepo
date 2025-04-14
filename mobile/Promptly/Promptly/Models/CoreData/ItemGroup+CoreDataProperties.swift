@@ -13,6 +13,7 @@ extension ItemGroup {
     @NSManaged public var id: UUID?
     @NSManaged public var title: String?
     @NSManaged public var checklistItem: NSSet?
+    @NSManaged public var groupOrder: GroupOrder?
 }
 
 // MARK: Generated accessors for checklistItem

@@ -280,7 +280,7 @@ struct DayView: View, Hashable {
             ) ?? currentDate
             
             // Start updating the data model immediately
-            let animationDuration: Double = 0.3
+            let animationDuration: Double = 0.2
             
             // Animate the card off screen with simpler animation
             withAnimation(.easeOut(duration: animationDuration)) {
@@ -529,6 +529,8 @@ struct DayView: View, Hashable {
                             Image(systemName: "calendar")
                                 .font(.system(size: 20))
                                 .foregroundColor(.white)
+                                .padding(.leading, 16)
+                                .padding(.vertical, 4)
                         }
                         
                         VStack(spacing: 0) {
@@ -553,6 +555,7 @@ struct DayView: View, Hashable {
                                     .font(.system(size: 12))
                                     .foregroundColor(.white.opacity(0.8))
                             }
+                            .padding(.vertical, 4)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 // Trigger haptic feedback
@@ -630,13 +633,11 @@ struct DayView: View, Hashable {
                             Image(systemName: "line.3.horizontal")
                                 .font(.system(size: 20))
                                 .foregroundColor(.white)
-                                .padding(.leading, 16)
+                                .padding(.trailing, 16)
+                                .padding(.leading, 4)
+                                .padding(.vertical, 4)
                         }
-                        .padding(.vertical, 8)
                     }
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-                    .padding(.bottom, 0)
                     .zIndex(2)
                     
                     // Week view between header and EasyListView

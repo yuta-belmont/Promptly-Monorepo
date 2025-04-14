@@ -6,18 +6,6 @@ struct AboutView: View {
     
     var body: some View {
         ZStack {
-            // Semi-transparent backdrop for closing the view
-            Color.black.opacity(0.6)
-                .edgesIgnoringSafeArea(.all)
-                .allowsHitTesting(true)
-                .transition(.opacity)
-                .zIndex(998)
-                .onTapGesture {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        isPresented = false
-                    }
-                }
-            
             // Main content
             VStack(spacing: 0) {
                 // Header
@@ -28,26 +16,32 @@ struct AboutView: View {
                     
                     Spacer()
                     
-                    Button("Done") {
+                    Button(action: {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             isPresented = false
                         }
+                    }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(.white.opacity(0.8))
                     }
                 }
                 .padding()
-                .padding(.top, 8)
+                
+                Divider()
+                    .background(Color.white.opacity(0.2))
                 
                 // About content
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("Promptly")
+                        Text("Alfred")
                             .font(.title)
                             .foregroundColor(.white)
                         
                         Text("Version 1.0")
                             .foregroundColor(.gray)
                         
-                        Text("Promptly is a simple and elegant task management app that helps you stay organized and focused.")
+                        Text("Get to know Alfred.")
                             .foregroundColor(.white)
                         
                         Text("Features:")
@@ -56,10 +50,9 @@ struct AboutView: View {
                         
                         VStack(alignment: .leading, spacing: 8) {
                             FeatureRow(text: "Create and manage daily tasks")
-                            FeatureRow(text: "Organize tasks into groups")
-                            FeatureRow(text: "Set reminders for important tasks")
-                            FeatureRow(text: "Import tasks from previous days")
-                            FeatureRow(text: "Dark mode support")
+                            FeatureRow(text: "Organize")
+                            FeatureRow(text: "Set reminders")
+                            FeatureRow(text: "Track and analyze progress")
                         }
                     }
                     .padding()
@@ -68,7 +61,7 @@ struct AboutView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
                 Color.clear
-                    .background(.ultraThinMaterial)
+                    .background(Color.black.opacity(0.4))
             )
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(
@@ -86,7 +79,7 @@ struct AboutView: View {
                     }
                     .onEnded { value in
                         // If dragged more than 100 points to the right, dismiss
-                        if value.translation.width > 100 {
+                        if value.translation.width > 50 {
                             // Use animation to ensure smooth transition
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                 isPresented = false

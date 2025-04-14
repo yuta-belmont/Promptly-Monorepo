@@ -31,9 +31,6 @@ extension View {
     }
 }
 
-// MARK: - Custom TextField Component
-// Remove CustomTextField implementation since it's now in its own file
-
 // MARK: - Delete Confirmation View
 struct DeleteConfirmationView: View {
     @Binding var isPresented: Bool
@@ -187,6 +184,7 @@ struct EasyListHeader: View {
     let currentDate: Date
     let onAddItem: () -> Void
     @EnvironmentObject private var undoManager: UndoStateManager
+    @EnvironmentObject private var viewModel: EasyListViewModel
     
     @State private var showingDeleteConfirmation = false
     @State private var deleteConfirmationActive = false
@@ -202,7 +200,7 @@ struct EasyListHeader: View {
             Spacer()
             
             HStack(spacing: 26) {
-                if !showingNotes {
+                if !showingNotes && !isEditing {
                     if undoManager.canUndo {
                         Button(action: {
                             onDone() // Remove focus
@@ -211,7 +209,7 @@ struct EasyListHeader: View {
                         }) {
                             Image(systemName: "arrow.uturn.backward")
                                 .foregroundColor(.white.opacity(0.8))
-                                .padding(.bottom, 2)
+                                .padding(.bottom, 1)
                         }
                     }
                     
@@ -258,25 +256,44 @@ struct EasyListHeader: View {
                     Button(action: {
                         if !showingNotes {
                             feedbackGenerator.impactOccurred()
-
+                            
                             onAddItem()
                         }
                     }) {
                         Image(systemName: "plus.circle")
                             .foregroundColor(.white.opacity(0.8))
+                        
+                    }
+                }
+
+                
+                if showingNotes || !isEditing {
+                    Button(action: {
+                        feedbackGenerator.impactOccurred()
+                        onNotesToggle()
+                    }) {
+                        Image(systemName: "arrow.2.squarepath")
+                            .foregroundColor(.white.opacity(0.8))
+                            .rotationEffect(.degrees(showingNotes ? 180 : 0))
+                            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showingNotes)
+                            .padding(.trailing, showingNotes && !isEditing ? 20 : 0)
                     }
                 }
                 
-                
-                Button(action: {
-                    feedbackGenerator.impactOccurred()
-                    onNotesToggle()
-                }) {
-                    Image(systemName: "arrow.2.squarepath")
-                        .foregroundColor(.white.opacity(0.8))
-                        .rotationEffect(.degrees(showingNotes ? 180 : 0))
-                        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showingNotes)
+                // Add expand/collapse button
+                if !showingNotes && !isEditing {
+                    Button(action: {
+                        feedbackGenerator.impactOccurred()
+                        viewModel.toggleAllItemsExpanded()
+                    }) {
+                        Image(systemName: viewModel.hasExpandedItems ? "arrow.up.right.and.arrow.down.left" : "arrow.down.left.and.arrow.up.right")
+                            .foregroundColor(.white.opacity(0.8))
+                            .font(.subheadline)
+                            .padding(.bottom, 2)
+                            .padding(.trailing, 20)
+                    }
                 }
+                
                 if isEditing {
                     Button(action: {
                         // Add haptic feedback before calling onDone
@@ -287,12 +304,14 @@ struct EasyListHeader: View {
                         Text("Done")
                             .foregroundColor(.white)
                             .dynamicTypeSize(.small...DynamicTypeSize.large)
+                            .padding(.trailing, 16)
+
                     }
                     .frame(minWidth: 44)
                 }
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.leading, 20)
         .padding(.vertical, 8)
         .frame(height: 44) // Fixed height of 44 points
         .headerBackground()
@@ -321,27 +340,19 @@ struct NewItemRow: View {
     var body: some View {
         HStack(alignment: .top) {
             Image(systemName: "circle")
-                .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0))
+                .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0.1))
                 .font(.system(size: 22))
                 .zIndex(2)
-                .padding(.top, 6)
+                .padding(.bottom, 4)
+                .padding(.leading, 4)
             
             ZStack(alignment: .leading) {
-                // Placeholder text
-                if text.isEmpty {
-                    Text("New item...")
-                        .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0.7))
-                        .padding(.leading, 4)
-                        .padding(.top, 4)
-                        .allowsHitTesting(false)
-                }
-                
-                TextEditor(text: $text)
+                TextField("New item...", text: $text, axis: .vertical)
                     .foregroundColor(isFocused.wrappedValue ? .white : .gray)
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
                     .focused(isFocused)
-                    .frame(maxHeight: 80)
+                    .padding(.top, 2)
                     .onChange(of: text) { oldValue, newValue in
                         // Check if user pressed return (added a newline)
                         if newValue.contains("\n") {
@@ -398,7 +409,6 @@ struct ListContent: View {
     @Binding var isEditing: Bool
     @EnvironmentObject private var focusManager: FocusManager
     let headerTitle: String
-    let availableHeight: CGFloat
     let removeAllFocus: () -> Void
     
     // Computed property to check if list is empty
@@ -461,7 +471,7 @@ struct ListContent: View {
                             .id("stable-item-\(item.id.uuidString)")
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 4, trailing: 4))
+                            .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
                             .padding(.horizontal, 0)
                             .padding(.vertical, 0)
                     }
@@ -479,7 +489,6 @@ struct ListContent: View {
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
                 // Constrain the List to exactly match the available height
-                .frame(height: availableHeight)
                 // Use animation with structurally significant values only
                 // .animation(.easeInOut(duration: 0.2), value: viewModel.items.count)
                 .environment(\.defaultMinListRowHeight, 0) // Minimize row height calculations
@@ -595,7 +604,7 @@ struct EasyListFooter: View {
                         .padding(.vertical, 4)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
-                                .fill(.ultraThinMaterial.opacity(0.9))
+                                .fill(.ultraThinMaterial)
                         )
                     Spacer()
                 }
@@ -926,10 +935,6 @@ struct EasyListView: View {
                     if isInViewTransition {
                         return
                     }
-                    
-                    print("onAddItem called - setting newItemFocused to true")
-                    // Set focus first
-                    print("onAddItem: Setting isNewItemFocused = true")
                     isNewItemFocused = true
                     focusManager.requestFocus(for: .easyList)
                     
@@ -942,70 +947,65 @@ struct EasyListView: View {
             )
             .environmentObject(viewModel.undoManager)
             .disabled(isInViewTransition) // Disable the entire header during transitions
-            
-            // Use GeometryReader to coordinate the size of the background and the scrollable content
-            GeometryReader { geometry in
+            ZStack {
+                // Background applied to the entire container
+                Rectangle()
+                    .fill(Color.black.opacity(0.35))
+                    .cornerRadius(16, corners: [.bottomLeft, .bottomRight])
+                
+                // Content container with flip effect
                 ZStack {
-                    // Background applied to the entire container
-                    Rectangle()
-                        .fill(Color.black.opacity(0.35))
-                        .cornerRadius(16, corners: [.bottomLeft, .bottomRight])
-                    
-                    // Content container with flip effect
-                    ZStack {
-                        // List content with flip effect
-                        ListContent(
-                            viewModel: viewModel,
-                            isNewItemFocused: _isNewItemFocused,
-                            isEditing: $isEditing,
-                            headerTitle: viewModel.headerTitle,
-                            availableHeight: geometry.size.height,
-                            removeAllFocus: {
-                                // Remove focus
-                                isEditing = false
-                                isNewItemFocused = false
-                                isNotesFocused = false
-                            }
-                        )
-                        .environmentObject(viewModel.counterManager)
-                        // Apply clip shape to ensure content doesn't visually extend beyond boundaries
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .contentShape(RoundedRectangle(cornerRadius: 16)) // Add for better hit testing
-                        // Apply 3D flip effect and hide when flipped (back of card)
-                        .opacity(viewModel.isShowingNotes ? 0 : 1)
-                        .flipEffect(isFlipped: viewModel.isShowingNotes)
-                        
-                        // Notes content with flip effect
-                        NotesView(
-                            notes: Binding(
-                                get: { viewModel.checklist.notes },
-                                set: { _ in /* This is now handled by the onSave callback */ }
-                            ),
-                            isFocused: _isNotesFocused,
-                            isEditing: $isEditing,
-                            title: viewModel.headerTitle,
-                            onSave: { viewModel.updateNotes($0) }
-                        )
-                        // Apply the same clip shape to notes view for consistency
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .contentShape(RoundedRectangle(cornerRadius: 16)) // Add for better hit testing
-                        // Apply 3D flip effect in opposite direction (negative Y axis)
-                        .opacity(viewModel.isShowingNotes ? 1 : 0)
-                        .flipEffect(isFlipped: !viewModel.isShowingNotes, axis: (0, -1, 0))
-                    }
-                    // Constrain the content to the available space
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    // Track the animation state to update the transition flag
-                    .onChange(of: viewModel.isShowingNotes) { _, _ in
-                        // Reset transition flag after a delay to ensure animation completes
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            isInViewTransition = false
+                    // List content with flip effect
+                    ListContent(
+                        viewModel: viewModel,
+                        isNewItemFocused: _isNewItemFocused,
+                        isEditing: $isEditing,
+                        headerTitle: viewModel.headerTitle,
+                        removeAllFocus: {
+                            // Remove focus
+                            isEditing = false
+                            isNewItemFocused = false
+                            isNotesFocused = false
                         }
+                    )
+                    .environmentObject(viewModel.counterManager)
+                    // Apply clip shape to ensure content doesn't visually extend beyond boundaries
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .contentShape(RoundedRectangle(cornerRadius: 16)) // Add for better hit testing
+                    // Apply 3D flip effect and hide when flipped (back of card)
+                    .opacity(viewModel.isShowingNotes ? 0 : 1)
+                    .flipEffect(isFlipped: viewModel.isShowingNotes)
+                    
+                    // Notes content with flip effect
+                    NotesView(
+                        notes: Binding(
+                            get: { viewModel.checklist.notes },
+                            set: { _ in /* This is now handled by the onSave callback */ }
+                        ),
+                        isFocused: _isNotesFocused,
+                        isEditing: $isEditing,
+                        title: viewModel.headerTitle,
+                        onSave: { viewModel.updateNotes($0) }
+                    )
+                    // Apply the same clip shape to notes view for consistency
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .contentShape(RoundedRectangle(cornerRadius: 16)) // Add for better hit testing
+                    // Apply 3D flip effect in opposite direction (negative Y axis)
+                    .opacity(viewModel.isShowingNotes ? 1 : 0)
+                    .flipEffect(isFlipped: !viewModel.isShowingNotes, axis: (0, -1, 0))
+                }
+                // Track the animation state to update the transition flag
+                .onChange(of: viewModel.isShowingNotes) { _, _ in
+                    // Reset transition flag after a delay to ensure animation completes
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        isInViewTransition = false
                     }
+                
                 }
             }
         }
         .padding(.bottom, 0)
+        .frame(maxHeight: .infinity)
         .overlay(
             RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)

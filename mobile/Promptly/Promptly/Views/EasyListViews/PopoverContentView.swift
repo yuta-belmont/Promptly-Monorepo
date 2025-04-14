@@ -23,6 +23,8 @@ struct PopoverContentView: View {
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     @State private var deleteConfirmationActive = false
     @State private var deleteTimer: Timer?
+    @State private var removeFromGroupConfirmationActive = false
+    @State private var removeFromGroupTimer: Timer?
     @Environment(\.dismiss) private var dismiss
     
     // Add callback for go to date action
@@ -86,71 +88,70 @@ struct PopoverContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Notify Row - Only toggle is interactive
-            HStack {
-                Image(systemName: "bell")
-                    .frame(width: 24)
-                Text("Notify")
-                Spacer()
-                Toggle("", isOn: $isNotificationEnabled)
-                    .labelsHidden()
-                    .onChange(of: isNotificationEnabled) { oldValue, newValue in
-                        if newValue {
-                            // Toggle turned ON - set notification with current time
-                            let calendar = Calendar.current
-                            let timeComponents = calendar.dateComponents([.hour, .minute], from: selectedTime)
-                            var dateComponents = calendar.dateComponents([.year, .month, .day], from: itemDate)
-                            dateComponents.hour = timeComponents.hour
-                            dateComponents.minute = timeComponents.minute
-                            
-                            if let combinedDate = calendar.date(from: dateComponents) {
+            if !isGroupDetailsView {
+                HStack {
+                    Image(systemName: "bell")
+                        .frame(width: 24)
+                    Text("Notify")
+                    Spacer()
+                    Toggle("", isOn: $isNotificationEnabled)
+                        .labelsHidden()
+                        .onChange(of: isNotificationEnabled) { oldValue, newValue in
+                            if newValue {
+                                // Toggle turned ON - set notification with current time
+                                let calendar = Calendar.current
+                                let timeComponents = calendar.dateComponents([.hour, .minute], from: selectedTime)
+                                var dateComponents = calendar.dateComponents([.year, .month, .day], from: itemDate)
+                                dateComponents.hour = timeComponents.hour
+                                dateComponents.minute = timeComponents.minute
+                                
+                                if let combinedDate = calendar.date(from: dateComponents) {
+                                    // This will update both the parent's local state and call the callback
+                                    // to inform EasyListViewModel of the change
+                                    onNotificationChange?(combinedDate)
+                                }
+                            } else {
+                                // Toggle turned OFF - remove notification
                                 // This will update both the parent's local state and call the callback
                                 // to inform EasyListViewModel of the change
-                                onNotificationChange?(combinedDate)
-                            }
-                        } else {
-                            // Toggle turned OFF - remove notification
-                            // This will update both the parent's local state and call the callback
-                            // to inform EasyListViewModel of the change
-                            onNotificationChange?(nil)
-                        }
-                    }
-            }
-            .foregroundColor(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            
-            // Time Picker (shown when notification is enabled)
-            if isNotificationEnabled {
-                DatePicker("", selection: $selectedTime, displayedComponents: .hourAndMinute)
-                    .datePickerStyle(.wheel)
-                    .labelsHidden()
-                    .scaleEffect(0.6)
-                    .colorScheme(.dark)
-                    .frame(height: 100)
-                    .padding(.horizontal, 0)
-                    .onChange(of: selectedTime) { oldTime, newTime in
-                        if isNotificationEnabled {
-                            // Combine the selected time with the checklist date
-                            let calendar = Calendar.current
-                            let timeComponents = calendar.dateComponents([.hour, .minute], from: newTime)
-                            var dateComponents = calendar.dateComponents([.year, .month, .day], from: itemDate)
-                            dateComponents.hour = timeComponents.hour
-                            dateComponents.minute = timeComponents.minute
-                            
-                            if let combinedDate = calendar.date(from: dateComponents) {
-                                // This will update both the parent's local state and call the callback
-                                // to inform EasyListViewModel of the change
-                                onNotificationChange?(combinedDate)
+                                onNotificationChange?(nil)
                             }
                         }
-                    }
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                
+                // Time Picker (shown when notification is enabled)
+                if isNotificationEnabled {
+                    DatePicker("", selection: $selectedTime, displayedComponents: .hourAndMinute)
+                        .datePickerStyle(.wheel)
+                        .labelsHidden()
+                        .scaleEffect(0.6)
+                        .colorScheme(.dark)
+                        .frame(height: 100)
+                        .padding(.horizontal, 0)
+                        .onChange(of: selectedTime) { oldTime, newTime in
+                            if isNotificationEnabled {
+                                // Combine the selected time with the checklist date
+                                let calendar = Calendar.current
+                                let timeComponents = calendar.dateComponents([.hour, .minute], from: newTime)
+                                var dateComponents = calendar.dateComponents([.year, .month, .day], from: itemDate)
+                                dateComponents.hour = timeComponents.hour
+                                dateComponents.minute = timeComponents.minute
+                                
+                                if let combinedDate = calendar.date(from: dateComponents) {
+                                    // This will update both the parent's local state and call the callback
+                                    // to inform EasyListViewModel of the change
+                                    onNotificationChange?(combinedDate)
+                                }
+                            }
+                        }
+                }
             }
             
             // Go To option - Only shown in GroupDetailsView
-            if isGroupDetailsView {
-                Divider()
-                    .background(Color.white.opacity(0.2))
-                
+            if isGroupDetailsView {                
                 Button(action: {
                     feedbackGenerator.impactOccurred()
                     dismiss() // Dismiss the popover first
@@ -292,6 +293,46 @@ struct PopoverContentView: View {
                     .cornerRadius(8)
                     .padding(.horizontal, 4)
                 }
+            } else {
+                // In GroupDetailsView, show Remove from Group option instead
+                Divider()
+                    .background(Color.white.opacity(0.2))
+                
+                Button(action: {
+                    feedbackGenerator.impactOccurred()
+                    
+                    if removeFromGroupConfirmationActive {
+                        // Second tap - perform remove
+                        removeFromGroupTimer?.invalidate()
+                        removeFromGroupTimer = nil
+                        removeFromGroupConfirmationActive = false
+                        dismiss()  // Dismiss the popover first
+                        
+                        // Call onGroupChange after a short delay to allow the popover to dismiss
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            onGroupChange?(nil)  // This will remove the item from the group
+                        }
+                    } else {
+                        // First tap - start confirmation timer
+                        removeFromGroupConfirmationActive = true
+                        removeFromGroupTimer?.invalidate()
+                        removeFromGroupTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { _ in
+                            removeFromGroupConfirmationActive = false
+                        }
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "folder.badge.minus")
+                            .frame(width: 24)
+                        Text(removeFromGroupConfirmationActive ? "Confirm" : "Remove")
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .foregroundColor(.orange)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
 
             // Delete option
@@ -318,7 +359,6 @@ struct PopoverContentView: View {
                         deleteTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { _ in
                             deleteConfirmationActive = false
                         }
-
                     }
                 }) {
                     HStack {
@@ -343,10 +383,13 @@ struct PopoverContentView: View {
             feedbackGenerator.prepare()
         }
         .onDisappear {
-            // Clean up timer when view disappears
+            // Clean up timers when view disappears
             deleteTimer?.invalidate()
             deleteTimer = nil
             deleteConfirmationActive = false
+            removeFromGroupTimer?.invalidate()
+            removeFromGroupTimer = nil
+            removeFromGroupConfirmationActive = false
         }
     }
 } 

@@ -22,16 +22,33 @@ final class GroupStore: ObservableObject {
         }
     }
     
+    // MARK: - GroupOrder Management
+    
+    private func getOrCreateGroupOrder() -> GroupOrder {
+        let context = persistenceController.container.viewContext
+        
+        // Try to fetch existing GroupOrder
+        let fetchRequest: NSFetchRequest<GroupOrder> = GroupOrder.fetchRequest()
+        if let existingOrder = try? context.fetch(fetchRequest).first {
+            return existingOrder
+        }
+        
+        // Create new GroupOrder if none exists
+        let groupOrder = GroupOrder(context: context)
+        try? context.save()
+        return groupOrder
+    }
+    
     // MARK: - Persistence
     
     func loadGroups(completion: (() -> Void)? = nil) {
         let context = persistenceController.container.viewContext
-        
-        let fetchRequest: NSFetchRequest<ItemGroup> = ItemGroup.fetchRequest()
+        let groupOrder = getOrCreateGroupOrder()
         
         do {
-            let coreDataGroups = try context.fetch(fetchRequest)
-            let newGroups = coreDataGroups.map { $0.toStruct() }
+            // Get the ordered groups from the GroupOrder
+            let orderedGroups = groupOrder.orderedGroups?.array as? [ItemGroup] ?? []
+            let newGroups = orderedGroups.map { $0.toStruct() }
             
             // Dispatch updates to @Published properties to the main queue
             DispatchQueue.main.async {
@@ -76,6 +93,10 @@ final class GroupStore: ObservableObject {
         // Create a Core Data model
         let newGroup = ItemGroup.create(from: newStructGroup, context: context)
         let structRepresentation = newGroup.toStruct()
+        
+        // Add to the ordered set
+        let groupOrder = getOrCreateGroupOrder()
+        groupOrder.addToOrderedGroups(newGroup)
         
         do {
             try context.save()
@@ -195,6 +216,11 @@ final class GroupStore: ObservableObject {
                     for item in items {
                         item.itemGroup = nil
                     }
+                }
+                
+                // Remove from the ordered set
+                if let groupOrder = groupToDelete.groupOrder {
+                    groupOrder.removeFromOrderedGroups(groupToDelete)
                 }
                 
                 // Delete the group
@@ -628,6 +654,46 @@ final class GroupStore: ObservableObject {
         } catch {
             print("Failed to update item in group: \(error)")
             // Call completion even on error
+            DispatchQueue.main.async {
+                completion?()
+            }
+        }
+    }
+    
+    func reorderGroups(from sourceIndex: Int, to destinationIndex: Int, completion: (() -> Void)? = nil) {
+        let context = persistenceController.container.viewContext
+        let groupOrder = getOrCreateGroupOrder()
+        
+        guard let orderedGroups = groupOrder.orderedGroups?.array as? [ItemGroup],
+              sourceIndex >= 0 && sourceIndex < orderedGroups.count,
+              destinationIndex >= 0 && destinationIndex < orderedGroups.count else {
+            DispatchQueue.main.async {
+                completion?()
+            }
+            return
+        }
+        
+        do {
+            // Get the group to move
+            let groupToMove = orderedGroups[sourceIndex]
+            
+            // Remove it from its current position
+            groupOrder.removeFromOrderedGroups(at: sourceIndex)
+            
+            // Insert it at the new position
+            groupOrder.insertIntoOrderedGroups(groupToMove, at: destinationIndex)
+            
+            try context.save()
+            
+            // Reload groups to update the UI
+            DispatchQueue.main.async {
+                self.loadGroups {
+                    self.lastGroupUpdateTimestamp = Date()
+                    completion?()
+                }
+            }
+        } catch {
+            print("Failed to reorder groups: \(error)")
             DispatchQueue.main.async {
                 completion?()
             }

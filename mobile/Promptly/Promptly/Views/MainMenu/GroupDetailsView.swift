@@ -7,6 +7,10 @@ struct GroupDetailsView: View {
     @State private var dragOffset = CGSize.zero // Track drag gesture offset
     @State private var showingItemDetailsView: Bool = false
     @State private var selectedItemForDetails: Models.ChecklistItem?
+    @State private var isEditingTitle: Bool = false // Track if title is being edited
+    @State private var editedTitle: String = "" // Store the title being edited
+    @FocusState private var isTitleFieldFocused: Bool // Focus state for text field
+    @State private var showingRemoveAllAlert = false
     let closeAllViews: () -> Void
     let onNavigateToDate: ((Date) -> Void)?
     
@@ -34,17 +38,19 @@ struct GroupDetailsView: View {
                 // Header with group color indicator
                 HStack {
                     Button(action: {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            isPresented = false
+                        if isEditingTitle {
+                            // Cancel editing if back button is pressed while editing
+                            isEditingTitle = false
+                            isTitleFieldFocused = false
+                            saveTitle()
                         }
+                        isPresented = false
                     }) {
                         Image(systemName: "chevron.left")
                             .foregroundColor(.white)
                             .font(.system(size: 16, weight: .semibold))
                             .padding(8)
                             .padding(.leading, 10)
-                        
-
                     }
                     
                     // Add color indicator next to the title
@@ -61,15 +67,61 @@ struct GroupDetailsView: View {
                             .padding(.trailing, 4)
                     }
                     
-                    Text(viewModel.currentGroupTitle)
-                        .font(.headline)
-                        .foregroundColor(.white)
+                    // Replace Text with TextField when editing, or make Text tappable to enter edit mode
+                    if isEditingTitle {
+                        TextField("Group name", text: $editedTitle)
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .submitLabel(.done)
+                            .focused($isTitleFieldFocused)
+                            .onSubmit {
+                                saveTitle()
+                            }
+                            .onAppear {
+                                // Set the initial value when entering edit mode
+                                editedTitle = viewModel.currentGroupTitle
+                                // Set focus after a brief delay to ensure the field is ready
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                    isTitleFieldFocused = true
+                                }
+                            }
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 8)
+                    } else {
+                        Button(action: {
+                            // Enter edit mode when tapping on the title
+                            editedTitle = viewModel.currentGroupTitle
+                            isEditingTitle = true
+                        }) {
+                            Text(viewModel.currentGroupTitle)
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .padding(.vertical, 4)
+                                .padding(.horizontal, 8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
                     
                     Spacer()
                     
-                    // Use the modular menu component
-                    if let selectedGroup = viewModel.selectedGroup {
-                        GroupOptionsMenu(viewModel: viewModel, group: selectedGroup)
+                    // Show Done button when editing title
+                    if isEditingTitle {
+                        Button(action: {
+                            saveTitle()
+                        }) {
+                            Text("Done")
+                                .foregroundColor(.white)
+                                .dynamicTypeSize(.small...DynamicTypeSize.large)
+                                .padding(.trailing, 8)
+                        }
+                        .padding(.trailing, 12)
+                    } else {
+                        // Use the modular menu component when not editing
+                        if let selectedGroup = viewModel.selectedGroup {
+                            GroupOptionsMenu(viewModel: viewModel, group: selectedGroup)
+                        }
                     }
                 }
                 .padding(.vertical, 10)
@@ -82,9 +134,13 @@ struct GroupDetailsView: View {
                     ProgressView()
                         .padding(.top, 20)
                 } else if viewModel.groupItems.isEmpty {
-                    Text("No items in this group")
-                        .foregroundColor(.gray)
-                        .padding(.top, 20)
+                    VStack {
+                        Spacer()
+                        Text("No items in this group")
+                            .foregroundColor(.gray)
+                        Spacer()
+                    }
+                    .frame(maxHeight: .infinity)
                 } else {
                     List {
                         ForEach(viewModel.groupItems) { item in
@@ -103,7 +159,12 @@ struct GroupDetailsView: View {
                                 onNotificationChange: { date in
                                     viewModel.updateItemNotification(itemId: item.id, notification: date)
                                 },
-                                onGroupChange: nil, // Group editing not needed in this view
+                                onGroupChange: { groupId in
+                                    // When groupId is nil, it means remove from group
+                                    if groupId == nil, let group = viewModel.selectedGroup {
+                                        viewModel.removeItemFromGroup(item, group: group)
+                                    }
+                                },
                                 onItemTap: { itemId in
                                     // Show ItemDetailsView instead of navigating to date
                                     selectedItemForDetails = item
@@ -117,6 +178,7 @@ struct GroupDetailsView: View {
                                 onGoToDate: {
                                     // Navigate to the calendar view at the item's date
                                     onNavigateToDate?(item.date)
+                                    saveTitle()
                                     
                                     // Also close this view
                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
@@ -126,7 +188,7 @@ struct GroupDetailsView: View {
                                 isGroupDetailsView: true
                             )
                             .listRowBackground(Color.clear)
-                            .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 0, trailing: 4))
+                            .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 0, trailing: 8))
                             .listRowSeparator(.hidden)
 
                             // Use a stable ID that doesn't change with isCompleted status
@@ -143,8 +205,6 @@ struct GroupDetailsView: View {
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
                 }
-                
-                Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
@@ -167,6 +227,8 @@ struct GroupDetailsView: View {
                     .onEnded { value in
                         // If dragged more than 50 points to the right, dismiss
                         if value.startLocation.x < 66 && value.translation.width > 50 {
+                            saveTitle()
+                            
                             // Use animation to ensure smooth transition
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                 isPresented = false
@@ -208,22 +270,13 @@ struct GroupDetailsView: View {
         } message: {
             Text("Are you sure you want to delete all items in this group? This action cannot be undone.")
         }
-        .alert("Edit Group Name", isPresented: $viewModel.showingEditNameAlert) {
-            TextField("Group Name", text: $viewModel.editingGroupName)
-                .autocapitalization(.words)
-                .disableAutocorrection(true)
-            Button("Cancel", role: .cancel) { 
-                // Reset the editing name
-                viewModel.editingGroupName = viewModel.currentGroupTitle
+        .alert("Remove All Items", isPresented: $viewModel.showingRemoveAllAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Remove", role: .destructive) {
+                viewModel.removeAllItemsFromGroup()
             }
-            Button("Save") {
-                if !viewModel.editingGroupName.isEmpty {
-                    viewModel.updateGroupName(viewModel.editingGroupName)
-                }
-            }
-            .disabled(viewModel.editingGroupName.isEmpty)
         } message: {
-            Text("Enter a new name for this group")
+            Text("Are you sure you want to remove all items from this group? The items will remain in your checklists but will no longer be associated with this group.")
         }
         
         // Color picker sheet - moved outside the ZStack for proper z-index context
@@ -243,7 +296,17 @@ struct GroupDetailsView: View {
                 }
             )
             .zIndex(9999) // Ensure this is higher than GroupDetailsView's zIndex
+            .transition(.opacity) // Change from .move to .opacity
         }
+    }
+    
+    // Save the edited title to the group
+    private func saveTitle() {
+        if !editedTitle.isEmpty && editedTitle != viewModel.currentGroupTitle {
+            viewModel.updateGroupName(editedTitle)
+        }
+        isEditingTitle = false
+        isTitleFieldFocused = false
     }
 }
 
@@ -263,36 +326,14 @@ struct GroupOptionsMenu: View {
                 .rotationEffect(.degrees(90))
                 .foregroundColor(.white.opacity(0.6))
                 .font(.system(size: 18))
-                .frame(width: 56)
+                .padding(.leading, 30)
+                .padding(.trailing, 18)
                 .contentShape(Rectangle())
         }
         .popover(isPresented: $showingPopover,
                 attachmentAnchor: .point(.bottom),
                 arrowEdge: .top) {
             VStack(spacing: 0) {
-                // Edit Group Name option
-                Button(action: {
-                    feedbackGenerator.impactOccurred()
-                    showingPopover = false
-                    viewModel.editingGroupName = viewModel.currentGroupTitle
-                    viewModel.showingEditNameAlert = true
-                }) {
-                    HStack {
-                        Image(systemName: "pencil")
-                            .frame(width: 24)
-                        Text("Edit Group Name")
-                        Spacer()
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 12)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                
-                Divider()
-                    .background(Color.white.opacity(0.2))
-                
                 // Set Group Color option
                 Button(action: {
                     feedbackGenerator.impactOccurred()
@@ -307,7 +348,29 @@ struct GroupOptionsMenu: View {
                     }
                     .foregroundColor(.white)
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                
+                Divider()
+                    .background(Color.white.opacity(0.2))
+                
+                // Remove All Items option
+                Button(action: {
+                    feedbackGenerator.impactOccurred()
+                    showingPopover = false
+                    viewModel.showingRemoveAllAlert = true
+                }) {
+                    HStack {
+                        Image(systemName: "folder.badge.minus")
+                            .frame(width: 24)
+                        Text("Remove All Items")
+                        Spacer()
+                    }
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -329,7 +392,7 @@ struct GroupOptionsMenu: View {
                     }
                     .foregroundColor(.red)
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, 8)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

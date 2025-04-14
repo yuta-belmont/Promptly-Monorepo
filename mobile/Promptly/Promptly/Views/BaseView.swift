@@ -101,14 +101,16 @@ struct BaseView: View {
                                     // Bubble background
                                     Circle()
                                         .fill(Color.blue)
-                                        .opacity(0.8)
+                                        .opacity(0.9)
                                         .frame(width: 56, height: 56)
                                         .shadow(color: .black.opacity(0.2), radius: 5, x: 0, y: 2)
                                     
                                     // Chat icon
-                                    Image(systemName: "message.fill")
-                                        .font(.system(size: 24))
-                                        .foregroundColor(.white)
+                                    Image("ChatGPT Image Apr 13, 2025, 03_40_55 PM")
+                                        .frame(width: 56, height: 56)
+                                        .padding(.top, 2)
+                                        .padding(.leading, 1)
+                                        .opacity(0.9)
                                     
                                     // Notification badge - positioned as an overlay
                                     if chatViewModel.unreadCount > 0 {
@@ -177,7 +179,6 @@ struct BaseView: View {
             // Even though we're not updating the chat view model anymore
             // The presence of this handler seems to trigger necessary side effects
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showingMenu)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isChatExpanded)
         // Listen for theme changes to update the UI
         .onChange(of: themeManager.currentTheme) { oldValue, newValue in
@@ -211,7 +212,7 @@ struct BaseView: View {
         }
         
         // Always close the menu
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+        withAnimation(.spring(response: 0.8, dampingFraction: 0.8)) {
             showingMenu = false
         }
     }

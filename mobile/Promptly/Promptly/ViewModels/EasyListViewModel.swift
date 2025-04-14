@@ -154,6 +154,11 @@ final class EasyListViewModel: ObservableObject {
     // Add a set to track which item IDs are expanded
     @Published private var expandedItemIds: Set<UUID> = []
     
+    // Public property to check expansion state
+    var hasExpandedItems: Bool {
+        !expandedItemIds.isEmpty
+    }
+    
     init(date: Date = Date()) {
         self.date = date
         // Initialize with empty checklist instead of loading data immediately
@@ -541,11 +546,13 @@ final class EasyListViewModel: ObservableObject {
                 // Get the group if it exists
                 let group = sourceItem.group ?? (sourceItem.groupId != nil ? groupStore.getGroup(by: sourceItem.groupId!) : nil)
                 
-                // Create new copies of subitems with new IDs
-                let newSubItems = sourceItem.subItems.map { subItem in
-                    let newId = UUID()
-                    return Models.SubItem(id: newId, title: subItem.title, isCompleted: subItem.isCompleted)
-                }
+                // Create new copies of subitems with new IDs, filtering by incomplete if needed
+                let newSubItems = sourceItem.subItems
+                    .filter { !importIncompleteOnly || !$0.isCompleted } // Filter subitems if importIncompleteOnly is true
+                    .map { subItem in
+                        let newId = UUID()
+                        return Models.SubItem(id: newId, title: subItem.title, isCompleted: subItem.isCompleted)
+                    }
                 
                 // Create a new item with a new ID but keep the group
                 let newItem = Models.ChecklistItem(
@@ -555,7 +562,7 @@ final class EasyListViewModel: ObservableObject {
                     isCompleted: sourceItem.isCompleted, // Keep completion status of subitems
                     notification: nil, // Reset notifications
                     group: group,
-                    subItems: newSubItems  // Add the copied subitems
+                    subItems: newSubItems  // Add the filtered subitems
                 )
                 
                 // Add to group if needed
@@ -857,6 +864,34 @@ final class EasyListViewModel: ObservableObject {
             return false
         }
         return expandedItemIds.contains(itemId)
+    }
+    
+    // Add a method to expand or collapse all items
+    func toggleAllItemsExpanded() {
+        // If any items are expanded, collapse all. Otherwise, expand all.
+        let hasExpandedItems = !expandedItemIds.isEmpty
+        
+        if hasExpandedItems {
+            // Collapse all items
+            expandedItemIds.removeAll()
+            
+            // Update lastModified for all items that were previously expanded
+            for index in checklist.itemCollection.items.indices {
+                if !checklist.itemCollection.items[index].subItems.isEmpty {
+                    checklist.itemCollection.items[index].lastModified = Date()
+                }
+            }
+        } else {
+            // Expand all items that have subitems
+            for index in checklist.itemCollection.items.indices {
+                let item = checklist.itemCollection.items[index]
+                if !item.subItems.isEmpty {
+                    expandedItemIds.insert(item.id)
+                    checklist.itemCollection.items[index].lastModified = Date()
+                }
+            }
+        }
+        objectWillChange.send()
     }
     
     // Add a method to clean up expanded states that are no longer valid

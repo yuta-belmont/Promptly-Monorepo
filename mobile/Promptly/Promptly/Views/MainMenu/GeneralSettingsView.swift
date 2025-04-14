@@ -20,7 +20,7 @@ struct GeneralSettingsView: View {
             VStack(spacing: 0) {
                 // Header
                 HStack {
-                    Text("General Settings")
+                    Text("General")
                         .font(.headline)
                         .foregroundColor(.white)
                     
@@ -68,17 +68,16 @@ struct GeneralSettingsView: View {
                         
                         // MARK: - Chat Section
                         chatSection
+                        
+                        // Add spacer at bottom to ensure content doesn't get cut off
+                        Color.clear.frame(height: 100)
                     }
-                    .padding(.vertical)
                 }
                 .padding(.horizontal, 0)
                 
-                Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                Color.black.opacity(0.4)
-            )
+            .background(Color.black.opacity(0.4))
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
@@ -222,7 +221,7 @@ struct GeneralSettingsView: View {
             // Theme selection label
             HStack {
                 Text("Theme")
-                    .font(.headline)
+                    .font(.system(size: 20, weight: .bold))
                     .foregroundColor(.white)
                 
                 Button(action: {
@@ -293,7 +292,7 @@ struct GeneralSettingsView: View {
             // Section header
             HStack {
                 Text("Check-in")
-                    .font(.headline)
+                    .font(.system(size: 20, weight: .bold))
                     .foregroundColor(.white)
                 
                 Button(action: {
@@ -360,7 +359,7 @@ struct GeneralSettingsView: View {
             // Section header
             HStack {
                 Text("Chat")
-                    .font(.headline)
+                    .font(.system(size: 20, weight: .bold))
                     .foregroundColor(.white)
                 
                 Button(action: {

@@ -21,7 +21,9 @@ struct MainMenu: View {
                         .foregroundColor(.white)
                     Spacer()
                     Button(action: {
-                        isPresented = false
+                        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                            isPresented = false
+                        }
                     }) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(.white.opacity(0.8))
@@ -35,6 +37,9 @@ struct MainMenu: View {
                 // Menu items
                 VStack(spacing: 0) {
                     MenuButton(title: "General", icon: "gearshape", isDisabled: isAnimating) {
+                        withAnimation(.spring(response: 2, dampingFraction: 0.8)) {
+                            isPresented = false
+                        }
                         onMenuAction(.general)
                     }
                     
@@ -42,6 +47,9 @@ struct MainMenu: View {
                         .background(.white.opacity(0.2))
                     
                     MenuButton(title: "Groups", icon: "folder", isDisabled: isAnimating) {
+                        withAnimation(.spring(response: 2, dampingFraction: 0.8)) {
+                            isPresented = false
+                        }
                         onMenuAction(.manageGroups)
                     }
                     
@@ -49,6 +57,9 @@ struct MainMenu: View {
                         .background(.white.opacity(0.2))
                     
                     MenuButton(title: "About", icon: "info.circle", isDisabled: isAnimating) {
+                        withAnimation(.spring(response: 2, dampingFraction: 0.8)) {
+                            isPresented = false
+                        }
                         onMenuAction(.about)
                     }
                     
@@ -61,14 +72,18 @@ struct MainMenu: View {
                         if authManager.isGuestUser {
                             // Guest user
                             MenuButton(title: "Sign In", icon: "person.fill", isDisabled: isAnimating) {
-                                isPresented = false
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    isPresented = false
+                                }
                                 AuthManager.shared.logout()
                                 onLogout()
                             }
                         } else {
                             // Regular user
                             MenuButton(title: "Logout", icon: "rectangle.portrait.and.arrow.right", isDestructive: true, isDisabled: isAnimating) {
-                                isPresented = false
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    isPresented = false
+                                }
                                 AuthManager.shared.logout()
                                 onLogout()
                             }
@@ -76,7 +91,9 @@ struct MainMenu: View {
                     } else {
                         // User is not logged in, show Login button
                         MenuButton(title: "Login", icon: "person.fill", isDestructive: false, isDisabled: isAnimating) {
-                            isPresented = false
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                isPresented = false
+                            }
                             onLogout() // Use the same callback to handle navigation
                         }
                     }

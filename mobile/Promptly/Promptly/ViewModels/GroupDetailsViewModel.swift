@@ -8,6 +8,7 @@ final class GroupDetailsViewModel: ObservableObject {
     @Published var showingDeleteAllAlert = false
     @Published var showingEditNameAlert = false
     @Published var showingColorPicker = false
+    @Published var showingRemoveAllAlert = false
     @Published var editingGroupName = ""
     
     // Color properties
@@ -75,6 +76,14 @@ final class GroupDetailsViewModel: ObservableObject {
             name: NSNotification.Name("ItemDetailsUpdated"),
             object: nil
         )
+        
+        // Listen for group changes from ItemDetailsView
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleItemGroupUpdated(_:)),
+            name: NSNotification.Name("ItemGroupUpdated"),
+            object: nil
+        )
     }
     
     @objc private func handleExternalItemDeleted(_ notification: Notification) {
@@ -101,8 +110,41 @@ final class GroupDetailsViewModel: ObservableObject {
                 // Update just this specific item with fresh data from persistence
                 updateSingleItem(with: updatedItemId)
                 
-                // No need to reload the entire group - this targeted update is more efficient
-                // and ensures we have the latest data for just the item that changed
+                // Check and update the item's expanded state
+                if let item = groupItems.first(where: { $0.id == updatedItemId }) {
+                    // If the item has no subitems but is in the expanded set, remove it
+                    if item.subItems.isEmpty && expandedItemIds.contains(updatedItemId) {
+                        expandedItemIds.remove(updatedItemId)
+                        objectWillChange.send()
+                    }
+                }
+            }
+        }
+    }
+    
+    @objc private func handleItemGroupUpdated(_ notification: Notification) {
+        if let itemId = notification.object as? UUID {
+            // First, update the group store
+            groupStore.loadGroups { [weak self] in
+                guard let self = self else { return }
+                
+                // Update the selectedGroup with the latest data
+                if let group = self.selectedGroup {
+                    if let updatedGroup = self.groupStore.getGroup(by: group.id) {
+                        self.selectedGroup = updatedGroup
+                    }
+                }
+                
+                // Update the groupItems array by removing the item locally
+                if let itemIndex = self.groupItems.firstIndex(where: { $0.id == itemId }) {
+                    self.groupItems.remove(at: itemIndex)
+                }
+                
+                // Notify other views of group structure change
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("ItemRemovedFromGroup"),
+                    object: itemId
+                )
             }
         }
     }
@@ -290,6 +332,45 @@ final class GroupDetailsViewModel: ObservableObject {
         }
     }
     
+    func removeAllItemsFromGroup() {
+        guard let group = selectedGroup else { return }
+        
+        Task {
+            // Get all unique dates that have items from this group
+            let uniqueDates = Set(groupItems.map { $0.date })
+            
+            // For each unique date, remove group association from items
+            for date in uniqueDates {
+                if let checklist = persistence.loadChecklist(for: date) {
+                    var updatedChecklist = checklist
+                    // Remove group association from all items in this group
+                    for (index, item) in updatedChecklist.items.enumerated() {
+                        if item.groupId == group.id {
+                            var updatedItem = item
+                            updatedItem.updateGroup(nil)
+                            updatedChecklist.items[index] = updatedItem
+                        }
+                    }
+                    persistence.saveChecklist(updatedChecklist)
+                }
+            }
+            
+            // Clear the group's items in the group store
+            groupStore.clearItemsFromGroup(groupId: group.id) { [weak self] in
+                guard let self = self else { return }
+                
+                // Clear the local items array directly
+                self.groupItems = []
+                
+                // Notify other views that may be showing these items
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("GroupItemsRemoved"),
+                    object: group.id
+                )
+            }
+        }
+    }
+    
     func updateGroupName(_ newName: String) {
         guard !newName.isEmpty, let group = selectedGroup else { return }
         
@@ -356,16 +437,26 @@ final class GroupDetailsViewModel: ObservableObject {
                 groupStore.removeItemFromGroup(itemId: item.id, groupId: group.id) { [weak self] in
                     guard let self = self else { return }
                     
-                    // Update the groupItems array by removing the item locally
-                    if let itemIndex = self.groupItems.firstIndex(where: { $0.id == item.id }) {
-                        self.groupItems.remove(at: itemIndex)
+                    // Reload groups to ensure we have the latest data
+                    self.groupStore.loadGroups { [weak self] in
+                        guard let self = self else { return }
+                        
+                        // Update the selectedGroup with the latest data
+                        if let updatedGroup = self.groupStore.getGroup(by: group.id) {
+                            self.selectedGroup = updatedGroup
+                        }
+                        
+                        // Update the groupItems array by removing the item locally
+                        if let itemIndex = self.groupItems.firstIndex(where: { $0.id == item.id }) {
+                            self.groupItems.remove(at: itemIndex)
+                        }
+                        
+                        // Notify other views of group structure change
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("ItemRemovedFromGroup"),
+                            object: item.id
+                        )
                     }
-                    
-                    // Notify other views of group structure change
-                    NotificationCenter.default.post(
-                        name: NSNotification.Name("ItemRemovedFromGroup"),
-                        object: item.id
-                    )
                 }
             }
         }
