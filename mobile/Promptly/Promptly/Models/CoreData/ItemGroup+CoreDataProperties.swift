@@ -12,6 +12,7 @@ extension ItemGroup {
     @NSManaged public var hasColor: Bool
     @NSManaged public var id: UUID?
     @NSManaged public var title: String?
+    @NSManaged public var notes: String?
     @NSManaged public var checklistItem: NSSet?
     @NSManaged public var groupOrder: GroupOrder?
 }

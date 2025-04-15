@@ -37,7 +37,8 @@ public class ItemGroup: NSManagedObject {
             colorRed: colorRed,
             colorGreen: colorGreen,
             colorBlue: colorBlue,
-            hasColor: hasColor
+            hasColor: hasColor,
+            notes: notes ?? ""
         )
     }
     
@@ -49,6 +50,7 @@ public class ItemGroup: NSManagedObject {
         self.colorGreen = structModel.colorGreen
         self.colorBlue = structModel.colorBlue
         self.hasColor = structModel.hasColor
+        self.notes = structModel.notes
         
         // We don't update relationships here as they're handled separately
     }
@@ -63,6 +65,7 @@ public class ItemGroup: NSManagedObject {
         group.colorGreen = structModel.colorGreen
         group.colorBlue = structModel.colorBlue
         group.hasColor = structModel.hasColor
+        group.notes = structModel.notes
         return group
     }
     

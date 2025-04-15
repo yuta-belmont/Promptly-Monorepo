@@ -6,6 +6,7 @@ extension Models {
         let id: UUID
         private(set) var title: String
         private(set) var items: [UUID: ChecklistItem]  // Store direct references to ChecklistItem objects
+        private(set) var notes: String
         
         // Color properties
         private(set) var colorRed: Double
@@ -13,7 +14,7 @@ extension Models {
         private(set) var colorBlue: Double
         private(set) var hasColor: Bool
         
-        init(id: UUID = UUID(), title: String, items: [UUID: ChecklistItem] = [:], colorRed: Double = 0, colorGreen: Double = 0, colorBlue: Double = 0, hasColor: Bool = false) {
+        init(id: UUID = UUID(), title: String, items: [UUID: ChecklistItem] = [:], colorRed: Double = 0, colorGreen: Double = 0, colorBlue: Double = 0, hasColor: Bool = false, notes: String = "") {
             self.id = id
             self.title = String(title.prefix(200))  // Safety limit of 200 characters
             self.items = items
@@ -21,6 +22,7 @@ extension Models {
             self.colorGreen = max(0, min(1, colorGreen))   // Clamp between 0 and 1
             self.colorBlue = max(0, min(1, colorBlue))     // Clamp between 0 and 1
             self.hasColor = hasColor
+            self.notes = notes
         }
         
         // MARK: - Color Methods
@@ -78,6 +80,10 @@ extension Models {
             title = String(newTitle.prefix(200))  // Safety limit of 200 characters
         }
         
+        mutating func updateNotes(_ newNotes: String) {
+            notes = newNotes
+        }
+        
         // MARK: - Query Methods
         
         func containsItem(_ itemId: UUID) -> Bool {
@@ -124,9 +130,9 @@ extension Models.ItemGroup {
     
     /// Create an ItemGroup from individual color components
     static func fromColorComponents(id: UUID, title: String, items: [UUID: Models.ChecklistItem], 
-                                   red: Double, green: Double, blue: Double, hasColor: Bool) -> Models.ItemGroup {
+                                   red: Double, green: Double, blue: Double, hasColor: Bool, notes: String = "") -> Models.ItemGroup {
         return Models.ItemGroup(id: id, title: title, items: items, 
-                         colorRed: red, colorGreen: green, colorBlue: blue, hasColor: hasColor)
+                         colorRed: red, colorGreen: green, colorBlue: blue, hasColor: hasColor, notes: notes)
     }
     
     /// Convert to SwiftUI Color

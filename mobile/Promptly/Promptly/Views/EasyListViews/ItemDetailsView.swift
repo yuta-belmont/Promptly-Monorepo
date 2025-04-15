@@ -293,6 +293,7 @@ struct ItemDetailsView: View {
                         viewModel.updateNotification(newNotification)
                     },
                     onGroupChange: { newGroupId in
+                        print("ItemDetailsView - Adding item '\(viewModel.item.title)' to group with ID: \(String(describing: newGroupId))")
                         viewModel.updateGroup(newGroupId)
                     },
                     onDelete: {},
@@ -355,7 +356,6 @@ struct ItemDetailsView: View {
                     .padding(.trailing, 8)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
             .disabled(viewModel.item.subItems.count >= 50)
             
             // Only show Done button when editing (no Close button since we now have the chevron)
@@ -907,6 +907,16 @@ private struct SubItemView: View {
                             .padding(.vertical, 6)
                             .padding(.leading, 0)
                             .focused($focusedSubitemId, equals: subitem.id)
+                            .onChange(of: focusedSubitemId) { oldValue, newValue in
+                                if newValue == subitem.id {
+                                    if editedText != subitem.title {
+                                        editedText = subitem.title
+                                    }
+                                }
+                            }
+                            .onChange(of: subitem.title) { oldValue, newValue in
+                                editedText = newValue
+                            }
                             .onChange(of: editedText) { oldValue, newValue in
                                 if newValue.contains("\n") {
                                     editedText = oldValue

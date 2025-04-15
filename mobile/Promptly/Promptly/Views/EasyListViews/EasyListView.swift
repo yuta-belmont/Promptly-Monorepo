@@ -559,7 +559,9 @@ struct ListContent: View {
                 // No need to post notification - view handles its own state
             },
             onGroupChange: { groupId in
+                print("EasyListView - Group change requested for item \(item.id) to group \(String(describing: groupId))")
                 viewModel.updateItemGroup(itemId: item.id, with: groupId)
+                print("EasyListView - Group change completed for item \(item.id)")
             },
             onItemTap: { itemId in
                 // Remove any focus first

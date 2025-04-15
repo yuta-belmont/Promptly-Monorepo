@@ -422,6 +422,23 @@ final class GroupDetailsViewModel: ObservableObject {
         }
     }
     
+    func updateGroupNotes(_ newNotes: String) {
+        guard let group = selectedGroup else { return }
+        
+        // Create a new group with updated notes
+        var updatedGroup = group
+        updatedGroup.updateNotes(newNotes)
+        
+        // Update in the group store
+        groupStore.updateGroupNotes(group, newNotes: newNotes) { [weak self] in
+            guard let self = self else { return }
+            // Update the selectedGroup with the new notes
+            if let updatedGroup = groupStore.getGroup(by: group.id) {
+                self.selectedGroup = updatedGroup
+            }
+        }
+    }
+    
     func removeItemFromGroup(_ item: Models.ChecklistItem, group: Models.ItemGroup) {
         // Load the checklist for this specific date
         if let checklist = persistence.loadChecklist(for: item.date) {

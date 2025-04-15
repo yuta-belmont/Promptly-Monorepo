@@ -54,48 +54,16 @@ struct BaseView: View {
             
             // Only show chat if no menu is showing, not editing, and chat is enabled
             if !showingMenu && !isEditing && userSettings.isChatEnabled {
-                // Darkened background for chat - using a fixed medium opacity level
-                Color.black
-                    .opacity(isChatExpanded ? 0.4 : 0)
-                    .edgesIgnoringSafeArea(.all)
-                    .zIndex(0.5)
-                    .onTapGesture {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            isChatExpanded = false
-                        }
-                    }
-                
-                // Chat overlay
-                VStack {
-                    Spacer()
-                    
-                    HStack {
-                        // When chat is expanded, use the full width
-                        if isChatExpanded {
-                            ChatView(
-                                isKeyboardActive: $isKeyboardActive,
-                                isExpanded: $isChatExpanded
-                            )
-                            .environmentObject(focusManager)
-                            .frame(maxWidth: .infinity)
-                            .transition(.asymmetric(
-                                insertion: .scale(scale: 0.8).combined(with: .opacity),
-                                removal: .scale(scale: 0.8).combined(with: .opacity)
-                            ))
-                        } else if !focusManager.isEasyListFocused && authManager.isAuthenticated && !authManager.isGuestUser {
-                            // Only show chat button when:
-                            // 1. EasyListView is not focused
-                            // 2. User is authenticated
-                            // 3. User is NOT a guest user
+                // Chat button
+                if !focusManager.isEasyListFocused && authManager.isAuthenticated && !authManager.isGuestUser {
+                    VStack {
+                        Spacer()
+                        HStack {
                             Spacer()
-                            
                             Button(action: {
                                 // Remove all focus when opening the chat
                                 focusManager.removeAllFocus()
-                                
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                    isChatExpanded.toggle()
-                                }
+                                isChatExpanded = true
                             }) {
                                 ZStack {
                                     // Bubble background
@@ -129,15 +97,10 @@ struct BaseView: View {
                                 }
                             }
                             .padding(.trailing, 16)
-                            .padding(.bottom, 30) // Increased bottom padding to move the bubble up
-                            .transition(.scale(scale: 0.8).combined(with: .opacity))
+                            .padding(.bottom, 30)
                         }
                     }
-                    .frame(maxWidth: .infinity) // Ensure HStack uses full width
                 }
-                .frame(maxWidth: .infinity) // Ensure VStack uses full width
-                .zIndex(1)
-                .animation(.easeInOut(duration: 0.2), value: focusManager.isEasyListFocused) // Animate based on focus state
             }
             
             // Menu overlay with background
@@ -168,6 +131,15 @@ struct BaseView: View {
                 }
             }
             .zIndex(2)
+        }
+        .sheet(isPresented: $isChatExpanded) {
+            ChatView(
+                isKeyboardActive: $isKeyboardActive,
+                isExpanded: $isChatExpanded
+            )
+            .environmentObject(focusManager)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .onChange(of: showingMenu) { oldValue, newValue in
             if newValue {

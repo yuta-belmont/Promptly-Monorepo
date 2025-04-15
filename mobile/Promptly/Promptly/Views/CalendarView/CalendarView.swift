@@ -70,7 +70,7 @@ struct CalendarView: View, Hashable {
                                     .foregroundColor(.white)
                             }
                         }
-                        .padding(.horizontal)
+                        .padding(.horizontal, 24)
                         
                         // Days of week header
                         HStack {
@@ -86,14 +86,7 @@ struct CalendarView: View, Hashable {
                             ForEach(daysInMonth(), id: \.self) { date in
                                 if let date = date {
                                     // All days use the same animation approach
-                                    DayCell(date: date, isToday: calendar.isDateInToday(date), animationID: todayID)
-                                        .onTapGesture {
-                                            if let onDateSelected = onDateSelected {
-                                                onDateSelected(date)
-                                            } else {
-                                                NavigationUtil.navigationPath.append(DayView(date: date))
-                                            }
-                                        }
+                                    DayCell(date: date, isToday: calendar.isDateInToday(date), animationID: todayID, onDateSelected: onDateSelected)
                                 } else {
                                     Color.clear
                                         .aspectRatio(1, contentMode: .fill)
@@ -105,9 +98,57 @@ struct CalendarView: View, Hashable {
                     .padding(.top, 20)
                     .frame(height: geometry.size.height * 0.5)
                     .offset(x: slideOffset)
+                    .contentShape(Rectangle())  // Make the entire area tappable
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                // Update slide offset based on drag
+                                slideOffset = value.translation.width
+                            }
+                            .onEnded { value in
+                                // Determine if we should change months based on drag distance and velocity
+                                let threshold: CGFloat = 50
+                                let velocity = value.predictedEndLocation.x - value.location.x
+                                
+                                if abs(value.translation.width) > threshold || abs(velocity) > 100 {
+                                    let isNext = value.translation.width < 0
+                                    
+                                    // First, animate the current view off screen
+                                    withAnimation(.easeOut(duration: 0.2)) {
+                                        slideOffset = isNext ? -geometry.size.width : geometry.size.width
+                                    }
+                                    
+                                    // Update the month while the view is off screen
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                        if isNext {
+                                            nextMonth()
+                                        } else {
+                                            previousMonth()
+                                        }
+                                        
+                                        // Start from the opposite side
+                                        slideOffset = isNext ? geometry.size.width : -geometry.size.width
+                                        
+                                        // Animate back to center
+                                        withAnimation(.easeOut(duration: 0.15)) {
+                                            slideOffset = 0
+                                        }
+                                    }
+                                } else {
+                                    // Return to original position if not dragged far enough
+                                    withAnimation(.easeOut(duration: 0.2)) {
+                                        slideOffset = 0
+                                    }
+                                }
+                            }
+                    )
                     
                     // Dashboard section (bottom ~50%)
                     DashboardView(onTodayButtonTapped: {
+                        // Add haptic feedback
+                        let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
+                        feedbackGenerator.impactOccurred()
+                        
                         if let onDateSelected = onDateSelected {
                             onDateSelected(Date())
                         } else {
@@ -119,33 +160,6 @@ struct CalendarView: View, Hashable {
                 }
             }
         }
-        .contentShape(Rectangle())  // Make the entire ZStack tappable
-        .gesture(
-            DragGesture()
-                .onEnded { value in
-                    if abs(value.translation.width) > 50 && abs(value.translation.height) < 30 {
-                        let isNext = value.translation.width < 0
-                        // First animation: slide current month out
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            slideOffset = isNext ? -UIScreen.main.bounds.width : UIScreen.main.bounds.width
-                        }
-                        
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                            if isNext {
-                                nextMonth()
-                            } else {
-                                previousMonth()
-                            }
-                            // Reset position to opposite side instantly
-                            slideOffset = isNext ? UIScreen.main.bounds.width : -UIScreen.main.bounds.width
-                            // Second animation: slide new month in
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                slideOffset = 0
-                            }
-                        }
-                    }
-                }
-        )
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: currentMonth) { _ in
             saveCurrentMonth()
@@ -163,18 +177,14 @@ struct CalendarView: View, Hashable {
     }
     
     private func previousMonth() {
-        withAnimation {
-            if let newDate = calendar.date(byAdding: .month, value: -1, to: currentMonth) {
-                currentMonth = newDate
-            }
+        if let newDate = calendar.date(byAdding: .month, value: -1, to: currentMonth) {
+            currentMonth = newDate
         }
     }
     
     private func nextMonth() {
-        withAnimation {
-            if let newDate = calendar.date(byAdding: .month, value: 1, to: currentMonth) {
-                currentMonth = newDate
-            }
+        if let newDate = calendar.date(byAdding: .month, value: 1, to: currentMonth) {
+            currentMonth = newDate
         }
     }
     
@@ -211,6 +221,9 @@ struct DayCell: View {
     let date: Date
     let isToday: Bool
     var animationID: Namespace.ID? = nil
+    @State private var isGlowing: Bool = false
+    @State private var showOutline: Bool = false
+    let onDateSelected: ((Date) -> Void)?
     
     private var dayNumber: String {
         let calendar = Calendar.current
@@ -225,6 +238,31 @@ struct DayCell: View {
     
     var body: some View {
         ZStack {
+            // Add black background with white stroke
+            Circle()
+                .fill(Color.black.opacity(0.4))
+                .overlay(
+                    Group {
+                        // Default outline
+                        Circle()
+                            .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
+                        
+                        // Animated outline that appears with the glow
+                        if showOutline {
+                            Circle()
+                                .strokeBorder(.white.opacity(0.5), lineWidth: 0.5)
+                        }
+                    }
+                )
+            
+            // Glow effect
+            if isGlowing {
+                Circle()
+                    .fill(Color.white)
+                    .blur(radius: 8)
+                    .opacity(0.15)
+            }
+            
             if animationID != nil {
                 Circle()
                     .fill(isToday ? Color.blue.opacity(0.3) : Color.clear)
@@ -247,5 +285,26 @@ struct DayCell: View {
             }
         }
         .aspectRatio(1, contentMode: .fill)
+        .contentShape(Rectangle()) // Make the entire view tappable
+        .onTapGesture {
+            // Trigger tap glow animation and outline
+            isGlowing = true
+            showOutline = true
+            
+            // Handle navigation
+            if let onDateSelected = onDateSelected {
+                onDateSelected(date)
+            } else {
+                NavigationUtil.navigationPath.append(DayView(date: date))
+            }
+            
+            // Animate the glow and outline back
+            DispatchQueue.main.asyncAfter(deadline: .now()) {
+                withAnimation(.easeInOut(duration: 0.5)) {
+                    isGlowing = false
+                    showOutline = false
+                }
+            }
+        }
     }
 } 

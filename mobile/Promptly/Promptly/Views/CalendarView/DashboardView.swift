@@ -26,8 +26,15 @@ struct DashboardView: View {
                         .font(.caption)
                         .foregroundColor(.white.opacity(0.9))
                 }
+                
+                
             }
-            .padding(.bottom, 0)
+            .foregroundColor(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(.ultraThinMaterial)
+            .cornerRadius(6)
+            .shadow(color: Color.black.opacity(0.2), radius: 2, x: 1, y: 1)
             
             // Dashboard content with background
             ZStack {

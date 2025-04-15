@@ -395,6 +395,7 @@ final class EasyListViewModel: ObservableObject {
         checklist.addItemAtBeginning(newItem)
         hasUnsavedChanges = true
         
+         
         // Clear the undo cache when adding items
         undoManager.clearCache()
         
@@ -498,6 +499,9 @@ final class EasyListViewModel: ObservableObject {
         
         // Mark changes to save later - consistent with other operations
         hasUnsavedChanges = true
+        
+        // Save changes immediately to ensure ManageGroupsView gets updated
+        saveChecklist()
         
         // Clear the undo cache when updating item group
         undoManager.clearCache()

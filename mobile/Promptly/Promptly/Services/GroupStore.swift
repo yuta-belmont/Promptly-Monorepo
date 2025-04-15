@@ -77,7 +77,7 @@ final class GroupStore: ObservableObject {
     
     // MARK: - Group Management
     
-    func createGroup(title: String, red: Double = 0, green: Double = 0, blue: Double = 0, hasColor: Bool = false, completion: (() -> Void)? = nil) -> Models.ItemGroup {
+    func createGroup(title: String, red: Double = 0, green: Double = 0, blue: Double = 0, hasColor: Bool = false, notes: String = "", completion: (() -> Void)? = nil) -> Models.ItemGroup {
         let context = persistenceController.container.viewContext
         
         // Create a new struct model
@@ -87,7 +87,8 @@ final class GroupStore: ObservableObject {
             colorRed: red,
             colorGreen: green,
             colorBlue: blue,
-            hasColor: hasColor
+            hasColor: hasColor,
+            notes: notes
         )
         
         // Create a Core Data model
@@ -125,7 +126,7 @@ final class GroupStore: ObservableObject {
     }
     
     // Create a group with a specific ID
-    func createGroupWithID(id: UUID, title: String, red: Double = 0, green: Double = 0, blue: Double = 0, hasColor: Bool = false, completion: (() -> Void)? = nil) -> Models.ItemGroup {
+    func createGroupWithID(id: UUID, title: String, red: Double = 0, green: Double = 0, blue: Double = 0, hasColor: Bool = false, notes: String = "", completion: (() -> Void)? = nil) -> Models.ItemGroup {
         let context = persistenceController.container.viewContext
         
         // First check if a group with this ID already exists
@@ -167,7 +168,8 @@ final class GroupStore: ObservableObject {
             colorRed: red,
             colorGreen: green,
             colorBlue: blue,
-            hasColor: hasColor
+            hasColor: hasColor,
+            notes: notes
         )
         
         // Create a Core Data model from the struct
@@ -359,6 +361,40 @@ final class GroupStore: ObservableObject {
             // Call completion even on error
             DispatchQueue.main.async {
                 completion?()
+            }
+        }
+    }
+    
+    func updateGroupNotes(_ group: Models.ItemGroup, newNotes: String, completion: (() -> Void)? = nil) {
+        let context = persistenceController.container.viewContext
+        
+        context.perform {
+            // Find the Core Data group using a fetch request
+            let fetchRequest: NSFetchRequest<ItemGroup> = ItemGroup.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "id == %@", group.id as NSUUID)
+            
+            do {
+                if let groupToUpdate = try context.fetch(fetchRequest).first {
+                    groupToUpdate.notes = newNotes
+                    try context.save()
+                    
+                    // Reload groups and update timestamp on main queue
+                    DispatchQueue.main.async {
+                        self.loadGroups {
+                            self.lastGroupUpdateTimestamp = Date()
+                            completion?()
+                        }
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        completion?()
+                    }
+                }
+            } catch {
+                print("Failed to update group notes: \(error)")
+                DispatchQueue.main.async {
+                    completion?()
+                }
             }
         }
     }

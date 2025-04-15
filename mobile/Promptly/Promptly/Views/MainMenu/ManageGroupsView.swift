@@ -89,11 +89,7 @@ struct ManageGroupsView: View {
                                     let newViewModel = GroupDetailsViewModel()
                                     newViewModel.setSelectedGroup(tappedGroup)
                                     detailsViewModel = newViewModel
-                                    
-                                    // Switch to details view with animation
-                                    withAnimation(.easeOut(duration: 0.4)) {
-                                        activeView = .groupDetails
-                                    }
+                                    activeView = .groupDetails
                                 })
                                 .contentShape(Rectangle())
                                 .listRowBackground(Color.clear)
@@ -197,12 +193,12 @@ struct ManageGroupsView: View {
                             // If dragged more than 50 points to the right, dismiss
                             if value.startLocation.x < 66 && value.translation.width > 50 {
                                 // Use animation to ensure smooth transition
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
                                     isPresented = false
                                 }
                             }
                             // If not dragged far enough, animate back to original position
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
                                 dragOffset = .zero
                             }
                         }
@@ -217,18 +213,14 @@ struct ManageGroupsView: View {
                         get: { activeView == .groupDetails },
                         set: { if !$0 { 
                             // Switch back to manage groups view with animation
-                            withAnimation(.easeIn(duration: 0.4)) {
-                                activeView = .manageGroups
-                            }
+                            activeView = .manageGroups
                             // Clean up
                             refreshCounter += 1
                         }}
                     ),
                     closeAllViews: {
                         viewModel.saveNewGroupIfNeeded()
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            isPresented = false
-                        }
+                        isPresented = false
                     },
                     onNavigateToDate: { date in
                         // Clean up
@@ -247,7 +239,7 @@ struct ManageGroupsView: View {
             }
         }
         // Apply animation to the ZStack for view transitions
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: activeView)
+        .animation(.spring(response: 0.3, dampingFraction: 0.9), value: activeView)
         .onAppear {
             viewModel.loadGroups()
         }
@@ -445,7 +437,7 @@ struct ColorPickerView: View {
                     Spacer()
                     
                     Button("Done") {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
                             isPresented = false
                         }
                     }

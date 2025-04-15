@@ -97,25 +97,17 @@ final class ManageGroupsViewModel: ObservableObject {
         self.groupIdToRemove = group.id
         
         Task {
-            // For each item in the group, update it to remove the group association
+            // Get all items in the group
             let groupItems = group.getAllItems()
             
-            for item in groupItems {
-                // Load the checklist for this specific date
-                if let checklist = persistence.loadChecklist(for: item.date) {
-                    // Find the item with this ID and remove its group association
-                    var updatedChecklist = checklist
-                    if let index = updatedChecklist.items.firstIndex(where: { $0.id == item.id }) {
-                        var updatedItem = updatedChecklist.items[index]
-                        updatedItem.updateGroup(nil)
-                        updatedChecklist.items[index] = updatedItem
-                        persistence.saveChecklist(updatedChecklist)
-                    }
-                }
+            // For each item, directly update its group association
+            for var item in groupItems {
+                // Update the item's group to nil
+                item.updateGroup(nil)
+                
+                // Update the group store
+                groupStore.removeItemFromGroup(itemId: item.id, groupId: group.id)
             }
-            
-            // Wait a brief moment to allow animation to complete
-            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
             
             // Delete the group from storage
             groupStore.deleteGroup(group) { [weak self] in

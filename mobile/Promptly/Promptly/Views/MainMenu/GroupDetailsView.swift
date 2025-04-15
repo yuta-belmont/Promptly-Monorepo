@@ -9,7 +9,10 @@ struct GroupDetailsView: View {
     @State private var selectedItemForDetails: Models.ChecklistItem?
     @State private var isEditingTitle: Bool = false // Track if title is being edited
     @State private var editedTitle: String = "" // Store the title being edited
+    @State private var isEditingNotes: Bool = false // Track if notes are being edited
+    @State private var editedNotes: String = "" // Store the notes being edited
     @FocusState private var isTitleFieldFocused: Bool // Focus state for text field
+    @FocusState private var isNotesFieldFocused: Bool // Focus state for notes field
     @State private var showingRemoveAllAlert = false
     let closeAllViews: () -> Void
     let onNavigateToDate: ((Date) -> Void)?
@@ -93,15 +96,41 @@ struct GroupDetailsView: View {
                             editedTitle = viewModel.currentGroupTitle
                             isEditingTitle = true
                         }) {
-                            Text(viewModel.currentGroupTitle)
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .padding(.vertical, 4)
-                                .padding(.horizontal, 8)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
+                            HStack(spacing: 4) {
+                                Text(viewModel.currentGroupTitle)
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                Image(systemName: "square.and.pencil")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.white.opacity(0.3))
+                            }
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                    }
+                    
+                    // Add notes button before the ellipsis
+                    if !isEditingTitle {
+                        Button(action: {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                isEditingNotes.toggle()
+                                if isEditingNotes {
+                                    editedNotes = viewModel.selectedGroup?.notes ?? ""
+                                    // Set focus after a brief delay to ensure the field is ready
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                        isNotesFieldFocused = true
+                                    }
+                                }
+                            }
+                        }) {
+                            Image(systemName: "note.text")
+                                .foregroundColor(.white.opacity(0.6))
+                                .font(.system(size: 18))
+                                .padding(.leading, 16)
+                        }
                     }
                     
                     Spacer()
@@ -190,9 +219,6 @@ struct GroupDetailsView: View {
                             .listRowBackground(Color.clear)
                             .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 0, trailing: 8))
                             .listRowSeparator(.hidden)
-
-                            // Use a stable ID that doesn't change with isCompleted status
-                            // Only use the UUID and title hash for the ID, which won't change during toggle
                             .id("stable-item-\(item.id.uuidString)")
                         }
                         
@@ -244,6 +270,52 @@ struct GroupDetailsView: View {
             .opacity(showingItemDetailsView ? 0 : 1) // Hide when ItemDetailsView is showing
             .zIndex(showingItemDetailsView ? 0 : 1999) // Lower z-index when ItemDetailsView is showing
             
+            // Notes editor sheet
+            .sheet(isPresented: $isEditingNotes) {
+                NavigationView {
+                    VStack(spacing: 0) {
+                        ZStack(alignment: .topLeading) {
+                            TextEditor(text: $editedNotes)
+                                .font(.body)
+                                .foregroundColor(.white)
+                                .scrollContentBackground(.hidden)
+                                .background(Color.clear)
+                                .focused($isNotesFieldFocused)
+                                .padding(.horizontal)
+                                .padding(.bottom)
+                                .onChange(of: editedNotes) { _, newValue in
+                                    // Update the group's notes in the view model
+                                    if let group = viewModel.selectedGroup {
+                                        viewModel.updateGroupNotes(newValue)
+                                    }
+                                }
+                            
+                            if editedNotes.isEmpty {
+                                Text("Notes...")
+                                    .foregroundColor(.white.opacity(0.6))
+                                    .padding(.leading, 20)
+                                    .padding(.top, 8)
+                            }
+                        }
+                    }
+                    .background(Color.black.opacity(0.4))
+                    .navigationTitle("\(viewModel.currentGroupTitle) notes")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button(action: {
+                                isEditingNotes = false
+                            }) {
+                                Image(systemName: "xmark")
+                                    .foregroundColor(.white)
+                            }
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
+            
             // ItemDetailsView - appears over GroupDetailsView with higher zIndex
             if showingItemDetailsView, let selectedItem = selectedItemForDetails {
                 ItemDetailsView(
@@ -252,8 +324,6 @@ struct GroupDetailsView: View {
                 )
                 .transition(.move(edge: .trailing))
                 .zIndex(4999) // Higher than GroupDetailsView's zIndex (3999)
-                // We rely on the notification system to update specific items
-                // No need for a full reload on disappear
             }
         }
         .zIndex(3999) // Ensure this appears above the managegroupsview
@@ -296,7 +366,7 @@ struct GroupDetailsView: View {
                 }
             )
             .zIndex(9999) // Ensure this is higher than GroupDetailsView's zIndex
-            .transition(.opacity) // Change from .move to .opacity
+            .transition(.opacity)
         }
     }
     
@@ -326,7 +396,7 @@ struct GroupOptionsMenu: View {
                 .rotationEffect(.degrees(90))
                 .foregroundColor(.white.opacity(0.6))
                 .font(.system(size: 18))
-                .padding(.leading, 30)
+                .padding(.leading, 8)
                 .padding(.trailing, 18)
                 .contentShape(Rectangle())
         }

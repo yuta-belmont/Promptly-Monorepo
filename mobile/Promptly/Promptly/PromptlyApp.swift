@@ -187,7 +187,6 @@ struct RootView: View {
                                     }
                                 }
                             )
-                            .transition(.opacity)
                             .zIndex(1)
                             
                         case .dayView(let date):
@@ -201,7 +200,6 @@ struct RootView: View {
                                 },
                                 onMenuAction: handleMenuAction
                             )
-                            .transition(.opacity)
                             .zIndex(2)
                             
                         case .manageGroups:
@@ -283,6 +281,7 @@ struct RootView: View {
                         setupNotificationObserver()
                     }
                 }
+                .preferredColorScheme(.dark)
             } else {
                 // Show the login view when not authenticated
                 LoginView()
