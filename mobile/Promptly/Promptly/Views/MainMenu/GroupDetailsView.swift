@@ -76,6 +76,7 @@ struct GroupDetailsView: View {
                             .font(.headline)
                             .foregroundColor(.white)
                             .submitLabel(.done)
+                            .lineLimit(1)
                             .focused($isTitleFieldFocused)
                             .onSubmit {
                                 saveTitle()
@@ -99,6 +100,7 @@ struct GroupDetailsView: View {
                             HStack(spacing: 4) {
                                 Text(viewModel.currentGroupTitle)
                                     .font(.headline)
+                                    .lineLimit(1)
                                     .foregroundColor(.white)
                                 Image(systemName: "square.and.pencil")
                                     .font(.system(size: 14))

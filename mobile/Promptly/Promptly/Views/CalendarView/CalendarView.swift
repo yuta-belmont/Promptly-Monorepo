@@ -240,17 +240,17 @@ struct DayCell: View {
         ZStack {
             // Add black background with white stroke
             Circle()
-                .fill(Color.black.opacity(0.4))
+                .fill(Color.black.opacity(0.05))
                 .overlay(
                     Group {
                         // Default outline
                         Circle()
-                            .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
+                            .strokeBorder(.white.opacity(0.1), lineWidth: 0.5)
                         
                         // Animated outline that appears with the glow
                         if showOutline {
                             Circle()
-                                .strokeBorder(.white.opacity(0.5), lineWidth: 0.5)
+                                .strokeBorder(.white.opacity(0.7), lineWidth: 1)
                         }
                     }
                 )

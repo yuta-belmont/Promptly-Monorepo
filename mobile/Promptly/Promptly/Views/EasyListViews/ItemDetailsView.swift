@@ -162,9 +162,32 @@ struct ItemDetailsView: View {
                     }
             )
         }
+        .preference(key: IsItemDetailsViewShowingPreferenceKey.self, value: isPresented)
         .onAppear {
             viewModel.loadDetails()
             feedbackGenerator.prepare()
+            
+            // Listen for the editing state notification
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("SetNewSubitemEditingState"),
+                object: nil,
+                queue: .main
+            ) { _ in
+                if viewModel.item.subItems.count < 50 {
+                    feedbackGenerator.impactOccurred()
+                    editingState = .newSubitem
+                    updateFocusState()
+                }
+            }
+            
+            // Listen for the plus button notification from BaseView
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("TriggerItemDetailsPlusButton"),
+                object: nil,
+                queue: .main
+            ) { _ in
+                onPlusTapped()
+            }
         }
         .onDisappear {
             // Save any ongoing edits
@@ -183,6 +206,9 @@ struct ItemDetailsView: View {
                 name: Notification.Name("ItemDetailsUpdated"),
                 object: viewModel.item.id
             )
+            
+            // Remove the notification observer
+            NotificationCenter.default.removeObserver(self)
         }
         // Monitor focus state changes
         .onChange(of: titleFocused) { _, isFocused in
@@ -208,14 +234,12 @@ struct ItemDetailsView: View {
         HStack(alignment: .center, spacing: 8) {
             // Back chevron on the left
             Button(action: {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    isPresented = false
-                }
+                isPresented = false
             }) {
                 Image(systemName: "chevron.left")
                     .foregroundColor(.white.opacity(0.8))
                     .font(.system(size: 18, weight: .medium))
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, 8)
                     .padding(.leading, 12)
                     .contentShape(Rectangle())
             }
@@ -249,6 +273,22 @@ struct ItemDetailsView: View {
                 .animation(.spring(response: 0.01, dampingFraction: 1), value: viewModel.item.isCompleted)
         }
         .buttonStyle(.plain)
+    }
+    
+    // Function to handle plus button tap
+    private func onPlusTapped() {
+        feedbackGenerator.impactOccurred()
+        if viewModel.item.subItems.count < 50 {
+            // First post notification to show and scroll to the field
+            NotificationCenter.default.post(
+                name: NSNotification.Name("ScrollToNewSubitemRow"),
+                object: nil
+            )
+            
+            // Then set new focus state
+            editingState = .newSubitem
+            updateFocusState()
+        }
     }
     
     // Combined header buttons (without the close button)
@@ -304,7 +344,6 @@ struct ItemDetailsView: View {
             
             // Delete button
             Button(action: {
-                feedbackGenerator.impactOccurred()
                 removeAllFocus()
                 showingDeleteConfirmation = true
             }) {
@@ -335,20 +374,7 @@ struct ItemDetailsView: View {
             }
             
             // Add button
-            Button(action: {
-                feedbackGenerator.impactOccurred()
-                if viewModel.item.subItems.count < 50 {
-                    // First post notification to show and scroll to the field
-                    NotificationCenter.default.post(
-                        name: NSNotification.Name("ScrollToNewSubitemRow"),
-                        object: nil
-                    )
-                    
-                    // Then set new focus state
-                    editingState = .newSubitem
-                    updateFocusState()
-                }
-            }) {
+            Button(action: onPlusTapped) {
                 Image(systemName: "plus.circle")
                     .foregroundColor(viewModel.item.subItems.count >= 50 ? .white.opacity(0.3) : .white.opacity(0.6))
                     .font(.system(size: 20))
@@ -464,7 +490,7 @@ struct ItemDetailsView: View {
                                 isFocused: $newSubitemFocused,
                                 onSubmit: { keepFocus in
                                     if !newSubitemText.isEmpty {
-                                        viewModel.addSubitem(newSubitemText)
+                                        viewModel.addSubitem(newSubitemText, true)
                                         newSubitemText = ""
                                         
                                         // After adding a subitem, maintain focus and keep the input field ready for more entry
@@ -473,13 +499,6 @@ struct ItemDetailsView: View {
                                             updateFocusState()
                                         } else {
                                             removeAllFocus()
-                                        }
-                                        
-                                        // Scroll to top to keep the input field visible
-                                        DispatchQueue.main.async {
-                                            withAnimation(.easeInOut(duration: 0.2)) {
-                                                proxy.scrollTo("newSubItemRow", anchor: .top)
-                                            }
                                         }
                                     } else {
                                         // If text is empty, just lose focus
@@ -546,32 +565,28 @@ struct ItemDetailsView: View {
                     .environment(\.defaultMinListRowHeight, 0)
                     .scrollContentBackground(.hidden)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
-                        if case .newSubitem = editingState {
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                proxy.scrollTo("newSubItemRow", anchor: .top)
-                            }
-                        }
-                    }
                     .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ScrollToNewSubitemRow"))) { _ in
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            if viewModel.item.subItems.count < 50 {
-                                proxy.scrollTo("newSubItemRow", anchor: .top)
-                            } else {
-                                proxy.scrollTo("subitemLimitMessage", anchor: .bottom)
-                            }
+                        
+                        var row = ""
+                        var topAnchor = true
+                        if viewModel.item.subItems.count < 50 {
+                            row = "newSubItemRow"
+                        } else {
+                            row = "subitemLimitMessage"
+                            topAnchor = false
                         }
-                    }
-                    .onChange(of: newSubitemFocused) { oldValue, newValue in
-                        if newValue {
-                            // When field gets focus, scroll to it
-                            DispatchQueue.main.async {
+                        
+                        withAnimation(.linear(duration: 0.2)) {
+                            proxy.scrollTo(row, anchor: topAnchor ? .top : .bottom)
+                            //sometimes there's a timing issue so we force it to scroll again
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                                 withAnimation(.easeOut(duration: 0.2)) {
-                                    proxy.scrollTo("newSubItemRow", anchor: .top)
+                                    proxy.scrollTo(row, anchor: topAnchor ? .top : .bottom)
                                 }
                             }
                         }
                     }
+                     
                 }
             }
         }
@@ -675,7 +690,7 @@ private struct MetadataRow: View {
                             .strikethrough(item.isCompleted, color: .gray)
                             .lineLimit(1)  // Prevent notification time from wrapping
                             .layoutPriority(1)  // Add layout priority to ensure notification time gets space
-                            .animation(.easeInOut(duration: 0.2), value: item.isCompleted)
+                            .animation(.easeInOut(duration: 0.01), value: item.isCompleted)
                     }
                     .foregroundColor(notification < Date() ? .red.opacity(0.5) : .white.opacity(0.5))
                 }
@@ -731,6 +746,7 @@ private struct NewSubItemRow: View {
                     .foregroundColor(isFocused.wrappedValue ? .white : .gray)
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
+                    .submitLabel(.next)
                     .focused(isFocused)
                     //.frame(maxHeight: 80)
                     .onChange(of: text) { oldValue, newValue in
@@ -786,7 +802,8 @@ private struct NewSubItemRow: View {
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
         .listRowInsets(EdgeInsets())
-        .padding(.vertical, (isFocused.wrappedValue || viewModel.item.subItems.isEmpty) ? 4 : 0)
+        .padding(.bottom, (isFocused.wrappedValue || viewModel.item.subItems.isEmpty) ? 6 : 0)
+        .padding(.top, (isFocused.wrappedValue || viewModel.item.subItems.isEmpty) ? 10 : 0)
         .padding(.leading, 16)
         // Only show when focused OR list is empty
         .opacity((isFocused.wrappedValue || viewModel.item.subItems.isEmpty) ? 1 : 0)
@@ -904,6 +921,7 @@ private struct SubItemView: View {
                             .foregroundColor(.white)
                             .scrollContentBackground(.hidden)
                             .background(Color.clear)
+                            .submitLabel(.done)
                             .padding(.vertical, 6)
                             .padding(.leading, 0)
                             .focused($focusedSubitemId, equals: subitem.id)
@@ -912,6 +930,9 @@ private struct SubItemView: View {
                                     if editedText != subitem.title {
                                         editedText = subitem.title
                                     }
+                                }
+                                else if oldValue == subitem.id {
+                                    saveChanges()
                                 }
                             }
                             .onChange(of: subitem.title) { oldValue, newValue in
@@ -1039,7 +1060,7 @@ private struct SubitemDeleteConfirmationView: View {
             // Delete All Subitems Option
             Button(action: {
                 feedbackGenerator.impactOccurred()
-                
+
                 if isConfirmationActive && selectedOption == .all {
                     deleteTimer?.invalidate()
                     deleteTimer = nil

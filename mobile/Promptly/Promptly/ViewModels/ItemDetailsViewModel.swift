@@ -70,7 +70,7 @@ final class ItemDetailsViewModel: ObservableObject {
     }
     
     // Add a new subitem to the item
-    func addSubitem(_ title: String) {
+    func addSubitem(_ title: String, _ toTop: Bool = false ) {
         // Create a new subitem
         let newSubitem = Models.SubItem(
             id: UUID(),
@@ -82,7 +82,12 @@ final class ItemDetailsViewModel: ObservableObject {
         var mutableItem = item
         
         // Insert the subitem at the beginning of the array instead of appending
-        mutableItem.subItems.insert(newSubitem, at: 0)
+        if toTop {
+            mutableItem.subItems.insert(newSubitem, at: 0)
+
+        } else {
+            mutableItem.subItems.append(newSubitem)
+        }
         
         // If the parent item was previously completed, mark it incomplete
         // since we've added a new incomplete subitem

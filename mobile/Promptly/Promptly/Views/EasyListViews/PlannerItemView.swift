@@ -282,7 +282,7 @@ private struct MetadataRow: View {
     
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateStyle = .short
+        formatter.dateFormat = "MMMM d, yyyy"
         return formatter
     }()
     

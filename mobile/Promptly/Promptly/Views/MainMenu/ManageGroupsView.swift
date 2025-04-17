@@ -363,7 +363,7 @@ struct GroupRow: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 16)
                     .fill(Color.black.opacity(0.3))
-                    .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+                    .shadow(color: Color.black.opacity(0.1), radius: 2, x: -1, y: 1)
                 
                 // Glow effect - exactly like in PlannerItemView
                 if isGlowing {
@@ -553,7 +553,7 @@ struct ColorCircle: View {
             Circle()
                 .fill(Color(red: red, green: green, blue: blue))
                 .frame(width: 50, height: 50)
-                .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+                .shadow(color: .black.opacity(0.1), radius: 2, x: -1, y: 1)
             
             if isSelected {
                 Circle()

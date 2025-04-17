@@ -129,6 +129,7 @@ struct RootView: View {
         case manageGroups
         case generalSettings
         case about
+        case reports
         
         static func == (lhs: ViewState, rhs: ViewState) -> Bool {
             switch (lhs, rhs) {
@@ -142,6 +143,8 @@ struct RootView: View {
                 return true
             case (.dayView(let date1), .dayView(let date2)):
                 return Calendar.current.isDate(date1, inSameDayAs: date2)
+            case (.reports, .reports):
+                return true
             default:
                 return false
             }
@@ -249,6 +252,20 @@ struct RootView: View {
                             )
                             .transition(.move(edge: .trailing))
                             .zIndex(3)
+                            
+                        case .reports:
+                            ReportsView(
+                                isPresented: Binding(
+                                    get: { viewState == .reports },
+                                    set: { if !$0 { 
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                            viewState = .dayView(date: currentDate)
+                                        }
+                                    }}
+                                )
+                            )
+                            .transition(.move(edge: .trailing))
+                            .zIndex(3)
                         }
                     }
                     .navigationDestination(for: DayView.self) { dayView in
@@ -313,6 +330,10 @@ struct RootView: View {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 viewState = .manageGroups
             }
+        case .reports:
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                viewState = .reports
+            }
         case .about:
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 viewState = .about
@@ -368,6 +389,17 @@ struct RootView: View {
         ) { _ in
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 viewState = .about
+            }
+        }
+        
+        // Listen for ShowReportsView notification
+        NotificationCenter.default.addObserver(
+            forName: Notification.Name("ShowReportsView"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                viewState = .reports
             }
         }
     }

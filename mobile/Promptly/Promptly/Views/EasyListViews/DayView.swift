@@ -151,7 +151,7 @@ struct CheckInButton: View {
                         .padding(.vertical, 5)
                         .background(Color.blue)
                         .cornerRadius(6)
-                        .shadow(color: Color.black.opacity(0.2), radius: 2, x: 1, y: 1)
+                        .shadow(color: Color.black.opacity(0.2), radius: 2, x: -1, y: 1)
                 }
             }
         }
@@ -620,7 +620,7 @@ struct DayView: View, Hashable {
                                 .padding(.vertical, 5)
                                 .background(.ultraThinMaterial)
                                 .cornerRadius(6)
-                                .shadow(color: Color.black.opacity(0.2), radius: 2, x: 1, y: 1)
+                                .shadow(color: Color.black.opacity(0.2), radius: 2, x: -1, y: 1)
                             }
                         }
 

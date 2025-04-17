@@ -34,7 +34,7 @@ struct DashboardView: View {
             .padding(.vertical, 5)
             .background(.ultraThinMaterial)
             .cornerRadius(6)
-            .shadow(color: Color.black.opacity(0.2), radius: 2, x: 1, y: 1)
+            .shadow(color: Color.black.opacity(0.2), radius: 2, x: -1, y: 1)
             
             // Dashboard content with background
             ZStack {

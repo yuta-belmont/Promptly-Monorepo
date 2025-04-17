@@ -56,6 +56,16 @@ struct MainMenu: View {
                     Divider()
                         .background(.white.opacity(0.2))
                     
+                    MenuButton(title: "Reports", icon: "chart.bar", isDisabled: isAnimating) {
+                        withAnimation(.spring(response: 2, dampingFraction: 0.8)) {
+                            isPresented = false
+                        }
+                        onMenuAction(.reports)
+                    }
+                    
+                    Divider()
+                        .background(.white.opacity(0.2))
+                    
                     MenuButton(title: "About", icon: "info.circle", isDisabled: isAnimating) {
                         withAnimation(.spring(response: 2, dampingFraction: 0.8)) {
                             isPresented = false

@@ -4,6 +4,15 @@ import UIKit
 // Make sure NavigationUtil and DayView are accessible - sometimes these are in separate files
 // so we import them directly. If they are already accessible, the compiler will ignore redundant imports.
 
+// Add preference key to track ItemDetailsView visibility
+struct IsItemDetailsViewShowingPreferenceKey: PreferenceKey {
+    static var defaultValue: Bool = false
+    
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = nextValue()
+    }
+}
+
 struct BaseView: View {
     @StateObject private var focusManager = FocusManager.shared
     @State private var showingMenu = false
@@ -17,6 +26,9 @@ struct BaseView: View {
     @State private var isEditing: Bool = false
     
     @StateObject private var authManager = AuthManager.shared
+    
+    // Add state to track which view is showing
+    @State private var isItemDetailsViewShowing: Bool = false
     
     let date: Date
     var onBack: (() -> Void)?
@@ -51,53 +63,87 @@ struct BaseView: View {
                         }
                     }
                 }
+                .onPreferenceChange(IsItemDetailsViewShowingPreferenceKey.self) { newValue in
+                    isItemDetailsViewShowing = newValue
+                }
             
             // Only show chat if no menu is showing, not editing, and chat is enabled
-            if !showingMenu && !isEditing && userSettings.isChatEnabled {
+            if !showingMenu && !isEditing {
                 // Chat button
                 if !focusManager.isEasyListFocused && authManager.isAuthenticated && !authManager.isGuestUser {
                     VStack {
                         Spacer()
                         HStack {
                             Spacer()
-                            Button(action: {
-                                // Remove all focus when opening the chat
-                                focusManager.removeAllFocus()
-                                isChatExpanded = true
-                            }) {
+                            //plus button
+                            Button(action: onPlusTapped) {
                                 ZStack {
                                     // Bubble background
                                     Circle()
-                                        .fill(Color.blue)
-                                        .opacity(0.9)
+                                        .fill(Color.white)
+                                        .opacity(0.3)
                                         .frame(width: 56, height: 56)
-                                        .shadow(color: .black.opacity(0.2), radius: 5, x: 0, y: 2)
+                                        .shadow(color: .black.opacity(0.2), radius: 5, x: -1, y: 1)
                                     
                                     // Chat icon
-                                    Image("ChatGPT Image Apr 13, 2025, 03_40_55 PM")
+                                    Image("PlusIcon")
                                         .frame(width: 56, height: 56)
-                                        .padding(.top, 2)
-                                        .padding(.leading, 1)
                                         .opacity(0.9)
+                                        .shadow(color: Color.black.opacity(0.2), radius: 2, x: -1, y: 1)
                                     
-                                    // Notification badge - positioned as an overlay
-                                    if chatViewModel.unreadCount > 0 {
-                                        ZStack {
-                                            Circle()
-                                                .fill(Color.red)
-                                                .frame(width: 22, height: 22)
-                                            
-                                            Text("\(min(chatViewModel.unreadCount, 99))")
-                                                .font(.system(size: 12, weight: .bold))
-                                                .foregroundColor(.white)
-                                        }
-                                        .frame(width: 22, height: 22)
-                                        .offset(x: 22, y: -22) // Position at top-right of the chat icon
-                                    }
                                 }
                             }
                             .padding(.trailing, 16)
-                            .padding(.bottom, 30)
+                            .padding(.bottom, userSettings.isChatEnabled ? 16 : 30)
+                            
+                            
+                        }
+                        if userSettings.isChatEnabled {
+                            HStack {
+                                Spacer()
+                                //chat button
+                                Button(action: {
+                                    // Remove all focus when opening the chat
+                                    focusManager.removeAllFocus()
+                                    isChatExpanded = true
+                                }) {
+                                    ZStack {
+                                        // Bubble background
+                                        Circle()
+                                            .fill(Color.blue)
+                                            .opacity(0.9)
+                                            .frame(width: 56, height: 56)
+                                            .shadow(color: .black.opacity(0.2), radius: 5, x: -1, y: 1)
+                                        
+                                        // Chat icon
+                                        Image("ChatIcon")
+                                            .frame(width: 56, height: 56)
+                                            .padding(.top, 2)
+                                            .padding(.leading, 1)
+                                            .opacity(0.9)
+                                            .shadow(color: Color.black.opacity(0.2), radius: 2, x: -1, y: 1)
+                                        
+                                        
+                                        
+                                        // Notification badge - positioned as an overlay
+                                        if chatViewModel.unreadCount > 0 {
+                                            ZStack {
+                                                Circle()
+                                                    .fill(Color.red)
+                                                    .frame(width: 22, height: 22)
+                                                
+                                                Text("\(min(chatViewModel.unreadCount, 99))")
+                                                    .font(.system(size: 12, weight: .bold))
+                                                    .foregroundColor(.white)
+                                            }
+                                            .frame(width: 22, height: 22)
+                                            .offset(x: 22, y: -22) // Position at top-right of the chat icon
+                                        }
+                                    }
+                                }
+                                .padding(.trailing, 16)
+                                .padding(.bottom, 30)
+                            }
                         }
                     }
                 }
@@ -178,6 +224,8 @@ struct BaseView: View {
                 NotificationCenter.default.post(name: NSNotification.Name("ShowGeneralSettingsView"), object: nil)
             case .manageGroups:
                 NotificationCenter.default.post(name: NSNotification.Name("ShowManageGroupsView"), object: nil)
+            case .reports:
+                NotificationCenter.default.post(name: NSNotification.Name("ShowReportsView"), object: nil)
             case .about:
                 NotificationCenter.default.post(name: NSNotification.Name("ShowAboutView"), object: nil)
             }
@@ -193,5 +241,28 @@ struct BaseView: View {
         // AuthManager will handle the actual logout
         // No need to do anything here as RootView will automatically show LoginView
         // when authManager.isAuthenticated changes to false
+    }
+    
+    // Add function to handle plus button tap
+    private func onPlusTapped() {
+        
+        let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
+        feedbackGenerator.prepare()
+        feedbackGenerator.impactOccurred()
+            
+            
+        if isItemDetailsViewShowing {
+            // Post notification to trigger ItemDetailsView's plus button functionality
+            NotificationCenter.default.post(
+                name: NSNotification.Name("TriggerItemDetailsPlusButton"),
+                object: nil
+            )
+        } else {
+            // Post notification to trigger EasyListView's plus button functionality
+            NotificationCenter.default.post(
+                name: NSNotification.Name("TriggerEasyListPlusButton"),
+                object: nil
+            )
+        }
     }
 }

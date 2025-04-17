@@ -182,7 +182,6 @@ struct EasyListHeader: View {
     let onUndo: () -> Void
     let canUndo: Bool
     let currentDate: Date
-    let onAddItem: () -> Void
     @EnvironmentObject private var undoManager: UndoStateManager
     @EnvironmentObject private var viewModel: EasyListViewModel
     
@@ -215,7 +214,6 @@ struct EasyListHeader: View {
                     
                     Button(action: {
                         onDone() // Remove focus
-                        feedbackGenerator.impactOccurred()
                         showingDeleteConfirmation = true
                     }) {
                         Image(systemName: "trash")
@@ -236,7 +234,6 @@ struct EasyListHeader: View {
                     //import button
                     Button(action: {
                         onDone() // Remove focus
-                        feedbackGenerator.impactOccurred()
                         showingImportPopover = true
                     }) {
                         Image(systemName: "square.and.arrow.down")
@@ -251,25 +248,10 @@ struct EasyListHeader: View {
                         )
                         .presentationCompactAdaptation(.none)
                     }
-                    
-                    // Add item button
-                    Button(action: {
-                        if !showingNotes {
-                            feedbackGenerator.impactOccurred()
-                            
-                            onAddItem()
-                        }
-                    }) {
-                        Image(systemName: "plus.circle")
-                            .foregroundColor(.white.opacity(0.8))
-                        
-                    }
                 }
-
                 
                 if showingNotes || !isEditing {
                     Button(action: {
-                        feedbackGenerator.impactOccurred()
                         onNotesToggle()
                     }) {
                         Image(systemName: "arrow.2.squarepath")
@@ -297,8 +279,6 @@ struct EasyListHeader: View {
                 if isEditing {
                     Button(action: {
                         // Add haptic feedback before calling onDone
-                        feedbackGenerator.prepare()
-                        feedbackGenerator.impactOccurred()
                         onDone()
                     }) {
                         Text("Done")
@@ -859,6 +839,53 @@ struct EasyListView: View {
         // No need to create a view model here anymore
     }
     
+    private func onAddTap() {
+        // Only allow add item if not in transition
+        if isInViewTransition {
+            return
+        }
+        
+        if viewModel.isShowingNotes {
+            onNotesToggle()
+        }
+        
+        isNewItemFocused = true
+        focusManager.requestFocus(for: .easyList)
+        
+        // Then trigger scroll notification after a tiny delay
+        // to ensure focus state has been processed
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            NotificationCenter.default.post(name: Notification.Name("ScrollToAddItem"), object: nil)
+        }
+    }
+    
+    private func onNotesToggle() {
+        // Prevent multiple taps during transition
+        if isInViewTransition {
+            return
+        }
+        
+        // Set transition flag
+        isInViewTransition = true
+        
+        // Remove focus
+        print("onNotesToggle: Setting isEditing = false, isNewItemFocused = false, isNotesFocused = false")
+        isEditing = false
+        isNewItemFocused = false
+        isNotesFocused = false
+        focusManager.isEasyListFocused = false
+        
+        // Toggle notes view with flip animation
+        withAnimation(.easeInOut(duration: 0.4)) {
+            viewModel.toggleNotesView()
+        }
+        
+        // Reset transition flag after animation completes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            isInViewTransition = false
+        }
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             EasyListHeader(
@@ -875,30 +902,7 @@ struct EasyListView: View {
                     focusManager.isEasyListFocused = false
                 },
                 onNotesToggle: {
-                    // Prevent multiple taps during transition
-                    if isInViewTransition {
-                        return
-                    }
-                    
-                    // Set transition flag
-                    isInViewTransition = true
-                    
-                    // Remove focus
-                    print("onNotesToggle: Setting isEditing = false, isNewItemFocused = false, isNotesFocused = false")
-                    isEditing = false
-                    isNewItemFocused = false
-                    isNotesFocused = false
-                    focusManager.isEasyListFocused = false
-                    
-                    // Toggle notes view with flip animation
-                    withAnimation(.easeInOut(duration: 0.4)) {
-                        viewModel.toggleNotesView()
-                    }
-                    
-                    // Reset transition flag after animation completes
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        isInViewTransition = false
-                    }
+                    onNotesToggle()
                 },
                 onImport: { sourceDate, importIncompleteOnly in
                     // Only allow import if not in transition
@@ -931,21 +935,7 @@ struct EasyListView: View {
                     }
                 },
                 canUndo: viewModel.canUndo,
-                currentDate: viewModel.date,
-                onAddItem: {
-                    // Only allow add item if not in transition
-                    if isInViewTransition {
-                        return
-                    }
-                    isNewItemFocused = true
-                    focusManager.requestFocus(for: .easyList)
-                    
-                    // Then trigger scroll notification after a tiny delay
-                    // to ensure focus state has been processed
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        NotificationCenter.default.post(name: Notification.Name("ScrollToAddItem"), object: nil)
-                    }
-                }
+                currentDate: viewModel.date
             )
             .environmentObject(viewModel.undoManager)
             .disabled(isInViewTransition) // Disable the entire header during transitions
@@ -1060,6 +1050,20 @@ struct EasyListView: View {
             if calendar.isDate(newChecklistDate, inSameDayAs: viewModel.date) {
                 viewModel.reloadChecklist()
             }
+        }
+        .onAppear {
+            // Listen for the plus button notification from BaseView
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("TriggerEasyListPlusButton"),
+                object: nil,
+                queue: .main
+            ) { _ in
+                onAddTap()
+            }
+        }
+        .onDisappear {
+            // Remove the notification observer
+            NotificationCenter.default.removeObserver(self)
         }
     }
 }

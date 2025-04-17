@@ -4,5 +4,6 @@ import Foundation
 enum MenuAction {
     case general
     case manageGroups
+    case reports
     case about
 } 
