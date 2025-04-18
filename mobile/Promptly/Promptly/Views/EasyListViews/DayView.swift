@@ -441,27 +441,8 @@ struct DayView: View, Hashable {
             // Get the current checklist data
             let checklist = easyListViewModel.getChecklistForCheckin()
             
-            // Calculate and display analytics first
-            let stats = CheckInAnalytics.shared.calculateStats()
-            Task { @MainActor in
-                ChatViewModel.shared.handleMessage(stats.formattedString)
-            }
-            
-            // Try server check-in
             Task {
-                do {
-                    let dictChecklist = easyListViewModel.getChecklistDictionaryForCheckin()
-                    try await ChatService.shared.handleCheckin(checklist: dictChecklist)
-                } catch {
-                    print("❌ Check-in failed with error: \(error)")
-                    print("❌ Error type: \(type(of: error))")
-                    if let urlError = error as? URLError {
-                        print("❌ URLError code: \(urlError.code)")
-                        print("❌ URLError localizedDescription: \(urlError.localizedDescription)")
-                    }
-                    // If server check-in fails, fall back to offline processing
-                    await ChatViewModel.shared.handleOfflineCheckIn(checklist: checklist)
-                }
+                await CheckInService.shared.performCheckIn(for: currentDate, checklist: checklist)
             }
         }
     }
@@ -481,7 +462,7 @@ struct DayView: View, Hashable {
             
             // Only set up if we don't have an expiry time for this day
             guard userSettings.checkInButtonExpiryTimes[dayKey] == nil else {
-                print("[Check-in] Expiry time already set for \(dayKey): \(userSettings.checkInButtonExpiryTimes[dayKey]?.description ?? "nil")")
+                let _ = print("[Check-in] Expiry time already set for \(dayKey): \(userSettings.checkInButtonExpiryTimes[dayKey]?.description ?? "nil")")
                 return
             }
             
@@ -500,7 +481,7 @@ struct DayView: View, Hashable {
             
             // Update using the proper method
             userSettings.updateExpiryTimes(updatedTimes)
-            print("[Check-in] Set expiry time for \(dayKey) to: \(expiryTime.description)")
+            let _ = print("[Check-in] Set expiry time for \(dayKey) to: \(expiryTime.description)")
         }
         
         // Set up expiry time for today
@@ -833,11 +814,11 @@ struct DayView: View, Hashable {
                     let delay = triggerTime.timeIntervalSince(now)
                     
                     if delay > 0 {
-                        print("[Check-in] Setting timer to trigger in \(delay) seconds")
+                        let _ = print("[Check-in] Setting timer to trigger in \(delay) seconds")
                         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                            print("\n[Check-in] Timer triggered at \(Date().description)")
+                            let _ = print("\n[Check-in] Timer triggered at \(Date().description)")
                             currentMinute = Date()
-                            print("[Check-in] Updated currentMinute to: \(currentMinute.description)")
+                            let _ = print("[Check-in] Updated currentMinute to: \(currentMinute.description)")
                         }
                     }
                 }

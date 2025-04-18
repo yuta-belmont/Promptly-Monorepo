@@ -1154,28 +1154,53 @@ final class ChatService {
         return taskId
     }
 
+    // Add new struct for structured check-in response
+    struct CheckInResponse {
+        let summary: String
+        let analysis: String
+        let response: String
+    }
+
     // Add new method to handle check-ins end-to-end
-    public func handleCheckin(checklist: [String: Any]) async throws -> String {
+    public func handleCheckin(checklist: [String: Any]) async throws -> (String, String, String) {
         // 1. Send check-in and get task ID
         let taskId = try await sendCheckin(checklist: checklist)
         
         // 2. Set up listener and handle response internally
+        var responseMessage: String? = nil
+        let semaphore = DispatchSemaphore(value: 0)
+        
         firestoreService.listenForCheckinTask(taskId: taskId) { [weak self] status, data in
             if status == "completed", let data = data {
                 if let response = data["response"] as? String {
-                    Task { @MainActor in
-                        self?.notifyAllViewModels(response)
-                    }
+                    responseMessage = response
                 } else if status == "failed", let error = data["error"] as? String {
-                    Task { @MainActor in
-                        self?.notifyAllViewModels("Sorry, I encountered an error processing your check-in: \(error)")
-                    }
+                    responseMessage = "Sorry, I encountered an error processing your check-in: \(error)"
                 }
+                semaphore.signal()
             }
         }
         
-        // 3. Return the task ID so the caller knows the request was sent
-        return taskId
+        // Wait for the response
+        semaphore.wait()
+        
+        guard let message = responseMessage else {
+            throw ChatServiceError.invalidResponse("No response received")
+        }
+        
+        // Try to parse as JSON
+        if let data = message.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            // If we have all three fields, use them
+            if let summary = json["summary"] as? String,
+               let analysis = json["analysis"] as? String,
+               let response = json["response"] as? String {
+                return (summary, analysis, response)
+            }
+        }
+        
+        // Fallback to using the message as the response with default values for summary and analysis
+        return ("Daily Check-in Report", "Check-in completed", message)
     }
 }
 

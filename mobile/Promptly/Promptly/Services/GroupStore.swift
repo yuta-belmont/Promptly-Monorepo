@@ -97,7 +97,7 @@ final class GroupStore: ObservableObject {
         
         // Add to the ordered set
         let groupOrder = getOrCreateGroupOrder()
-        groupOrder.addToOrderedGroups(newGroup)
+        groupOrder.insertIntoOrderedGroups(newGroup, at: 0)
         
         do {
             try context.save()

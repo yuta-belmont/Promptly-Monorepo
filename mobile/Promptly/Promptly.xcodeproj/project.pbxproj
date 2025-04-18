@@ -31,6 +31,7 @@
 		8F8FE7412D85EA3C00355B3D /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F8FE73F2D85EA3C00355B3D /* LoginView.swift */; };
 		8F8FE7432D85EA7100355B3D /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F8FE7422D85EA7100355B3D /* AuthManager.swift */; };
 		8F91A2782D959DC1008383FF /* ItemDetailsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F91A2772D959DC1008383FF /* ItemDetailsViewModel.swift */; };
+		8F9526772DB194E70002C956 /* CheckInService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F9526762DB194E70002C956 /* CheckInService.swift */; };
 		8F9DFEF52D6FA66900F62D5E /* PromptlyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F9DFEF42D6FA66900F62D5E /* PromptlyApp.swift */; };
 		8F9DFEF92D6FA66A00F62D5E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8F9DFEF82D6FA66A00F62D5E /* Assets.xcassets */; };
 		8F9DFEFD2D6FA66A00F62D5E /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8F9DFEFC2D6FA66A00F62D5E /* Preview Assets.xcassets */; };
@@ -106,6 +107,7 @@
 		8F8FE73F2D85EA3C00355B3D /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		8F8FE7422D85EA7100355B3D /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
 		8F91A2772D959DC1008383FF /* ItemDetailsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailsViewModel.swift; sourceTree = "<group>"; };
+		8F9526762DB194E70002C956 /* CheckInService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInService.swift; sourceTree = "<group>"; };
 		8F9DFEF12D6FA66900F62D5E /* Promptly.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Promptly.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8F9DFEF42D6FA66900F62D5E /* PromptlyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptlyApp.swift; sourceTree = "<group>"; };
 		8F9DFEF82D6FA66A00F62D5E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -250,6 +252,7 @@
 		8F9DFF032D70AE4B00F62D5E /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				8F9526762DB194E70002C956 /* CheckInService.swift */,
 				8F584F812DA61F2C00DDF73A /* CheckInAnalytics.swift */,
 				8F60905E2DA423C50048CEDD /* UserSettings.swift */,
 				8FE0E26F2D87D48900EE0D83 /* FirestoreService.swift */,
@@ -425,6 +428,7 @@
 				8F35F3612D81E94B00A112F1 /* Checklist+CoreDataProperties.swift in Sources */,
 				8F35F3622D81E94B00A112F1 /* ChecklistItem+CoreDataClass.swift in Sources */,
 				8F35F3632D81E94B00A112F1 /* ItemGroup+CoreDataClass.swift in Sources */,
+				8F9526772DB194E70002C956 /* CheckInService.swift in Sources */,
 				8F8FE7412D85EA3C00355B3D /* LoginView.swift in Sources */,
 				8F35F3642D81E94B00A112F1 /* ItemGroup+CoreDataProperties.swift in Sources */,
 				8FC455FF2D7B651A007EE5DB /* ItemGroup.swift in Sources */,

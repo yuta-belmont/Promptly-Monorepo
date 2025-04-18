@@ -81,9 +81,13 @@ struct BaseView: View {
                                     // Bubble background
                                     Circle()
                                         .fill(Color.white)
-                                        .opacity(0.3)
+                                        .opacity(0.03)
                                         .frame(width: 56, height: 56)
                                         .shadow(color: .black.opacity(0.2), radius: 5, x: -1, y: 1)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.gray.opacity(0.1), lineWidth: 0.5)
+                                        )
                                     
                                     // Chat icon
                                     Image("PlusIcon")
@@ -114,6 +118,10 @@ struct BaseView: View {
                                             .opacity(0.9)
                                             .frame(width: 56, height: 56)
                                             .shadow(color: .black.opacity(0.2), radius: 5, x: -1, y: 1)
+                                            .overlay(
+                                                Circle()
+                                                    .stroke(Color.gray.opacity(0.1), lineWidth: 0.5)
+                                            )
                                         
                                         // Chat icon
                                         Image("ChatIcon")

@@ -171,9 +171,9 @@ CHECKLIST_FORMAT_INSTRUCTIONS = """Please format your response as a JSON object 
 Groups can have any name as their key. Each group can contain multiple dates."""
 
 # -------------------------------------------------------------------------
-# Check-in Analysis Agent - Analyzes daily checklist completion and provides encouragement
+# Check-in Analysis Agent - High level instructions
 # -------------------------------------------------------------------------
-CHECKIN_ANALYSIS_INSTRUCTIONS = """You are Alfred, a personal assistant analyzing a user's daily checklist completion.
+CHECKIN_INSTRUCTIONS = """You are Alfred, a personal assistant analyzing a user's daily checklist completion.
 Your goal is to provide meaningful, personalized feedback based on their progress and aid in accountability during a casual conversation.
 
 {personality_prompt}
@@ -187,10 +187,19 @@ Consider:
 3. The relationship between completed tasks and their stated objectives
 4. Potential challenges they might have faced
 5. The tasks in the context of the user's objectives
+"""
 
-Respond as concisely as possible with the following:
-- A summary of the user's progress with data and numbers and a piece of wisdom or analysis that might give the user a lightbulb moment.
-If there is nothing to report, respond with an EXTREMELY concise message and disregard the rest of the instructions."""
+# -------------------------------------------------------------------------
+# Check-in Analysis Agent - JSON Formatting Instructions
+# -------------------------------------------------------------------------
+CHECK_AGENT_FORMAT_INSTRUCTIONS = """Please format your response as a JSON object with the following structure:
+{
+    "summary": "A brief summary listing out the exact numbers of completion and trends",
+    "analysis": "Detailed analysis looking for patterns over time, key insights, and observations about progress",
+    "response": "Your response to the user's progress, tailored to their objectives in your personality"
+}
+
+If there is nothing to report, respond with an EXTREMELY concise message."""
 
 PERSONALITY_PROMPTS = {
     "1": """You are enthusiastic and encouraging. Celebrate achievements with excitement and provide positive reinforcement. 
@@ -1015,66 +1024,129 @@ class AIService:
             user_objectives: The user's stated objectives
             
         Returns:
-            An encouraging response string, or None if analysis fails
+            A JSON string containing summary, analysis, and response, or None if analysis fails
         """
         try:
+            logger.info("Starting check-in analysis")
+            
             # Extract items from checklist data
             items = checklist_data.get('items', [])
+            logger.info(f"Found {len(items)} items in checklist data")
             
             # If no items, return a concise message
             if not items:
-                checklist_summary = {
-                    "checklist" : "empty"
-                }
-            else:
-            # Count completed and total items
-                completed = sum(1 for item in items if item.get('isCompleted', False))
-                total = len(items)
-                completion_percentage = (completed / total) * 100 if total > 0 else 0
+                logger.info("No items found, returning empty checklist response")
+                return json.dumps({
+                    "summary": "No tasks completed today",
+                    "analysis": "No tasks were available for analysis",
+                    "response": "Thanks for checking in. Keep up the great work!"
+                })
             
-                # Create a summary of the checklist for the AI
-                checklist_summary = {
-                    "total_tasks": total,
-                    "completed_tasks": completed,
-                    "completion_percentage": completion_percentage,
-                    "tasks": [
-                        {
-                            "title": item.get('title', ''),
-                            "completed": item.get('isCompleted', False)
-                        }
-                        for item in items
-                    ]
-                }
+            # Count completed and total items
+            completed = sum(1 for item in items if item.get('isCompleted', False))
+            total = len(items)
+            completion_percentage = (completed / total) * 100 if total > 0 else 0
+            logger.info(f"Checklist stats - Completed: {completed}, Total: {total}, Percentage: {completion_percentage:.1f}%")
+        
+            # Create a summary of the checklist for the AI
+            checklist_summary = {
+                "total_tasks": total,
+                "completed_tasks": completed,
+                "completion_percentage": completion_percentage,
+                "tasks": [
+                    {
+                        "title": item.get('title', ''),
+                        "completed": item.get('isCompleted', False)
+                    }
+                    for item in items
+                ]
+            }
             
             # Get the personality prompt based on setting, default to minimalist if not specified
             personality_prompt = PERSONALITY_PROMPTS.get(str(alfred_personality), PERSONALITY_PROMPTS["2"])
-            
+            logger.info(f"Using personality prompt: {personality_prompt[:50]}...")            
             # Format the instructions with personality and objectives
-            instructions = CHECKIN_ANALYSIS_INSTRUCTIONS.format(
+            system_message = CHECKIN_INSTRUCTIONS.format(
                 personality_prompt=personality_prompt,
                 user_objectives=user_objectives if user_objectives else "not specified"
             )
             
-            # Create the messages for GPT-4
-            messages = [
-                {"role": "system", "content": instructions},
-                {"role": "user", "content": f"Please analyze this checklist completion data and provide encouragement:\n{json.dumps(checklist_summary, indent=2)}"}
+            # Create messages array with both instruction sets
+            api_messages = [
+                {"role": "system", "content": system_message},
+                {"role": "system", "content": CHECK_AGENT_FORMAT_INSTRUCTIONS}
             ]
             
-            # Generate analysis using GPT-4
+            # Add the checklist data as a user message
+            api_messages.append({
+                "role": "user",
+                "content": f"Here is today's checklist data:\n{checklist_summary}"
+            })
+            
+            # Generate analysis using GPT-4 with explicit JSON response format
+            logger.info("Sending request to GPT-4 with JSON response format")
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini-2024-07-18",
-                messages=messages,
+                messages=api_messages,
                 temperature=0.7,
-                max_tokens=300 # Keep responses concise
+                max_tokens=5000,
+                response_format={"type": "json_object"}  # Explicitly request JSON response
             )
+            logger.info("WTF")
+            logger.info("WTF", response)
+            # Print the raw response immediately after getting it
+            raw_response = response.choices[0].message.content
             
-            analysis = response.choices[0].message.content.strip()
-            return analysis
+            # Get the analysis from the response
+            analysis = raw_response.strip()
+            
+            # Try to parse the response as JSON
+            try:
+                # Clean the response string by removing any leading/trailing whitespace and newlines
+                cleaned_analysis = analysis.strip()
+                
+                # Parse the JSON
+                parsed_json = json.loads(cleaned_analysis)
+                logger.info("Successfully parsed response as JSON")
+                
+                # Validate the required fields
+                required_fields = ["summary", "analysis", "response"]
+                for field in required_fields:
+                    if field not in parsed_json:
+                        logger.error(f"Missing required field in JSON response: {field}")
+                        raise KeyError(f"Missing required field: {field}")
+                
+                # Return the original cleaned response
+                return cleaned_analysis
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"Error parsing check-in response as JSON: {e}")
+                logger.error(f"Raw response that failed to parse: {raw_response}")
+                logger.error(f"Response length: {len(raw_response)}")
+                logger.error(f"Response type: {type(raw_response)}")
+                # If not JSON, wrap it in our structure
+                wrapped_response = json.dumps({
+                    "summary": f"Completed {completed} out of {total} tasks ({completion_percentage:.0f}%)",
+                    "analysis": "Analyzing your progress and patterns",
+                    "response": raw_response
+                })
+                logger.info(f"Wrapped response in JSON structure: {wrapped_response[:200]}...")
+                return wrapped_response
             
         except Exception as e:
             logger.error(f"Error analyzing checkin: {e}")
+            logger.error(f"Error type: {type(e)}")
+            logger.error(f"Error args: {e.args}")
+            logger.error(f"Raw response that caused error: {raw_response if 'raw_response' in locals() else 'No raw response available'}")
             # Provide a fallback response
             if total > 0:
-                return f"You've completed {completed} out of {total} tasks. Every step forward counts!"
-            return "Thanks for checking in. Keep up the great work!" 
+                return json.dumps({
+                    "summary": f"Completed {completed} out of {total} tasks",
+                    "analysis": "Every step forward counts!",
+                    "response": "You're making progress!"
+                })
+            return json.dumps({
+                "summary": "No tasks completed",
+                "analysis": "Keep up the great work!",
+                "response": "Thanks for checking in!"
+            }) 

@@ -26,7 +26,7 @@
         <attribute name="title" optional="YES" attributeType="String"/>
         <relationship name="checklist" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Checklist" inverseName="checklistItem" inverseEntity="Checklist"/>
         <relationship name="itemGroup" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="ItemGroup" inverseName="checklistItem" inverseEntity="ItemGroup"/>
-        <relationship name="subItems" optional="YES" toMany="YES" deletionRule="Nullify" ordered="YES" destinationEntity="SubItem" inverseName="parent" inverseEntity="SubItem"/>
+        <relationship name="subItems" optional="YES" toMany="YES" deletionRule="Cascade" ordered="YES" destinationEntity="SubItem" inverseName="parent" inverseEntity="SubItem"/>
     </entity>
     <entity name="GroupOrder" representedClassName="GroupOrder" syncable="YES" codeGenerationType="class">
         <relationship name="orderedGroups" optional="YES" toMany="YES" deletionRule="Cascade" ordered="YES" destinationEntity="ItemGroup" inverseName="groupOrder" inverseEntity="ItemGroup"/>
@@ -45,8 +45,20 @@
     <entity name="Report" representedClassName="Report" syncable="YES" codeGenerationType="class">
         <attribute name="analysis" attributeType="String" defaultValueString=""/>
         <attribute name="date" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="YES"/>
         <attribute name="response" attributeType="String" defaultValueString=""/>
         <attribute name="summary" attributeType="String" defaultValueString=""/>
+        <relationship name="snapshotItems" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="SnapshotItem"/>
+    </entity>
+    <entity name="SnapshotItem" representedClassName="SnapshotItem" syncable="YES" codeGenerationType="class">
+        <attribute name="id" attributeType="UUID" usesScalarValueType="YES"/>
+        <attribute name="isCompleted" optional="YES" attributeType="Boolean" usesScalarValueType="YES"/>
+        <attribute name="title" optional="YES" attributeType="String" defaultValueString=""/>
+        <relationship name="subitems" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="SnapshotSubItem"/>
+    </entity>
+    <entity name="SnapshotSubItem" representedClassName="SnapshotSubItem" syncable="YES" codeGenerationType="class">
+        <attribute name="id" attributeType="UUID" usesScalarValueType="YES"/>
+        <attribute name="title" attributeType="String" defaultValueString=""/>
     </entity>
     <entity name="SubItem" representedClassName=".SubItem" syncable="YES">
         <attribute name="id" attributeType="UUID" usesScalarValueType="YES"/>

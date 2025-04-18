@@ -77,6 +77,59 @@ struct ManageGroupsView: View {
                     
                     Divider()
                         .background(Color.white.opacity(0.2))
+                    
+                    // New Group Row
+                    HStack {
+                        Image(systemName: "folder.badge.plus")
+                            .foregroundColor(isNewGroupFieldFocused ? .blue : .gray)
+                            .font(.subheadline)
+
+                        TextField("New group...", text: $viewModel.newGroupName, axis: .vertical)
+                            .focused($isNewGroupFieldFocused)
+                            .onChange(of: viewModel.newGroupName) { oldValue, newValue in
+                                // Check if user pressed return (added a newline)
+                                if newValue.contains("\n") {
+                                    // Remove the newline character.
+                                    // By replacing \n with " ", we allow copy-pasted with \n values
+                                    if oldValue.count == 0 {
+                                        viewModel.newGroupName = newValue.replacingOccurrences(of: "\n", with: " ")
+                                        
+                                        // But now that we replace \n with " ", we need to make sure we're not just submitting a " " field.
+                                        // An empty field that a users presses return in should just remove focus and not submit anything.
+                                        if viewModel.newGroupName.count <= 1 {
+                                            viewModel.newGroupName = ""
+                                            isNewGroupFieldFocused = false
+                                            return
+                                        }
+                                    } else {
+                                        viewModel.newGroupName = oldValue
+                                    }
+                                    
+                                    // Submit if text is not empty
+                                    if !viewModel.newGroupName.isEmpty {
+                                        viewModel.addGroup()
+                                        // Keep focus after adding
+                                        isNewGroupFieldFocused = true
+                                    } else {
+                                        isNewGroupFieldFocused = false
+                                    }
+                                }
+                            }
+                            .padding(.leading, 6)
+                    }
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 12)
+                    .padding(.leading, 8)
+                    .padding(.top, 8)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if !viewModel.isAddingNewGroup {
+                            isNewGroupFieldFocused = true
+                        }
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 0, trailing: 8))
+                    .listRowSeparator(.hidden)
 
                     
                     // List content
@@ -111,56 +164,6 @@ struct ManageGroupsView: View {
                             viewModel.reorderGroups(from: from.first!, to: to)
                         }
                         .animation(.easeInOut, value: viewModel.groupIdToRemove)
-                        
-                        // New Group Row
-                        HStack {
-                            Image(systemName: "folder.badge.plus")
-                                .foregroundColor(isNewGroupFieldFocused ? .blue : .gray)
-                                .font(.subheadline)
-
-                            TextField("Group Name", text: $viewModel.newGroupName, axis: .vertical)
-                                .focused($isNewGroupFieldFocused)
-                                .onChange(of: viewModel.newGroupName) { oldValue, newValue in
-                                    // Check if user pressed return (added a newline)
-                                    if newValue.contains("\n") {
-                                        // Remove the newline character.
-                                        // By replacing \n with " ", we allow copy-pasted with \n values
-                                        if oldValue.count == 0 {
-                                            viewModel.newGroupName = newValue.replacingOccurrences(of: "\n", with: " ")
-                                            
-                                            // But now that we replace \n with " ", we need to make sure we're not just submitting a " " field.
-                                            // An empty field that a users presses return in should just remove focus and not submit anything.
-                                            if viewModel.newGroupName.count <= 1 {
-                                                viewModel.newGroupName = ""
-                                                isNewGroupFieldFocused = false
-                                                return
-                                            }
-                                        } else {
-                                            viewModel.newGroupName = oldValue
-                                        }
-                                        
-                                        // Submit if text is not empty
-                                        if !viewModel.newGroupName.isEmpty {
-                                            viewModel.addGroup()
-                                            // Keep focus after adding
-                                            isNewGroupFieldFocused = true
-                                        } else {
-                                            isNewGroupFieldFocused = false
-                                        }
-                                    }
-                                }
-                        }
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 12)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if !viewModel.isAddingNewGroup {
-                                isNewGroupFieldFocused = true
-                            }
-                        }
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 0, trailing: 8))
-                        .listRowSeparator(.hidden)
                         
                         // Add spacer at bottom of list for better scrolling
                         Color.clear.frame(height: 250)
