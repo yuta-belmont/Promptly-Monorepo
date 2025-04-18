@@ -40,6 +40,7 @@ class SubItemUndoStateManager: ObservableObject {
 final class ItemDetailsViewModel: ObservableObject {
     @Published var item: Models.ChecklistItem
     @Published var isLoading: Bool = false
+    var subitemToFocus: UUID? = nil
     
     private let persistence = ChecklistPersistence.shared
     private let notificationManager = NotificationManager.shared
@@ -70,7 +71,7 @@ final class ItemDetailsViewModel: ObservableObject {
     }
     
     // Add a new subitem to the item
-    func addSubitem(_ title: String, _ toTop: Bool = false ) {
+    func addSubitem(_ title: String, _ toTop: Bool = false, afterIndex: Int? = nil) {
         // Create a new subitem
         let newSubitem = Models.SubItem(
             id: UUID(),
@@ -81,25 +82,24 @@ final class ItemDetailsViewModel: ObservableObject {
         // Create a mutable copy of the item
         var mutableItem = item
         
-        // Insert the subitem at the beginning of the array instead of appending
-        if toTop {
+        if let index = afterIndex {
+            // Insert after the specified index
+            mutableItem.subItems.insert(newSubitem, at: index + 1)
+        } else if toTop {
+            // Insert at the beginning
             mutableItem.subItems.insert(newSubitem, at: 0)
-
         } else {
+            // Append to the end
             mutableItem.subItems.append(newSubitem)
-        }
-        
-        // If the parent item was previously completed, mark it incomplete
-        // since we've added a new incomplete subitem
-        if mutableItem.isCompleted {
-            mutableItem.isCompleted = false
         }
         
         // Update the published item
         item = mutableItem
         
         // Clear undo cache before saving
-        undoManager.clearCache()
+        if !title.isEmpty {
+            undoManager.clearCache()
+        }
         
         // Save to persistence
         saveItem()
@@ -110,6 +110,7 @@ final class ItemDetailsViewModel: ObservableObject {
     {
         saveItem()
     }
+    
     
     // Save the updated item to persistence
     private func saveItem() {
@@ -178,6 +179,7 @@ final class ItemDetailsViewModel: ObservableObject {
         // Update the item with the new notification date
         var mutableItem = item
         mutableItem.notification = newNotification
+        
         item = mutableItem
         
         // Schedule new notification if needed
@@ -400,9 +402,11 @@ final class ItemDetailsViewModel: ObservableObject {
     func deleteSubitem(_ subitemId: UUID) {
         // Take snapshot before deletion
         let snapshot = item.subItems
+        let subitemToDelete = snapshot.first { $0.id == subitemId }
         
         // Create a mutable copy of the item
         var mutableItem = item
+        
         
         // Remove the subitem
         let originalCount = mutableItem.subItems.count
@@ -412,8 +416,11 @@ final class ItemDetailsViewModel: ObservableObject {
         guard mutableItem.subItems.count < originalCount else { return }
         
         // Add to undo cache since something was deleted
-        undoManager.addToUndoCache(.snapshot(items: snapshot))
         
+        
+        if let deletedSubitem = subitemToDelete, !deletedSubitem.title.isEmpty {
+            undoManager.addToUndoCache(.snapshot(items: snapshot))
+        }
         // Update the published item
         item = mutableItem
         

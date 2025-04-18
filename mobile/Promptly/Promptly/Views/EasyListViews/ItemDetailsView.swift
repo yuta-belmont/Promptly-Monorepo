@@ -373,17 +373,6 @@ struct ItemDetailsView: View {
                 )
             }
             
-            // Add button
-            Button(action: onPlusTapped) {
-                Image(systemName: "plus.circle")
-                    .foregroundColor(viewModel.item.subItems.count >= 50 ? .white.opacity(0.3) : .white.opacity(0.6))
-                    .font(.system(size: 20))
-                    .frame(width: 48, height: 30)
-                    .padding(.trailing, 8)
-                    .contentShape(Rectangle())
-            }
-            .disabled(viewModel.item.subItems.count >= 50)
-            
             // Only show Done button when editing (no Close button since we now have the chevron)
             if editingState.isFocused {
                 // Done button
@@ -530,7 +519,11 @@ struct ItemDetailsView: View {
                                     startEditingSubitem(subitem)
                                 },
                                 editingState: editingState,
-                                focusedSubitemId: $focusedSubitemId
+                                focusedSubitemId: $focusedSubitemId,
+                                onEditingStateChange: { newState in
+                                    editingState = newState
+                                    updateFocusState()
+                                }
                             )
                             .id(subitem.id)
                             .listRowBackground(Color.clear)
@@ -734,12 +727,19 @@ private struct NewSubItemRow: View {
     
     var body: some View {
         HStack(alignment: .top) {
-            Image(systemName: "circle")
-                .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0))
-                .font(.system(size: 20))
-                .zIndex(2)
-                .padding(.trailing, 4)
-                .padding(.bottom, 6)
+            ZStack {
+                Image(systemName: "circle")
+                    .foregroundColor(isFocused.wrappedValue ? .gray : .gray.opacity(0.1))
+                    .font(.system(size: 20))
+                    .zIndex(2)
+                    .padding(.trailing, 4)
+                    .padding(.bottom, 6)
+                Image(systemName: "arrow.down")
+                    .foregroundColor(isFocused.wrappedValue ? .gray.opacity(0.3) : .gray.opacity(0))
+                    .font(.system(size: 10))
+                    .padding(.trailing, 4)
+                    .padding(.bottom, 6)
+            }
             
             ZStack(alignment: .leading) {
                 TextField("New subitem...", text: $text, axis: .vertical)
@@ -822,8 +822,9 @@ private struct SubItemView: View {
     let onTap: () -> Void
     let editingState: EditingState
     @FocusState.Binding var focusedSubitemId: UUID?
+    let onEditingStateChange: (EditingState) -> Void
     @State private var editedText: String
-    @State private var isPreloading = false
+    @State private var isPreloading = true
     
     // Add state for swipe
     @State private var offset: CGFloat = 0
@@ -835,13 +836,15 @@ private struct SubItemView: View {
          onToggle: @escaping () -> Void,
          onTap: @escaping () -> Void,
          editingState: EditingState,
-         focusedSubitemId: FocusState<UUID?>.Binding) {
+         focusedSubitemId: FocusState<UUID?>.Binding,
+         onEditingStateChange: @escaping (EditingState) -> Void) {
         self.subitem = subitem
         self.viewModel = viewModel
         self.onToggle = onToggle
         self.onTap = onTap
         self.editingState = editingState
         self._focusedSubitemId = focusedSubitemId
+        self.onEditingStateChange = onEditingStateChange
         self._editedText = State(initialValue: subitem.title)
     }
     
@@ -853,6 +856,21 @@ private struct SubItemView: View {
         return false
     }
     
+    private func triggerFocusSequence(id : UUID) {
+        if id == subitem.id {
+            print("[triggerFocusSequence] true for id: \(id)")
+            //making this a seperate 3 step process to ensure proper sequencing:
+            
+            //1.
+            isPreloading = true
+            DispatchQueue.main.async {
+                //2.
+                onTap()
+                //3. set isPreloading false once the text editor appears
+            }
+        }
+    }
+
     var body: some View {
         ZStack(alignment: .trailing) {
             // Delete button background and button - position off screen when not swiped
@@ -896,7 +914,7 @@ private struct SubItemView: View {
                 .buttonStyle(.plain)
                 
                 ZStack {
-                    if !isEditing || isPreloading {
+                    if !isEditing && !isPreloading {
                         Text(subitem.title)
                             .font(.body)
                             .foregroundColor(.white)
@@ -907,11 +925,10 @@ private struct SubItemView: View {
                             .padding(.leading, 0)
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                isPreloading = true
-                                DispatchQueue.main.async {
-                                    onTap()
-                                    isPreloading = false
-                                }
+                                triggerFocusSequence(id : subitem.id)
+                            }
+                            .onAppear(){
+                                print("Text appeared for \(subitem.id)")
                             }
                     }
            
@@ -921,7 +938,7 @@ private struct SubItemView: View {
                             .foregroundColor(.white)
                             .scrollContentBackground(.hidden)
                             .background(Color.clear)
-                            .submitLabel(.done)
+                            .submitLabel(.next)
                             .padding(.vertical, 6)
                             .padding(.leading, 0)
                             .focused($focusedSubitemId, equals: subitem.id)
@@ -941,17 +958,35 @@ private struct SubItemView: View {
                             .onChange(of: editedText) { oldValue, newValue in
                                 if newValue.contains("\n") {
                                     editedText = oldValue
-                                    // Save changes when Enter is pressed (since this doesn't destroy the view).
                                     saveChanges()
-                                    focusedSubitemId = nil
+                                    
+                                    if let currentIndex = viewModel.item.subItems.firstIndex(where: { $0.id == subitem.id }) {
+                                        viewModel.addSubitem("", false, afterIndex: currentIndex)
+                                        if currentIndex + 1 < viewModel.item.subItems.count {
+                                            let newSubitem = viewModel.item.subItems[currentIndex + 1]
+                                            viewModel.subitemToFocus = newSubitem.id
+
+                                            print("[newline, setting subitemToFocus id] true for id: \(newSubitem.id)")
+                                        }
+                                    }
+                                }
+                            }
+                            .onAppear {
+                                //now we can finish the preloading sequence
+                                print("TextFIELD appeared for \(subitem.id)")
+
+                                DispatchQueue.main.async {
+                                    isPreloading = false
                                 }
                             }
                             .onDisappear {
                                 saveChanges()
                             }
-                            .opacity(isPreloading ? 0 : 1)
                             .onChange(of: isPreloading) { oldValue, newValue in
+                                print("[isPreloading] called for id: \(subitem.id)")
                                 if oldValue == true && newValue == false && isEditing {
+                                    print("[isPreloading] finally setting focus for id: \(subitem.id)")
+
                                     focusedSubitemId = subitem.id
                                 }
                             }
@@ -961,6 +996,12 @@ private struct SubItemView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 4)
             .offset(x: offset)
+            .onAppear {
+                if viewModel.subitemToFocus == subitem.id {
+                    triggerFocusSequence(id : subitem.id)
+                    viewModel.subitemToFocus = nil
+                }
+            }
         }
         .simultaneousGesture(
             DragGesture()
