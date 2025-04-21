@@ -63,13 +63,14 @@ final class CheckInAnalytics {
         let todayItemCompletion = calculateItemCompletionRate(from: todayChecklist)
         let todaySubitemCompletion = calculateSubitemCompletionRate(from: todayChecklist)
         
-        // Calculate historical averages
-        let sevenDayItemVolume = calculateHistoricalAverage(days: 7, before: date) { Double(self.calculateItemVolume(from: $0)) }
-        let thirtyDayItemVolume = calculateHistoricalAverage(days: 30, before: date) { Double(self.calculateItemVolume(from: $0)) }
+        // Calculate historical averages - use volume average for counts
+        let sevenDayItemVolume = calculateVolumeAverage(days: 7, before: date) { Double(self.calculateItemVolume(from: $0)) }
+        let thirtyDayItemVolume = calculateVolumeAverage(days: 30, before: date) { Double(self.calculateItemVolume(from: $0)) }
         
-        let sevenDaySubitemVolume = calculateHistoricalAverage(days: 7, before: date) { Double(self.calculateSubitemVolume(from: $0)) }
-        let thirtyDaySubitemVolume = calculateHistoricalAverage(days: 30, before: date) { Double(self.calculateSubitemVolume(from: $0)) }
+        let sevenDaySubitemVolume = calculateVolumeAverage(days: 7, before: date) { Double(self.calculateSubitemVolume(from: $0)) }
+        let thirtyDaySubitemVolume = calculateVolumeAverage(days: 30, before: date) { Double(self.calculateSubitemVolume(from: $0)) }
         
+        // Use original average calculation for completion rates
         let sevenDayItemCompletion = calculateHistoricalAverage(days: 7, before: date) { self.calculateItemCompletionRate(from: $0) }
         let thirtyDayItemCompletion = calculateHistoricalAverage(days: 30, before: date) { self.calculateItemCompletionRate(from: $0) }
         
@@ -102,7 +103,21 @@ final class CheckInAnalytics {
     
     // MARK: - Private Calculation Methods
     
-    /// Calculates the average of a metric over a specified number of days
+    /// Calculates the average of a volume metric over a specified number of days, including days with no checklists as zero
+    @MainActor private func calculateVolumeAverage(days: Int, before date: Date, calculator: (Models.Checklist?) -> Double) -> Double {
+        var sum = 0.0
+        
+        for dayOffset in 1...days {
+            if let previousDate = calendar.date(byAdding: .day, value: -dayOffset, to: date) {
+                let checklist = persistence.loadChecklist(for: previousDate)
+                sum += calculator(checklist) // Will add 0 if checklist is nil
+            }
+        }
+        
+        return sum / Double(days)
+    }
+    
+    /// Calculates the average of a metric over a specified number of days, only including days with checklists
     @MainActor private func calculateHistoricalAverage(days: Int, before date: Date, calculator: (Models.Checklist?) -> Double) -> Double {
         var sum = 0.0
         var count = 0

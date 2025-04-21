@@ -15,8 +15,8 @@ from app.db.session import engine
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("alfred")
 
-# Note: We no longer create tables automatically as we're using a stateless architecture for chat
-# Base.metadata.create_all(bind=engine)
+# Create tables if they don't exist
+Base.metadata.create_all(bind=engine)
 
 # Log important settings at startup
 logger.info("⚙️ SERVER SETTINGS ⚙️")

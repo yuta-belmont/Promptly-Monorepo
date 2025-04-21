@@ -189,6 +189,14 @@ struct ItemDetailsView: View {
                 onPlusTapped()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            // Save any ongoing edits
+            if case .title = editingState {
+                saveTitle()
+            }
+            // Save changes when view disappears
+            viewModel.saveChanges()
+        }
         .onDisappear {
             // Save any ongoing edits
             if case .title = editingState {
@@ -198,6 +206,7 @@ struct ItemDetailsView: View {
             // Remove focus which will trigger saves in subitems
             removeAllFocus()
             
+            print("ITEMDETAILSVIEW DISAPPEAR!")
             // Save changes when view disappears
             viewModel.saveChanges()
             
@@ -333,7 +342,6 @@ struct ItemDetailsView: View {
                         viewModel.updateNotification(newNotification)
                     },
                     onGroupChange: { newGroupId in
-                        print("ItemDetailsView - Adding item '\(viewModel.item.title)' to group with ID: \(String(describing: newGroupId))")
                         viewModel.updateGroup(newGroupId)
                     },
                     onDelete: {},
@@ -351,6 +359,7 @@ struct ItemDetailsView: View {
                     .foregroundColor(.white.opacity(0.6))
                     .font(.system(size: 20))
                     .frame(width: 48, height: 30)
+                    .padding(.trailing, 12)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -405,7 +414,7 @@ struct ItemDetailsView: View {
     
     // Save title
     private func saveTitle() {
-        if !editedTitleText.isEmpty {
+        if !editedTitleText.isEmpty && editedTitleText != viewModel.item.title {
             viewModel.updateTitle(editedTitleText)
         }
     }
@@ -419,7 +428,7 @@ struct ItemDetailsView: View {
             }) {
                 Text(viewModel.item.title)
                     .font(.title3)
-                    .foregroundColor(.white)
+                    .foregroundColor(viewModel.item.isCompleted ? .white.opacity(0.7) : .white)
                     .lineLimit(4)
                     .strikethrough(viewModel.item.isCompleted, color: .gray)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -858,15 +867,9 @@ private struct SubItemView: View {
     
     private func triggerFocusSequence(id : UUID) {
         if id == subitem.id {
-            print("[triggerFocusSequence] true for id: \(id)")
-            //making this a seperate 3 step process to ensure proper sequencing:
-            
-            //1.
             isPreloading = true
             DispatchQueue.main.async {
-                //2.
                 onTap()
-                //3. set isPreloading false once the text editor appears
             }
         }
     }
@@ -917,7 +920,7 @@ private struct SubItemView: View {
                     if !isEditing && !isPreloading {
                         Text(subitem.title)
                             .font(.body)
-                            .foregroundColor(.white)
+                            .foregroundColor(subitem.isCompleted ? .white.opacity(0.7) : .white)
                             .lineLimit(4)
                             .strikethrough(subitem.isCompleted, color: .gray)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -926,9 +929,6 @@ private struct SubItemView: View {
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 triggerFocusSequence(id : subitem.id)
-                            }
-                            .onAppear(){
-                                print("Text appeared for \(subitem.id)")
                             }
                     }
            
@@ -966,14 +966,12 @@ private struct SubItemView: View {
                                             let newSubitem = viewModel.item.subItems[currentIndex + 1]
                                             viewModel.subitemToFocus = newSubitem.id
 
-                                            print("[newline, setting subitemToFocus id] true for id: \(newSubitem.id)")
                                         }
                                     }
                                 }
                             }
                             .onAppear {
                                 //now we can finish the preloading sequence
-                                print("TextFIELD appeared for \(subitem.id)")
 
                                 DispatchQueue.main.async {
                                     isPreloading = false
@@ -983,10 +981,7 @@ private struct SubItemView: View {
                                 saveChanges()
                             }
                             .onChange(of: isPreloading) { oldValue, newValue in
-                                print("[isPreloading] called for id: \(subitem.id)")
                                 if oldValue == true && newValue == false && isEditing {
-                                    print("[isPreloading] finally setting focus for id: \(subitem.id)")
-
                                     focusedSubitemId = subitem.id
                                 }
                             }

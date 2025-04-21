@@ -1112,6 +1112,21 @@ struct Hallucination: View {
                     endPoint: .trailing
                 )
                 .blendMode(.multiply)
+                
+                // Sharp contrast boost (black, so remains unchanged)
+                LinearGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color.gray.opacity(0.5),
+                        Color.clear,
+                        Color.clear,
+                        Color.blue.opacity(0.5)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .blendMode(.multiply)
+                
+
             }
         }
     }

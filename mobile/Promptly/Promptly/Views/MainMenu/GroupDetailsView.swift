@@ -19,16 +19,11 @@ struct GroupDetailsView: View {
     
     // Helper function to generate a unique item ID string
     private func generateItemId(for item: Models.ChecklistItem) -> String {
-        // Debug: Print the item values as seen by the PlannerItemView
-        print("PlannerItemView - Item Values: id=\(item.id.uuidString), title=\(item.title), completed=\(item.isCompleted), subItems=\(item.subItems.count), lastModified=\(String(describing: item.lastModified))")
         
         // Only include properties that actually affect the view's appearance
         // Use more concise representations to improve performance and compiler handling
         // Follow EasyListView's approach - DON'T include lastModified in the ID
         let idString = "item-\(item.id.uuidString)-\(item.isCompleted)-\(item.title.hashValue)-\(item.notification?.timeIntervalSince1970 ?? 0)-\(item.subItems.count)"
-        
-        // Debug: Print the generated ID
-        print("PlannerItemView - Generated ID: \(idString)")
         
         // Return the ID string without lastModified timestamp
         return idString
@@ -322,7 +317,14 @@ struct GroupDetailsView: View {
             if showingItemDetailsView, let selectedItem = selectedItemForDetails {
                 ItemDetailsView(
                     item: selectedItem,
-                    isPresented: $showingItemDetailsView
+                    isPresented: .init(
+                        get: { showingItemDetailsView },
+                        set: { newValue in
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                showingItemDetailsView = newValue
+                            }
+                        }
+                    )
                 )
                 .transition(.move(edge: .trailing))
                 .zIndex(4999) // Higher than GroupDetailsView's zIndex (3999)

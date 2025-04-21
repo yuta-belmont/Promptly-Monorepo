@@ -25,7 +25,8 @@ public class Checklist: NSManagedObject {
             id: id ?? UUID(),
             date: date ?? Date(),
             items: items, // The initializer will create the ItemCollection for us
-            notes: notes ?? ""
+            notes: notes ?? "",
+            isEdited: isEdited
         )
     }
     
@@ -34,6 +35,7 @@ public class Checklist: NSManagedObject {
         self.id = structModel.id
         self.date = structModel.date
         self.notes = structModel.notes
+        self.isEdited = structModel.isEdited
         
         // We don't update relationships here as they're handled separately
     }
@@ -45,6 +47,7 @@ public class Checklist: NSManagedObject {
         checklist.id = structModel.id
         checklist.date = structModel.date
         checklist.notes = structModel.notes
+        checklist.isEdited = structModel.isEdited
         return checklist
     }
 } 

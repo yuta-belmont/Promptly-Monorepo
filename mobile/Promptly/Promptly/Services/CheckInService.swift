@@ -24,15 +24,17 @@ final class CheckInService {
     
     /// Converts a checklist to a dictionary format for check-in
     /// - Parameter checklist: The checklist to convert
-    /// - Returns: A dictionary representation of the checklist
+    /// - Returns: A dictionary representation of the checklist matching server format
     func getChecklistDictionaryForCheckin(_ checklist: Models.Checklist) -> [String: Any] {
-        return [
-            "date": checklist.date.ISO8601Format(),
+        // Create the checklist dictionary with fields at top level
+        let checklistDict: [String: Any] = [
+            "date": formatDateToYYYYMMDD(checklist.date),
+            "notes": checklist.notes,
             "items": checklist.items.map { item in
                 var itemDict: [String: Any] = [
                     "title": item.title,
-                    "isCompleted": item.isCompleted,
-                    "group": item.group?.title ?? "Uncategorized"
+                    "is_completed": item.isCompleted,
+                    "group_name": item.group?.title ?? "Uncategorized"
                 ]
                 
                 // Add notification if exists
@@ -44,20 +46,31 @@ final class CheckInService {
                 itemDict["subitems"] = item.subItems.map { subItem in
                     [
                         "title": subItem.title,
-                        "isCompleted": subItem.isCompleted
-                    ]
+                        "is_completed": subItem.isCompleted
+                    ] as [String: Any]
                 }
                 
                 return itemDict
             }
         ]
+        return checklistDict
     }
     
-    /// Performs a check-in for the specified date and checklist
+    /// Formats a date to YYYY-MM-DD string
+    /// - Parameter date: The date to format
+    /// - Returns: A string in YYYY-MM-DD format
+    private func formatDateToYYYYMMDD(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+    
+    /// Creates a report for the checklist without server interaction
     /// - Parameters:
     ///   - date: The date of the check-in
-    ///   - checklist: The checklist to check in
-    @MainActor func performCheckIn(for date: Date, checklist: Models.Checklist) async {
+    ///   - checklist: The checklist to create a report for
+    /// - Returns: The created report
+    @MainActor func createReport(for date: Date, checklist: Models.Checklist) -> Report {
         // Count total and completed items
         let totalItems = checklist.items.count
         let completedItems = checklist.items.filter { $0.isCompleted }.count
@@ -114,14 +127,26 @@ final class CheckInService {
             print("Error saving report: \(error)")
         }
         
+        return report
+    }
+    
+    /// Performs server check-in and updates the report with server response
+    /// - Parameters:
+    ///   - checklist: The checklist to check in
+    ///   - report: The report to update with server response
+    @MainActor func performServerCheckIn(checklist: Models.Checklist, report: Report) async {
         // Calculate and display analytics first
         let stats = analytics.calculateStats()
-        ChatViewModel.shared.handleMessage(stats.formattedString)
         
-        // Try server check-in first
         do {
             // Get the checklist dictionary using our local method
             let dictChecklist = getChecklistDictionaryForCheckin(checklist)
+            
+            print("📤 DEBUG - Dictionary being sent to ChatService.handleCheckin:")
+            if let jsonData = try? JSONSerialization.data(withJSONObject: dictChecklist, options: .prettyPrinted),
+               let jsonStr = String(data: jsonData, encoding: .utf8) {
+                print(jsonStr)
+            }
             
             // Try to send the check-in to the server and get the response
             let (summary, analysis, response) = try await chatService.handleCheckin(checklist: dictChecklist)
@@ -137,19 +162,45 @@ final class CheckInService {
             // Send the response to the chat
             ChatViewModel.shared.handleMessage(response)
             
-            // If we get here, server check-in was successful
             print("✅ Server check-in successful")
         } catch {
-            print("❌ Check-in failed with error: \(error)")
-            print("❌ Error type: \(type(of: error))")
-            if let urlError = error as? URLError {
-                print("❌ URLError code: \(urlError.code)")
-                print("❌ URLError localizedDescription: \(urlError.localizedDescription)")
-            }
-            
             // Fall back to offline processing
             print("🔄 Falling back to offline check-in")
-            await ChatViewModel.shared.handleOfflineCheckIn(checklist: checklist)
+            report.analysis = stats.formattedString
+            
+            do {
+                try persistence.container.viewContext.save()
+            } catch {
+                print("Error saving report after offline fallback: \(error)")
+            }
+            
+            ChatViewModel.shared.handleMessage("I generated a report for you.")
+        }
+    }
+
+    /// Performs a check-in for the specified date and checklist
+    /// - Parameters:
+    ///   - date: The date of the check-in
+    ///   - checklist: The checklist to check in
+    @MainActor func performCheckIn(for date: Date, checklist: Models.Checklist) async {
+        // Always create the report
+        let report = createReport(for: date, checklist: checklist)
+        
+        // Only do server check-in if chat is enabled
+        if UserSettings.shared.isChatEnabled {
+            await performServerCheckIn(checklist: checklist, report: report)
+        } else {
+            
+            let stats = analytics.calculateStats()
+            report.analysis = stats.formattedString
+            
+            do {
+                try persistence.container.viewContext.save()
+            } catch {
+                print("Error saving report after offline fallback: \(error)")
+            }
+            // For non-chat users, just show the basic completion message
+            ChatViewModel.shared.handleMessage("I generated a report for you.")
         }
     }
 } 

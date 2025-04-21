@@ -373,6 +373,9 @@ struct DayView: View, Hashable {
     
     // Update the handleCheckIn method
     private func handleCheckIn() {
+        // Ensure all data is saved before check-in
+        easyListViewModel.saveChecklist()
+
         let calendar = Calendar.current
         let now = Date()
         
@@ -436,14 +439,11 @@ struct DayView: View, Hashable {
             }
         }
         
-        // Only proceed with chat-related operations if chat is enabled
-        if userSettings.isChatEnabled {
-            // Get the current checklist data
-            let checklist = easyListViewModel.getChecklistForCheckin()
-            
-            Task {
-                await CheckInService.shared.performCheckIn(for: currentDate, checklist: checklist)
-            }
+        // Get the current checklist data
+        let checklist = easyListViewModel.getChecklistForCheckin()
+        
+        Task {
+            await CheckInService.shared.performCheckIn(for: currentDate, checklist: checklist)
         }
     }
     

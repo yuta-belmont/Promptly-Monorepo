@@ -183,6 +183,15 @@ final class EasyListViewModel: ObservableObject {
             deleteItems(at: IndexSet(emptyIndices))
         }
         
+        // Initialize expanded states based on completion and subitem state
+        expandedItemIds = Set(checklist.items.compactMap { item in
+            // Only include the ID if the item is not completed
+            if !item.isCompleted {
+                return item.id
+            }
+            return nil
+        })
+        
         // Clean up expanded states for items that no longer exist or have no subitems
         cleanupExpandedStates()
         
@@ -195,16 +204,13 @@ final class EasyListViewModel: ObservableObject {
     
     // New method to update the date without recreating the view model
     func updateToDate(_ newDate: Date) {
+        
         // Skip if it's the same day (using calendar comparison)
         let calendar = Calendar.current
         guard !calendar.isDate(date, inSameDayAs: newDate) else { return }
         
-        
         // If we have unsaved changes, save them before switching dates
-        if hasUnsavedChanges {
-            saveChecklist()
-            hasUnsavedChanges = false
-        }
+        saveChecklist()
                 
         // Clear the undo cache when switching days
         undoManager.clearCache()
@@ -219,7 +225,7 @@ final class EasyListViewModel: ObservableObject {
         self.checklist = Models.Checklist(date: newDate)
         
         // Then load the data
-        loadData()
+        self.loadData()
     }
     
     // MARK: - Date Formatting
@@ -393,9 +399,12 @@ final class EasyListViewModel: ObservableObject {
         
         // Insert the item at the beginning of the collection (index 0) instead of appending
         checklist.addItemAtBeginning(newItem)
+        
+
         hasUnsavedChanges = true
         
-         
+        expandedItemIds.insert(newItem.id)
+        
         // Clear the undo cache when adding items
         undoManager.clearCache()
         
@@ -463,8 +472,8 @@ final class EasyListViewModel: ObservableObject {
     func saveChecklist() {
         if hasUnsavedChanges {
             persistence.saveChecklist(checklist)
+            hasUnsavedChanges = false
         }
-        hasUnsavedChanges = false
     }
     
     // MARK: - Group Management
@@ -673,17 +682,6 @@ final class EasyListViewModel: ObservableObject {
         counterManager.updateCounts(completed: checklist.items.filter { $0.isCompleted }.count, total: checklist.items.count)
     }
     
-    // Add a new method to manage subitem state and clean up expanded state if needed
-    func checkAndUpdateSubitemsState(_ itemId: UUID) {
-        guard let item = getItem(id: itemId) else { return }
-        
-        // If the item has no subitems but is in the expanded set, remove it
-        if item.subItems.isEmpty && expandedItemIds.contains(itemId) {
-            expandedItemIds.remove(itemId)
-            objectWillChange.send()
-        }
-    }
-    
     // Listen for notifications from ItemDetailsView about subitem changes
     func setupSubitemChangeListeners() {
         NotificationCenter.default.addObserver(self, selector: #selector(handleItemDetailsUpdated(_:)), name: Notification.Name("ItemDetailsUpdated"), object: nil)
@@ -694,12 +692,6 @@ final class EasyListViewModel: ObservableObject {
         if let itemId = notification.object as? UUID {
             // Update only the specific item with fresh data from persistence
             updateSingleItem(with: itemId)
-            
-            // Check and update the item's expanded state
-            checkAndUpdateSubitemsState(itemId)
-            
-            // Mark changes for later saving
-            hasUnsavedChanges = true
         }
     }
     
@@ -790,26 +782,21 @@ final class EasyListViewModel: ObservableObject {
     func undo() {
         // Get the next action from the manager
         guard let action = undoManager.getNextAction() else { return }
-        
+                
         // Perform the undo operation
         switch action {
         case .snapshot(let items):
-            // Remove all current items
-            checklist.removeAllItems()
-            
-            // Add the snapshots items back in their original order
-            for item in items {
-                checklist.itemCollection.items.append(item)
-            }
+            // Create a new checklist with the snapshot items
+            var restoredChecklist = Models.Checklist(date: date)
+            restoredChecklist.items = items
+                        
+            // Replace the current checklist with the restored one
+            self.checklist = restoredChecklist
         }
-        
+    
         // Save changes
+        hasUnsavedChanges = true
         saveChecklist()
-        
-        // Force a UI refresh by updating the checklist property
-        // This ensures SwiftUI knows the data has changed
-        let updatedChecklist = checklist
-        checklist = updatedChecklist
     }
     
     // Add this method before the last closing brace
@@ -851,22 +838,20 @@ final class EasyListViewModel: ObservableObject {
             expandedItemIds.remove(itemId)
         } else {
             // Only add to expanded set if the item has subitems
-            if let item = getItem(id: itemId), !item.subItems.isEmpty {
-                expandedItemIds.insert(itemId)
-            }
+            expandedItemIds.insert(itemId)
         }
         objectWillChange.send()
     }
     
     func isItemExpanded(_ itemId: UUID) -> Bool {
-        // Only return true if the item has subitems and is in the expanded set
-        if let item = getItem(id: itemId), item.subItems.isEmpty {
-            // If item has no subitems, remove it from expanded set if it's there
-            if expandedItemIds.contains(itemId) {
-                expandedItemIds.remove(itemId)
-            }
+        // First check if the item exists
+        guard getItem(id: itemId) != nil else {
+            // If item doesn't exist, remove from expanded set and return false
+            expandedItemIds.remove(itemId)
             return false
         }
+        
+        // Item exists and has subitems, return true if it's in the expanded set
         return expandedItemIds.contains(itemId)
     }
     
@@ -881,18 +866,14 @@ final class EasyListViewModel: ObservableObject {
             
             // Update lastModified for all items that were previously expanded
             for index in checklist.itemCollection.items.indices {
-                if !checklist.itemCollection.items[index].subItems.isEmpty {
-                    checklist.itemCollection.items[index].lastModified = Date()
-                }
+                checklist.itemCollection.items[index].lastModified = Date()
             }
         } else {
             // Expand all items that have subitems
             for index in checklist.itemCollection.items.indices {
                 let item = checklist.itemCollection.items[index]
-                if !item.subItems.isEmpty {
-                    expandedItemIds.insert(item.id)
-                    checklist.itemCollection.items[index].lastModified = Date()
-                }
+                expandedItemIds.insert(item.id)
+                checklist.itemCollection.items[index].lastModified = Date()
             }
         }
         objectWillChange.send()
@@ -906,8 +887,7 @@ final class EasyListViewModel: ObservableObject {
                 // Item doesn't exist anymore
                 return true
             }
-            // Item exists but has no subitems
-            return item.subItems.isEmpty
+            return false
         }
         
         // Remove invalid IDs from expanded set

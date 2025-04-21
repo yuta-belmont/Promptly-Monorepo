@@ -15,6 +15,7 @@ extension Models {
         let date: Date
         var itemCollection: ItemCollection
         var notes: String
+        var isEdited: Bool
         
         // Computed property to maintain backward compatibility
         var items: [ChecklistItem] {
@@ -24,7 +25,7 @@ extension Models {
         
         // Encoding/Decoding for Codable conformance
         enum CodingKeys: String, CodingKey {
-            case id, date, items, notes
+            case id, date, items, notes, isEdited
         }
         
         init(from decoder: Decoder) throws {
@@ -34,6 +35,7 @@ extension Models {
             let decodedItems = try container.decode([ChecklistItem].self, forKey: .items)
             itemCollection = ItemCollection(items: decodedItems)
             notes = try container.decode(String.self, forKey: .notes)
+            isEdited = try container.decodeIfPresent(Bool.self, forKey: .isEdited) ?? false
         }
         
         func encode(to encoder: Encoder) throws {
@@ -42,13 +44,15 @@ extension Models {
             try container.encode(date, forKey: .date)
             try container.encode(itemCollection.items, forKey: .items)
             try container.encode(notes, forKey: .notes)
+            try container.encode(isEdited, forKey: .isEdited)
         }
         
-        init(id: UUID = UUID(), date: Date = Date(), items: [ChecklistItem] = [], notes: String = "") {
+        init(id: UUID = UUID(), date: Date = Date(), items: [ChecklistItem] = [], notes: String = "", isEdited: Bool = false) {
             self.id = id
             self.date = date
             self.itemCollection = ItemCollection(items: items)
             self.notes = notes
+            self.isEdited = isEdited
         }
         
         mutating func toggleItem(_ item: ChecklistItem) {

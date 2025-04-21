@@ -181,7 +181,6 @@ private struct MainItemRow: View {
             // Expand/collapse button
             if !itemData.subItems.isEmpty {
                 ExpandCollapseButton(
-                    hasSubItems: !itemData.subItems.isEmpty,
                     areSubItemsExpanded: $itemData.areSubItemsExpanded,
                     onToggleExpanded: {
                         onToggleExpanded?()
@@ -240,32 +239,29 @@ private struct ItemTextInputArea: View {
 
 // MARK: - Expand/collapse button component
 private struct ExpandCollapseButton: View {
-    let hasSubItems: Bool
     @Binding var areSubItemsExpanded: Bool
     let onToggleExpanded: () -> Void
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
     var body: some View {
         // Only show the button if there are subitems
-        if hasSubItems {
-            Button(action: {
-                feedbackGenerator.impactOccurred()
-                // No animation here - just toggle the state
-                areSubItemsExpanded.toggle()
-                onToggleExpanded()
-            }) {
-                Image(systemName: areSubItemsExpanded ? "chevron.up" : "chevron.down")
-                    .foregroundColor(.white.opacity(0.8))
-                    .font(.system(size: 16))
-                    .padding(.horizontal, 50)
-                    .frame(maxWidth: 40, maxHeight: .infinity, alignment: .top)
-                    .padding(.top, 14)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .onAppear {
-                feedbackGenerator.prepare()
-            }
+        Button(action: {
+            feedbackGenerator.impactOccurred()
+            // No animation here - just toggle the state
+            areSubItemsExpanded.toggle()
+            onToggleExpanded()
+        }) {
+            Image(systemName: areSubItemsExpanded ? "chevron.up" : "chevron.down")
+                .foregroundColor(.white.opacity(0.8))
+                .font(.system(size: 16))
+                .padding(.horizontal, 50)
+                .frame(maxWidth: 40, maxHeight: .infinity, alignment: .top)
+                .padding(.top, 14)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onAppear {
+            feedbackGenerator.prepare()
         }
     }
 }
@@ -416,7 +412,7 @@ private struct SubItemsSection: View {
     
     var body: some View {
         Group {
-            if itemData.areSubItemsExpanded {
+            if itemData.areSubItemsExpanded && !itemData.subItems.isEmpty {
                 VStack(spacing: 0) {
                     Divider()
                         .background(Color.white.opacity(0.3))

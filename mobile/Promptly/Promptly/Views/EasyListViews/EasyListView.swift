@@ -278,7 +278,6 @@ struct EasyListHeader: View {
                 
                 if isEditing {
                     Button(action: {
-                        // Add haptic feedback before calling onDone
                         onDone()
                     }) {
                         Text("Done")
@@ -315,6 +314,7 @@ struct NewItemRow: View {
     @Binding var text: String
     let isFocused: FocusState<Bool>.Binding
     let onSubmit: () -> Void
+    let onDone: () -> Void
     @Binding var isListEmpty: Bool
     
     var body: some View {
@@ -339,12 +339,12 @@ struct NewItemRow: View {
                             // Remove the newline character
                             if oldValue.count == 0 {
                                 text = newValue.replacingOccurrences(of: "\n", with: " ")
-                                
                                 // But now that we replace \n with " ", we need to make sure we're not just submitting a " " field.
                                 // An empty field that a users presses return in should just remove focus and not submit anything.
                                 if text.count <= 1 {
                                     text = ""
                                     isFocused.wrappedValue = false
+                                    onDone()
                                     return
                                 }
                             } else {
@@ -356,6 +356,7 @@ struct NewItemRow: View {
                                 onSubmit()
                             } else {
                                 isFocused.wrappedValue = false
+                                onDone()
                             }
                         }
                     }
@@ -437,6 +438,11 @@ struct ListContent: View {
                             text: $newItemText,
                             isFocused: $isNewItemFocused,
                             onSubmit: { handleNewItemSubmit(proxy: proxy) },
+                            onDone: {
+                                isEditing = false
+                                isNewItemFocused = false
+                                focusManager.isEasyListFocused = false
+                            },
                             isListEmpty: Binding(
                                 get: { viewModel.items.isEmpty },
                                 set: { _ in }
@@ -545,7 +551,6 @@ struct ListContent: View {
             },
             onItemTap: { itemId in
                 // Remove any focus first
-                print("PlannerItemView onItemTap: Setting isNewItemFocused = false")
                 isNewItemFocused = false
                 
                 // Save checklist before opening details view
@@ -893,9 +898,7 @@ struct EasyListView: View {
                 isEditing: isEditing,
                 showingNotes: viewModel.isShowingNotes,
                 onDone: {
-                    print("onDone called - clearing all focus states")
                     // Remove focus
-                    print("onDone: Setting isEditing = false, isNewItemFocused = false, isNotesFocused = false")
                     isEditing = false
                     isNewItemFocused = false
                     isNotesFocused = false

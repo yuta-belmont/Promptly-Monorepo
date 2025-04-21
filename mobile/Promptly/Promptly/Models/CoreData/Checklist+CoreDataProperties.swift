@@ -9,6 +9,7 @@ extension Checklist {
     @NSManaged public var date: Date?
     @NSManaged public var id: UUID?
     @NSManaged public var notes: String?
+    @NSManaged public var isEdited: Bool
     @NSManaged public var checklistItem: NSSet?
 }
 

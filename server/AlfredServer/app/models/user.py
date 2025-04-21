@@ -18,5 +18,8 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
+    # Add relationship to checklists
+    checklists = relationship("Checklist", back_populates="user", cascade="all, delete-orphan")
+    
     # Relationships have been removed as we've moved to a stateless architecture
     # The Chat model has been removed from the application 

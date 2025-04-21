@@ -171,8 +171,6 @@ final class GroupDetailsViewModel: ObservableObject {
                 // Ensure lastModified is updated to force an ID change in the view
                 groupItems[itemIndex].lastModified = Date()
                 
-                // Debug: Print the item after updating in ViewModel
-                
                 // Notify SwiftUI to update the view
                 objectWillChange.send()
             }

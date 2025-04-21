@@ -2,12 +2,16 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 from pydantic import BaseModel, Field
 import json
+from datetime import datetime
+from sqlalchemy.orm import Session
 
 from app.schemas.chat import OptimizedChatResponse, MessageResponse
 from app.api import deps
 from app.models.user import User
+from app.models.checklist import Checklist
 from app.services.ai_service import AIService
 from app.services.firebase_service import FirebaseService
+from app.crud.checklist import ChecklistCRUD
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -42,22 +46,23 @@ class MessageWithContextCreate(BaseModel):
 
 class SubItem(BaseModel):
     title: str
-    isCompleted: bool
+    is_completed: bool = False
 
 class ChecklistItem(BaseModel):
     title: str
-    isCompleted: bool
-    group: str
-    notification: Optional[str] = None
+    is_completed: bool = False
+    group_name: str
+    notification: Optional[datetime] = None
     subitems: Optional[List[SubItem]] = []
 
 class Checklist(BaseModel):
-    date: str
+    date: str  # YYYY-MM-DD format as natural key
+    notes: Optional[str] = None
     items: List[ChecklistItem]
 
 class CheckinRequest(BaseModel):
     checklist: Checklist
-    current_time: Optional[str] = None
+    current_time: Optional[datetime] = None
     alfred_personality: Optional[str] = None
     user_objectives: Optional[str] = None
 
@@ -135,7 +140,8 @@ async def send_checkin(
     *,
     current_user: User = Depends(deps.get_current_user),
     request_data: CheckinRequest,
-    response: Response
+    response: Response,
+    db: Session = Depends(deps.get_db)
 ):
     """
     Process a checkin request containing checklist data.
@@ -146,6 +152,13 @@ async def send_checkin(
     try:
         # Set the content type header for the optimized format
         response.headers["Content-Type"] = "application/vnd.promptly.optimized+json"
+        
+        # Store or update the checklist in the database
+        checklist = ChecklistCRUD.create_or_update_checklist(
+            db=db,
+            user_id=str(current_user.id),
+            checklist_data=request_data.checklist.dict()
+        )
         
         # Create the checkin task using the dedicated method
         task_id = firebase_service.add_checkin_task(

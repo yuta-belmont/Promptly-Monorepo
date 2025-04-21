@@ -54,14 +54,13 @@ struct ReportsView: View {
                 // List content
                 List {
                     ForEach(viewModel.reports) { report in
-                        ReportRow(report: report, viewModel: viewModel)
+                        ReportRow(report: report, 
+                                 viewModel: viewModel,
+                                 selectedReport: $selectedReport)
                             .contentShape(Rectangle())
                             .listRowBackground(Color.clear)
                             .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 0, trailing: 8))
                             .listRowSeparator(.hidden)
-                            .onTapGesture {
-                                selectedReport = report
-                            }
                     }
                     
                     // Add spacer at bottom of list for better scrolling
@@ -161,6 +160,8 @@ struct ReportDetailView: View {
                     Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 12))
                         .foregroundColor(item.isCompleted ? .green : .white.opacity(0.6))
+                        .padding(.top, 3)
+                        .frame(maxHeight: .infinity, alignment: .top)
                     let _ = print(item.title ?? "")
                     Text(item.title ?? "")
                         .font(.system(size: 12))
@@ -186,6 +187,8 @@ struct ReportDetailView: View {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 10))
                             .foregroundColor(.green.opacity(0.6))
+                            .padding(.top, 2)
+                            .frame(maxHeight: .infinity, alignment: .top)
                         
                         Text(subitem.title ?? "")
                             .font(.system(size: 10))
@@ -222,7 +225,7 @@ struct ReportDetailView: View {
             
             // Content
             ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 8) {
                     // Summary Section
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Summary")
@@ -233,10 +236,15 @@ struct ReportDetailView: View {
                             .font(.body)
                             .foregroundColor(.white)
                         
+
                         
                         // Properly fetch and display snapshot items
                         if let snapshotItems = report.snapshotItems {
                             if snapshotItems.count > 0 {
+                                
+                                Divider()
+                                    .frame(height: 2)
+                                    .background(Color.white.opacity(0.05))
                                 SnapshotItemsView(items: snapshotItems)
                             }
                         }
@@ -277,7 +285,7 @@ struct ReportDetailView: View {
                     .cornerRadius(16)
                 }
                 .padding(.horizontal, 8)
-                .padding(.vertical, 2)
+                .padding(.vertical, 8)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -289,11 +297,14 @@ struct ReportRow: View {
     let report: Report
     @ObservedObject private var viewModel: ReportsViewModel
     @State private var isGlowing: Bool = false
+    @Binding var selectedReport: Report?
+
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
-    init(report: Report, viewModel: ReportsViewModel) {
+    init(report: Report, viewModel: ReportsViewModel, selectedReport: Binding<Report?>) {
         self.report = report
         self.viewModel = viewModel
+        self._selectedReport = selectedReport
     }
     
     var body: some View {
@@ -365,10 +376,20 @@ struct ReportRow: View {
                 // Animated outline that appears with the glow
                 if isGlowing {
                     RoundedRectangle(cornerRadius: 16)
-                        .strokeBorder(.white.opacity(0.5), lineWidth: 0.5)
+                        .strokeBorder(.white.opacity(0.5), lineWidth: 1)
                 }
             }
         )
+        .onTapGesture {
+            selectedReport = report
+            // Start the glow animation
+            isGlowing = true
+            DispatchQueue.main.asyncAfter(deadline: .now()) {
+                withAnimation(.easeInOut(duration: 0.5)) {
+                    isGlowing = false
+                }
+            }
+        }
     }
 }
 

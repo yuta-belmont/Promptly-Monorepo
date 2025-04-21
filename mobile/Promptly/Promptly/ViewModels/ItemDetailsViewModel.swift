@@ -48,6 +48,8 @@ final class ItemDetailsViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private let undoManager = SubItemUndoStateManager()
     
+    var hasUnsavedChanges : Bool = false
+    
     init(item: Models.ChecklistItem) {
         self.item = item
         
@@ -101,14 +103,17 @@ final class ItemDetailsViewModel: ObservableObject {
             undoManager.clearCache()
         }
         
-        // Save to persistence
-        saveItem()
+        // We know to save to persistence. We dont actually have to save here since we're saving for update title
+        hasUnsavedChanges = true
     }
     
     // Public method to save changes when view disappears
     func saveChanges()
     {
-        saveItem()
+        if hasUnsavedChanges {
+            saveItem()
+        }
+        hasUnsavedChanges = false
     }
     
     
@@ -197,7 +202,8 @@ final class ItemDetailsViewModel: ObservableObject {
         }
         
         // Save changes to persistence
-        saveItem()
+        hasUnsavedChanges = true
+        saveChanges()
     }
     
     // Update group for the item
@@ -223,7 +229,8 @@ final class ItemDetailsViewModel: ObservableObject {
         item = mutableItem
         
         // Save changes to persistence
-        saveItem()
+        hasUnsavedChanges = true
+        saveChanges()
         
         // Post notification that group was updated
         NotificationCenter.default.post(
@@ -260,7 +267,8 @@ final class ItemDetailsViewModel: ObservableObject {
         undoManager.clearCache()
         
         // Save changes to persistence
-        saveItem()
+        hasUnsavedChanges = true
+        saveChanges()
     }
     
     // Toggle the completion state of a subitem
@@ -278,8 +286,7 @@ final class ItemDetailsViewModel: ObservableObject {
             // Clear undo cache before saving
             undoManager.clearCache()
             
-            // Save changes to persistence
-            saveItem()
+            hasUnsavedChanges = true
         }
     }
     
@@ -297,8 +304,7 @@ final class ItemDetailsViewModel: ObservableObject {
         // Clear undo cache before saving
         undoManager.clearCache()
         
-        // Save changes to persistence
-        saveItem()
+        hasUnsavedChanges = true
     }
     
     // Update the title of a subitem
@@ -318,8 +324,7 @@ final class ItemDetailsViewModel: ObservableObject {
             // Clear undo cache before saving
             undoManager.clearCache()
             
-            // Save changes to persistence
-            saveItem()
+            hasUnsavedChanges = true
         }
     }
     
@@ -352,8 +357,7 @@ final class ItemDetailsViewModel: ObservableObject {
         // Clear undo cache before saving
         undoManager.clearCache()
         
-        // Save changes to persistence
-        saveItem()
+        hasUnsavedChanges = true
     }
     
     // Move a subitem to the end of the list
@@ -376,8 +380,7 @@ final class ItemDetailsViewModel: ObservableObject {
         // Clear undo cache before saving
         undoManager.clearCache()
         
-        // Save changes to persistence
-        saveItem()
+        hasUnsavedChanges = true
     }
     
     // Handle standard SwiftUI List move operations
@@ -394,8 +397,7 @@ final class ItemDetailsViewModel: ObservableObject {
         // Clear undo cache before saving
         undoManager.clearCache()
         
-        // Save changes to persistence
-        saveItem()
+        hasUnsavedChanges = true
     }
     
     // Delete a subitem by ID
@@ -424,8 +426,7 @@ final class ItemDetailsViewModel: ObservableObject {
         // Update the published item
         item = mutableItem
         
-        // Save changes to persistence
-        saveItem()
+        hasUnsavedChanges = true
     }
     
     // Delete all subitems
@@ -449,8 +450,7 @@ final class ItemDetailsViewModel: ObservableObject {
         // Update the published item
         item = mutableItem
         
-        // Save changes to persistence
-        saveItem()
+        hasUnsavedChanges = true
     }
     
     // Delete completed subitems
@@ -474,8 +474,7 @@ final class ItemDetailsViewModel: ObservableObject {
         // Update the published item
         item = mutableItem
         
-        // Save changes to persistence
-        saveItem()
+        hasUnsavedChanges = true
     }
     
     // Delete incomplete subitems
@@ -499,8 +498,7 @@ final class ItemDetailsViewModel: ObservableObject {
         // Update the published item
         item = mutableItem
         
-        // Save changes to persistence
-        saveItem()
+        hasUnsavedChanges = true
     }
     
     // Undo the last deletion operation
@@ -521,8 +519,7 @@ final class ItemDetailsViewModel: ObservableObject {
             // Update the published item
             item = mutableItem
             
-            // Save changes
-            saveItem()
+            hasUnsavedChanges = true
         }
     }
     

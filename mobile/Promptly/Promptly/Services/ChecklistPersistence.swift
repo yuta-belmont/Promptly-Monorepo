@@ -41,6 +41,7 @@ final class ChecklistPersistence {
     }
     
     func saveChecklist(_ checklist: Models.Checklist) {
+                
         let context = persistenceController.container.viewContext
         
         // Check if a checklist already exists for this date
@@ -66,6 +67,9 @@ final class ChecklistPersistence {
                 // Create new checklist
                 coreDataChecklist = Checklist.create(from: checklist, context: context)
             }
+            
+            // Always set isEdited to true when saving
+            coreDataChecklist.isEdited = true
             
             // Handle items
             updateChecklistItems(coreDataChecklist, with: checklist.items, in: context)
