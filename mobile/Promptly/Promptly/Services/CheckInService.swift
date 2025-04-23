@@ -22,38 +22,59 @@ final class CheckInService {
         return checklistPersistence.loadChecklist(for: date) ?? Models.Checklist(date: date)
     }
     
-    /// Converts a checklist to a dictionary format for check-in
-    /// - Parameter checklist: The checklist to convert
-    /// - Returns: A dictionary representation of the checklist matching server format
-    func getChecklistDictionaryForCheckin(_ checklist: Models.Checklist) -> [String: Any] {
-        // Create the checklist dictionary with fields at top level
-        let checklistDict: [String: Any] = [
-            "date": formatDateToYYYYMMDD(checklist.date),
-            "notes": checklist.notes,
-            "items": checklist.items.map { item in
-                var itemDict: [String: Any] = [
-                    "title": item.title,
-                    "is_completed": item.isCompleted,
-                    "group_name": item.group?.title ?? "Uncategorized"
-                ]
-                
-                // Add notification if exists
-                if let notification = item.notification {
-                    itemDict["notification"] = notification.ISO8601Format()
+    /// Gets edited checklists from the last 30 days before the given checklist's date
+    /// - Parameter referenceDate: The date to count back 30 days from
+    /// - Returns: Array of checklists that have been edited
+    @MainActor private func getEditedChecklists(referenceDate: Date) -> [Models.Checklist] {
+        var editedChecklists: [Models.Checklist] = []
+        let calendar = Calendar.current
+        
+        // Check last 30 days, including the reference date
+        for dayOffset in 0...30 {
+            if let date = calendar.date(byAdding: .day, value: -dayOffset, to: referenceDate) {
+                if let checklist = checklistPersistence.loadChecklist(for: date), checklist.isEdited {
+                    editedChecklists.append(checklist)
                 }
-                
-                // Add subitems if they exist
-                itemDict["subitems"] = item.subItems.map { subItem in
-                    [
-                        "title": subItem.title,
-                        "is_completed": subItem.isCompleted
-                    ] as [String: Any]
-                }
-                
-                return itemDict
             }
-        ]
-        return checklistDict
+        }
+        
+        return editedChecklists
+    }
+    
+    /// Converts multiple checklists to a dictionary format for check-in
+    /// - Parameter checklists: Array of checklists to convert
+    /// - Returns: Dictionary containing all checklist data
+    private func getChecklistsDictionaryForCheckin(_ checklists: [Models.Checklist]) -> [String: Any] {
+        let checklistsDict: [[String: Any]] = checklists.map { checklist in
+            [
+                "date": formatDateToYYYYMMDD(checklist.date),
+                "notes": checklist.notes,
+                "items": checklist.items.map { item in
+                    var itemDict: [String: Any] = [
+                        "title": item.title,
+                        "is_completed": item.isCompleted,
+                        "group_name": item.group?.title ?? "Uncategorized"
+                    ]
+                    
+                    // Add notification if exists
+                    if let notification = item.notification {
+                        itemDict["notification"] = notification.ISO8601Format()
+                    }
+                    
+                    // Add subitems if they exist
+                    itemDict["subitems"] = item.subItems.map { subItem in
+                        [
+                            "title": subItem.title,
+                            "is_completed": subItem.isCompleted
+                        ] as [String: Any]
+                    }
+                    
+                    return itemDict
+                }
+            ] as [String: Any]
+        }
+        
+        return ["checklists": checklistsDict]
     }
     
     /// Formats a date to YYYY-MM-DD string
@@ -91,6 +112,9 @@ final class CheckInService {
         report.id = UUID()
         report.date = date
         report.summary = summaryText
+        
+        // Populate analytics fields
+        analytics.populateReportAnalytics(report: report, forDate: date)
         
         // Create snapshot items for completed items and their subitems
         var snapshotItems: [SnapshotItem] = []
@@ -132,31 +156,41 @@ final class CheckInService {
     
     /// Performs server check-in and updates the report with server response
     /// - Parameters:
-    ///   - checklist: The checklist to check in
+    ///   - checklist: The current checklist to check in
     ///   - report: The report to update with server response
     @MainActor func performServerCheckIn(checklist: Models.Checklist, report: Report) async {
-        // Calculate and display analytics first
-        let stats = analytics.calculateStats()
-        
         do {
-            // Get the checklist dictionary using our local method
-            let dictChecklist = getChecklistDictionaryForCheckin(checklist)
+            // Get all edited checklists from the last 30 days, using the checklist's date as reference
+            let editedChecklists = getEditedChecklists(referenceDate: checklist.date)
             
-            print("📤 DEBUG - Dictionary being sent to ChatService.handleCheckin:")
-            if let jsonData = try? JSONSerialization.data(withJSONObject: dictChecklist, options: .prettyPrinted),
-               let jsonStr = String(data: jsonData, encoding: .utf8) {
-                print(jsonStr)
+            // Debug print the dates
+            print("📅 Sending checklists for dates:")
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateStyle = .medium
+            editedChecklists.forEach { checklist in
+                print("  • \(dateFormatter.string(from: checklist.date))")
             }
             
+            // Create dictionary with all checklists
+            let dictChecklists = getChecklistsDictionaryForCheckin(editedChecklists)
+            
             // Try to send the check-in to the server and get the response
-            let (summary, analysis, response) = try await chatService.handleCheckin(checklist: dictChecklist)
+            let (summary, analysis, response) = try await chatService.handleCheckin(checklist: dictChecklists)
             
             // Update the report with the server response
             report.summary = summary
             report.analysis = analysis
             report.response = response
             
-            // Save the updated report
+            // Mark all sent checklists as not edited since they've been processed
+            for editedChecklist in editedChecklists {
+                if let coreDataChecklist = try? persistence.container.viewContext.fetch(Checklist.fetchRequest())
+                    .first(where: { $0.date == editedChecklist.date }) {
+                    coreDataChecklist.isEdited = false
+                }
+            }
+            
+            // Save all changes to Core Data
             try persistence.container.viewContext.save()
             
             // Send the response to the chat
@@ -166,15 +200,8 @@ final class CheckInService {
         } catch {
             // Fall back to offline processing
             print("🔄 Falling back to offline check-in")
-            report.analysis = stats.formattedString
             
-            do {
-                try persistence.container.viewContext.save()
-            } catch {
-                print("Error saving report after offline fallback: \(error)")
-            }
-            
-            ChatViewModel.shared.handleMessage("I generated a report for you.")
+            ChatViewModel.shared.handleMessage("I generated an offline report for you.")
         }
     }
 
@@ -189,18 +216,6 @@ final class CheckInService {
         // Only do server check-in if chat is enabled
         if UserSettings.shared.isChatEnabled {
             await performServerCheckIn(checklist: checklist, report: report)
-        } else {
-            
-            let stats = analytics.calculateStats()
-            report.analysis = stats.formattedString
-            
-            do {
-                try persistence.container.viewContext.save()
-            } catch {
-                print("Error saving report after offline fallback: \(error)")
-            }
-            // For non-chat users, just show the basic completion message
-            ChatViewModel.shared.handleMessage("I generated a report for you.")
         }
     }
 } 

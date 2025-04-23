@@ -2,9 +2,11 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
 import os
 import logging
+import json
 
 from app.api import auth, users, chat
 from app.core.config import settings
@@ -31,17 +33,40 @@ else:
 app = FastAPI(
     title="Alfred - Your Personal Life Assistant",
     description="Backend API for Alfred mobile app AI communication",
-    version="0.1.0"
+    version="0.1.0",
+    openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
 
-# CORS middleware setup
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Update with specific origins in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    print("🚨 Validation Error Details:")
+    body = await request.body()
+    print(f"Raw request body: {body.decode()}")
+    print("Validation errors:")
+    for error in exc.errors():
+        print(f"  Location: {' -> '.join(str(loc) for loc in error['loc'])}")
+        print(f"  Message: {error['msg']}")
+        print(f"  Error Type: {error['type']}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": [
+            {
+                "loc": error["loc"],
+                "msg": error["msg"],
+                "type": error["type"]
+            } for error in exc.errors()
+        ]}
+    )
+
+# Set all CORS enabled origins
+if settings.BACKEND_CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

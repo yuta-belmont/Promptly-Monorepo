@@ -136,7 +136,95 @@ struct ReportDetailView: View {
         return formatter.string(from: report.date ?? Date())
     }
     
-    // Add a subview for snapshot items
+    private struct AnalyticsDetailView: View {
+        let report: Report
+        
+        private struct StatRow: View {
+            let title: String
+            let day: String
+            let week: String
+            let month: String
+            
+            var body: some View {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.8))
+                    
+                    HStack(spacing: 24) {
+                        StatColumn(title: "30-Day Avg", value: month)
+                        StatColumn(title: "7-Day Avg", value: week)
+                        StatColumn(title: "Today", value: day)
+                    }
+                    .padding(.leading, 8)
+                }
+            }
+        }
+        
+        private struct StatColumn: View {
+            let title: String
+            let value: String
+            
+            var body: some View {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 10))
+                        .foregroundColor(.gray)
+                    Text(value)
+                        .font(.system(size: 12))
+                        .foregroundColor(.white)
+                }
+            }
+        }
+        
+        var body: some View {
+            VStack(alignment: .leading, spacing: 16) {
+                // Item Statistics
+                Text("Item Statistics")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white.opacity(0.9))
+                
+                StatRow(
+                    title: "Item Count",
+                    day: report.itemCountDay ?? "0",
+                    week: report.itemCountWeek ?? "0",
+                    month: report.itemCountMonth ?? "0"
+                )
+                
+                StatRow(
+                    title: "Item Completion Rate",
+                    day: report.itemCompletionDay ?? "0%",
+                    week: report.itemCompletionWeek ?? "0%",
+                    month: report.itemCompletionMonth ?? "0%"
+                )
+                
+                Divider()
+                    .background(Color.white.opacity(0.05))
+                
+                // Subitem Statistics
+                Text("Subitem Statistics")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white.opacity(0.9))
+                
+                StatRow(
+                    title: "Subitem Count",
+                    day: report.subitemCountDay ?? "0",
+                    week: report.subitemCountWeek ?? "0",
+                    month: report.subitemCountMonth ?? "0"
+                )
+                
+                StatRow(
+                    title: "Subitem Completion Rate",
+                    day: report.subitemCompletionDay ?? "0%",
+                    week: report.subitemCompletionWeek ?? "0%",
+                    month: report.subitemCompletionMonth ?? "0%"
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+    
+    // Add back the snapshot-related views
     private struct SnapshotItemsView: View {
         let items: NSSet
         
@@ -150,7 +238,6 @@ struct ReportDetailView: View {
         }
     }
     
-    // Add a subview for individual snapshot items
     private struct SnapshotItemView: View {
         let item: SnapshotItem
         
@@ -176,7 +263,6 @@ struct ReportDetailView: View {
         }
     }
     
-    // Add a subview for subitems
     private struct SnapshotSubItemsView: View {
         let subitems: NSSet
         
@@ -236,14 +322,9 @@ struct ReportDetailView: View {
                             .font(.body)
                             .foregroundColor(.white)
                         
-
-                        
-                        // Properly fetch and display snapshot items
                         if let snapshotItems = report.snapshotItems {
                             if snapshotItems.count > 0 {
-                                
                                 Divider()
-                                    .frame(height: 2)
                                     .background(Color.white.opacity(0.05))
                                 SnapshotItemsView(items: snapshotItems)
                             }
@@ -253,6 +334,10 @@ struct ReportDetailView: View {
                     .padding()
                     .background(Color.black.opacity(0.3))
                     .cornerRadius(16)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
+                    )
                     
                     // Analysis Section
                     VStack(alignment: .leading, spacing: 8) {
@@ -263,11 +348,24 @@ struct ReportDetailView: View {
                         Text(report.analysis ?? "")
                             .font(.body)
                             .foregroundColor(.white)
+                        
+                        if let analysis = report.analysis, !analysis.isEmpty {
+                            Divider()
+                                .background(Color.white.opacity(0.05))
+                            
+                        }
+                        
+                        AnalyticsDetailView(report: report)
+
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                     .background(Color.black.opacity(0.3))
                     .cornerRadius(16)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
+                    )
                     
                     // Response Section
                     VStack(alignment: .leading, spacing: 8) {
@@ -283,6 +381,10 @@ struct ReportDetailView: View {
                     .padding()
                     .background(Color.black.opacity(0.3))
                     .cornerRadius(16)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
+                    )
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 8)

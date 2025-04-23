@@ -1109,12 +1109,25 @@ final class ChatService {
     // Add this method before the setupMessageTaskListener method
     func sendCheckin(checklist: [String: Any]) async throws -> String {
         // Prepare the request data
-        let requestData: [String: Any] = [
-            "checklist": checklist,
-            "current_time": Date().ISO8601Format(),
-            "alfred_personality": String(UserSettings.shared.alfredPersonality),
-            "user_objectives": UserSettings.shared.objectives
-        ]
+        let requestData: [String: Any]
+        
+        // If the checklist contains a "checklists" key, it's already an array of checklists
+        if let nestedChecklists = checklist["checklists"] as? [[String: Any]] {
+            requestData = [
+                "checklists": nestedChecklists,  // Use the array directly
+                "current_time": Date().ISO8601Format(),
+                "alfred_personality": String(UserSettings.shared.alfredPersonality),
+                "user_objectives": UserSettings.shared.objectives
+            ]
+        } else {
+            // If it's a single checklist, wrap it in an array
+            requestData = [
+                "checklists": [checklist],
+                "current_time": Date().ISO8601Format(),
+                "alfred_personality": String(UserSettings.shared.alfredPersonality),
+                "user_objectives": UserSettings.shared.objectives
+            ]
+        }
         
         // Convert request data to JSON
         guard let jsonData = try? JSONSerialization.data(withJSONObject: requestData) else {

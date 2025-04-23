@@ -61,7 +61,7 @@ class Checklist(BaseModel):
     items: List[ChecklistItem]
 
 class CheckinRequest(BaseModel):
-    checklist: Checklist
+    checklists: List[Checklist]  # Changed from single checklist to list
     current_time: Optional[datetime] = None
     alfred_personality: Optional[str] = None
     user_objectives: Optional[str] = None
@@ -144,27 +144,65 @@ async def send_checkin(
     db: Session = Depends(deps.get_db)
 ):
     """
-    Process a checkin request containing checklist data.
-    
-    This endpoint creates a Firebase task for processing checklist data
-    and returns a task ID for the client to listen to.
+    Process a checkin request containing multiple checklists.
+    Stores all checklists in the database and processes the most recent one for analysis.
     """
     try:
-        # Set the content type header for the optimized format
-        response.headers["Content-Type"] = "application/vnd.promptly.optimized+json"
+        # Debug: Print raw request data
+        print(f"🔍 DEBUG: Raw request data received: {request_data}")
         
-        # Store or update the checklist in the database
-        checklist = ChecklistCRUD.create_or_update_checklist(
-            db=db,
-            user_id=str(current_user.id),
-            checklist_data=request_data.checklist.dict()
-        )
+        # Debug: Print checklists structure
+        print(f"📋 DEBUG: Number of checklists received: {len(request_data.checklists)}")
         
-        # Create the checkin task using the dedicated method
+        stored_dates = []
+        
+        # Only process checklists if we have any
+        if request_data.checklists:
+            for i, checklist in enumerate(request_data.checklists):
+                print(f"  Checklist {i+1}:")
+                print(f"    Date: {checklist.date}")
+                print(f"    Notes: {checklist.notes}")
+                print(f"    Number of items: {len(checklist.items)}")
+                for j, item in enumerate(checklist.items):
+                    print(f"      Item {j+1}:")
+                    print(f"        Title: {item.title}")
+                    print(f"        Group: {item.group_name}")
+                    print(f"        Completed: {item.is_completed}")
+                    print(f"        Notification: {item.notification}")
+                    if item.subitems:
+                        print(f"        Number of subitems: {len(item.subitems)}")
+            
+            # Store all checklists in the database
+            for checklist in request_data.checklists:
+                try:
+                    print(f"💾 DEBUG: Attempting to store checklist for date {checklist.date}")
+                    ChecklistCRUD.create_or_update_checklist(
+                        db=db,
+                        user_id=str(current_user.id),
+                        checklist_data=checklist.dict()
+                    )
+                    stored_dates.append(checklist.date)
+                    print(f"✅ DEBUG: Successfully stored checklist for date {checklist.date}")
+                except Exception as e:
+                    print(f"❌ DEBUG: Error storing checklist for date {checklist.date}: {str(e)}")
+                    print(f"   Error type: {type(e)}")
+                    print(f"   Error details: {e.__dict__ if hasattr(e, '__dict__') else 'No additional details'}")
+                    continue
+            
+            print(f"✅ Successfully stored checklists for dates: {', '.join(stored_dates)}")
+            
+            # Use the most recent checklist for analysis if we have any
+            most_recent_checklist = sorted(request_data.checklists, key=lambda x: x.date)[-1]
+        else:
+            print("ℹ️ No checklists received - creating task with empty checklist")
+            # Create an empty checklist for the task
+            most_recent_checklist = None
+        
+        # Create the checkin task
         task_id = firebase_service.add_checkin_task(
             user_id=str(current_user.id),
             user_full_name=current_user.full_name,
-            checklist_data=request_data.checklist.dict(),
+            checklist_data=most_recent_checklist.dict() if most_recent_checklist else {},
             client_time=request_data.current_time,
             alfred_personality=request_data.alfred_personality,
             user_objectives=request_data.user_objectives
@@ -181,7 +219,8 @@ async def send_checkin(
             metadata={
                 "status": "pending",
                 "message_id": task_id,
-                "task_type": "checkin_task"
+                "task_type": "checkin_task",
+                "stored_dates": stored_dates  # Add info about which dates were stored
             }
         )
         

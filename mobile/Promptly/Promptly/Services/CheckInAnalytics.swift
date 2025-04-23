@@ -101,6 +101,35 @@ final class CheckInAnalytics {
         )
     }
     
+    /// Populates a Report's analytics fields with current statistics
+    /// - Parameters:
+    ///   - report: The report to populate
+    ///   - date: The date to calculate statistics for (defaults to the report's date)
+    @MainActor func populateReportAnalytics(report: Report, forDate date: Date? = nil) {
+        let statsDate = date ?? report.date ?? Date()
+        let stats = calculateStats(forDate: statsDate)
+        
+        // Format item counts
+        report.itemCountDay = String(stats.itemVolume.today)
+        report.itemCountWeek = String(format: "%.1f", stats.itemVolume.sevenDayAvg)
+        report.itemCountMonth = String(format: "%.1f", stats.itemVolume.thirtyDayAvg)
+        
+        // Format item completion rates (as percentages)
+        report.itemCompletionDay = String(format: "%.0f%%", stats.itemCompletionRates.today * 100)
+        report.itemCompletionWeek = String(format: "%.0f%%", stats.itemCompletionRates.sevenDayAvg * 100)
+        report.itemCompletionMonth = String(format: "%.0f%%", stats.itemCompletionRates.thirtyDayAvg * 100)
+        
+        // Format subitem counts
+        report.subitemCountDay = String(stats.subitemVolume.today)
+        report.subitemCountWeek = String(format: "%.1f", stats.subitemVolume.sevenDayAvg)
+        report.subitemCountMonth = String(format: "%.1f", stats.subitemVolume.thirtyDayAvg)
+        
+        // Format subitem completion rates (as percentages)
+        report.subitemCompletionDay = String(format: "%.0f%%", stats.subitemCompletionRates.today * 100)
+        report.subitemCompletionWeek = String(format: "%.0f%%", stats.subitemCompletionRates.sevenDayAvg * 100)
+        report.subitemCompletionMonth = String(format: "%.0f%%", stats.subitemCompletionRates.thirtyDayAvg * 100)
+    }
+    
     // MARK: - Private Calculation Methods
     
     /// Calculates the average of a volume metric over a specified number of days, including days with no checklists as zero

@@ -47,7 +47,19 @@
         <attribute name="analysis" attributeType="String" defaultValueString=""/>
         <attribute name="date" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="id" attributeType="UUID" usesScalarValueType="YES"/>
+        <attribute name="itemCompletionDay" optional="YES" attributeType="String"/>
+        <attribute name="itemCompletionMonth" optional="YES" attributeType="String"/>
+        <attribute name="itemCompletionWeek" optional="YES" attributeType="String"/>
+        <attribute name="itemCountDay" optional="YES" attributeType="String"/>
+        <attribute name="itemCountMonth" optional="YES" attributeType="String"/>
+        <attribute name="itemCountWeek" optional="YES" attributeType="String"/>
         <attribute name="response" attributeType="String" defaultValueString=""/>
+        <attribute name="subitemCompletionDay" optional="YES" attributeType="String"/>
+        <attribute name="subitemCompletionMonth" optional="YES" attributeType="String"/>
+        <attribute name="subitemCompletionWeek" optional="YES" attributeType="String"/>
+        <attribute name="subitemCountDay" optional="YES" attributeType="String"/>
+        <attribute name="subitemCountMonth" optional="YES" attributeType="String"/>
+        <attribute name="subitemCountWeek" optional="YES" attributeType="String"/>
         <attribute name="summary" attributeType="String" defaultValueString=""/>
         <relationship name="snapshotItems" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="SnapshotItem"/>
     </entity>
