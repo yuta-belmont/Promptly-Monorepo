@@ -1,9 +1,18 @@
-from sqlalchemy import Boolean, Column, String, DateTime
+from sqlalchemy import Boolean, Column, String, DateTime, Enum
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 import uuid
+import enum
+from datetime import datetime, timedelta
 
 from app.db.base_class import Base
+
+
+class PlanType(enum.Enum):
+    free = "free"
+    plus = "plus"
+    pro = "pro"
+    credit = "credit"
 
 
 class User(Base):
@@ -17,6 +26,11 @@ class User(Base):
     is_superuser = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # New fields
+    plan = Column(Enum(PlanType), default=PlanType.free, nullable=False)
+    is_admin = Column(Boolean, default=False, nullable=False)
+    plan_expiry = Column(DateTime(timezone=True), nullable=True)
     
     # Add relationship to checklists
     checklists = relationship("Checklist", back_populates="user", cascade="all, delete-orphan")

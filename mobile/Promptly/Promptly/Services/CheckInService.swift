@@ -97,14 +97,27 @@ final class CheckInService {
         let completedItems = checklist.items.filter { $0.isCompleted }.count
         let completionPercentage = totalItems > 0 ? Int((Double(completedItems) / Double(totalItems)) * 100) : 0
         
+        // Count total and completed subitems
+        let allSubitems = checklist.items.flatMap { $0.subItems }
+        let totalSubitems = allSubitems.count
+        let completedSubitems = allSubitems.filter { $0.isCompleted }.count
+        let subitemCompletionPercentage = totalSubitems > 0 ? Int((Double(completedSubitems) / Double(totalSubitems)) * 100) : 0
+        
         // Generate summary text
         let summaryText: String
         if totalItems == 0 {
             summaryText = "No items in checklist."
-        } else if completedItems == totalItems {
+        } else if completedItems == totalItems && (totalSubitems == 0 || completedSubitems == totalSubitems) {
             summaryText = "All items completed."
         } else {
-            summaryText = "\(completedItems)/\(totalItems) items completed (\(completionPercentage)%)."
+            var summary = "\(completedItems)/\(totalItems) items completed (\(completionPercentage)%)."
+            
+            // Add subitem information if there are any subitems
+            if totalSubitems > 0 {
+                summary += "\n\(completedSubitems)/\(totalSubitems) subitems completed (\(subitemCompletionPercentage)%)."
+            }
+            
+            summaryText = summary
         }
         
         // Create report
@@ -195,13 +208,14 @@ final class CheckInService {
             
             // Send the response to the chat
             ChatViewModel.shared.handleMessage(response)
+            ChatViewModel.shared.handleMessage(getReportMessage(isOffline: false), isReportMessage: true)
             
             print("✅ Server check-in successful")
         } catch {
             // Fall back to offline processing
             print("🔄 Falling back to offline check-in")
             
-            ChatViewModel.shared.handleMessage("I generated an offline report for you.")
+            ChatViewModel.shared.handleMessage(getReportMessage(isOffline: true), isReportMessage: true)
         }
     }
 
@@ -218,4 +232,24 @@ final class CheckInService {
             await performServerCheckIn(checklist: checklist, report: report)
         }
     }
-} 
+    
+    
+    private func getReportMessage(isOffline: Bool = false) -> String {
+        let offlineMessages = [
+            "I've created an offline report here",
+            "Your offline report is ready",
+            "I've prepared an offline report for you",
+            "Here's your offline report"
+        ]
+        
+        let onlineMessages = [
+            "I've created a report for you",
+            "Your report is ready",
+            "I generated a report here",
+            "Here's your report"
+        ]
+        
+        let messages = isOffline ? offlineMessages : onlineMessages
+        return messages.randomElement() ?? "Your report is ready. Tap to view"
+    }
+}

@@ -52,11 +52,32 @@ struct ChatInputFieldView: View {
             
             Button(action: {
                 if shouldShowMic || viewModel.isRecording {
-                    viewModel.toggleRecording(directUpdateHandler: { transcription in
-                        userInput = transcription
-                    })
+                    if viewModel.isRecording {
+                        // Stopping recording - the transcription will be finalized by the service
+                        viewModel.toggleRecording(directUpdateHandler: { transcription in
+                            // This will continue to receive updates until finalization is complete
+                            userInput = transcription
+                        })
+                        
+                        // Don't automatically send - let user verify the transcription first
+                        // This provides better user experience by allowing them to see the final result
+                    } else {
+                        // Starting recording - normal behavior
+                        viewModel.toggleRecording(directUpdateHandler: { transcription in
+                            userInput = transcription
+                        })
+                    }
                 } else if hasText {
+                    // Normal text sending
+                    let textToSend = userInput
                     onSend()
+                    
+                    // Safety check to ensure the text field is cleared
+                    DispatchQueue.main.async {
+                        if userInput == textToSend {
+                            userInput = ""
+                        }
+                    }
                 }
             }) {
                 Image(systemName: buttonImageName)

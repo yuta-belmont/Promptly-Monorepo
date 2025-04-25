@@ -73,9 +73,9 @@ class ChatPersistenceService {
     // MARK: - Messages Cleanup
     
     /// Deletes all chat messages older than 48 hours
-    func deleteMessagesOlderThan48Hours() {
-        // Calculate the cutoff date (48 hours ago)
-        let cutoffDate = Calendar.current.date(byAdding: .hour, value: -48, to: Date())!
+    func deleteMessagesOlderThan72Hours() {
+        // Calculate the cutoff date (72 hours ago)
+        let cutoffDate = Calendar.current.date(byAdding: .hour, value: -72, to: Date())!
         
         // Create a background context for this operation to avoid blocking the main thread
         let context = backgroundContext()

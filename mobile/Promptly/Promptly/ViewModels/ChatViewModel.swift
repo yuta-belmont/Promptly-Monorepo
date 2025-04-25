@@ -38,6 +38,16 @@ final class ChatViewModel: ObservableObject {
     // Constants for loading state management
     private let loadingTimeout: TimeInterval = 30 // 30 seconds timeout
     
+    // Debounce settings
+    private var debounceTimer: Timer?
+    private var pendingMessageId: UUID?
+    private var pendingMessageText: String?
+    private var isInCooldown = false
+    private var currentCooldownDuration: TimeInterval = 0
+    private let initialCooldownDuration: TimeInterval = 2.0
+    private let cooldownIncrementDuration: TimeInterval = 3.0
+    private let maxCooldownDuration: TimeInterval = 6.0
+    
     // Helper to get the current unread count
     var unreadCount: Int {
         return unreadCounts["main"] ?? 0
@@ -119,6 +129,10 @@ final class ChatViewModel: ObservableObject {
     deinit {
         // Remove notification observer when view model is deallocated
         NotificationCenter.default.removeObserver(self)
+        
+        // Clean up debounce timer
+        debounceTimer?.invalidate()
+        debounceTimer = nil
     }
     
     // Set up notification observer to handle chat updates from other sources
@@ -303,7 +317,7 @@ final class ChatViewModel: ObservableObject {
         }
     }
     
-    // Update the sendMessageWithText method to use the mobile-centric approach
+    // Update the sendMessageWithText method to implement proper debouncing
     func sendMessageWithText(_ text: String, withId id: UUID? = nil) {
         // Check if user is authenticated and not a guest
         guard authManager.isAuthenticated && !authManager.isGuestUser else {
@@ -322,11 +336,71 @@ final class ChatViewModel: ObservableObject {
             content: text
         )
         
-        // Add user message through central point
+        // Add user message through central point (always show in UI immediately)
         Task {
             await addMessageAndNotify(userMsg)
         }
         
+        // If we're in cooldown, store this message and extend the timer
+        if isInCooldown {
+            // Cancel existing timer
+            debounceTimer?.invalidate()
+            
+            // Store this message (replaces any existing pending message)
+            pendingMessageId = messageId
+            pendingMessageText = text
+            
+            // Extend cooldown by the increment duration (up to max)
+            currentCooldownDuration = min(currentCooldownDuration + cooldownIncrementDuration, maxCooldownDuration)
+            
+            // Start a new timer
+            debounceTimer = Timer.scheduledTimer(withTimeInterval: currentCooldownDuration, 
+                                               repeats: false) { [weak self] _ in
+                self?.cooldownExpired()
+            }
+            
+            print("Message queued during cooldown. New cooldown duration: \(currentCooldownDuration)s")
+        } else {
+            // Not in cooldown, process immediately
+            processMessage(messageId: messageId)
+            
+            // Start cooldown period
+            startCooldown()
+        }
+    }
+    
+    private func startCooldown() {
+        isInCooldown = true
+        currentCooldownDuration = initialCooldownDuration
+        
+        debounceTimer = Timer.scheduledTimer(withTimeInterval: currentCooldownDuration,
+                                           repeats: false) { [weak self] _ in
+            self?.cooldownExpired()
+        }
+        
+        print("Cooldown started: \(currentCooldownDuration)s")
+    }
+    
+    private func cooldownExpired() {
+        print("Cooldown expired")
+        isInCooldown = false
+        
+        // If we have a pending message, process it and start a new cooldown
+        if let messageId = pendingMessageId, let _ = pendingMessageText {
+            print("Processing queued message")
+            processMessage(messageId: messageId)
+            
+            // Clear pending message
+            pendingMessageId = nil
+            pendingMessageText = nil
+            
+            // Start a new cooldown
+            startCooldown()
+        }
+        // Otherwise, we're done with the cooldown
+    }
+    
+    private func processMessage(messageId: UUID) {
         // Store the pending response
         pendingResponses[messageId] = true
         
@@ -527,14 +601,15 @@ final class ChatViewModel: ObservableObject {
     
     // Method to handle messages from ChatService
     @MainActor
-    func handleMessage(_ message: String) {
+    func handleMessage(_ message: String, isReportMessage : Bool = false) {
         print("🔍 DEBUG: handleMessage called with: \(message.prefix(20))...")
         
         // Create a new message entity using the proper ChatMessage.create method
         let chatMessage = ChatMessage.create(
             in: context,
             role: MessageRoles.assistant,
-            content: message
+            content: message,
+            isReportMessage: isReportMessage
         )
         
         Task {
@@ -573,33 +648,5 @@ final class ChatViewModel: ObservableObject {
         
         // Clear unread counts
         self.clearUnreadCount()
-    }
-    
-    // Add method for minimalist check-in response
-    @MainActor
-    public func handleOfflineCheckIn(checklist: Models.Checklist) async {
-        // Count total and completed items
-        let totalItems = checklist.items.count
-        let completedItems = checklist.items.filter { $0.isCompleted }.count
-        let completionPercentage = totalItems > 0 ? Int((Double(completedItems) / Double(totalItems)) * 100) : 0
-        
-        // Generate response text based on checklist state
-        let responseText: String
-        if totalItems == 0 {
-            responseText = "No items in checklist."
-        } else if completedItems == totalItems {
-            responseText = "All items completed."
-        } else {
-            responseText = "\(completedItems)/\(totalItems) items completed (\(completionPercentage)%)."
-        }
-        
-        // Create and add the message
-        let message = ChatMessage.create(
-            in: context,
-            role: MessageRoles.assistant,
-            content: responseText
-        )
-        
-        await addMessageAndNotify(message)
     }
 }

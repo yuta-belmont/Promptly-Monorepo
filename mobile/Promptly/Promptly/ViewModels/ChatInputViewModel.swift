@@ -80,29 +80,16 @@ class ChatInputViewModel: ObservableObject {
         guard !isStoppingRecording else { return }
         isStoppingRecording = true
         
-        // Capture the current handler for use in the task
-        let currentHandler = directUpdateHandler
-        
         // Update UI state immediately to provide feedback
         isRecording = false
         
-        // Add a 1-second delay before actually stopping the recording
-        // This gives the speech recognition system time to process the final parts of speech
-        Task {
-            do {
-                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
-                
-                // Stop the service after the delay
-                self.speechService.stopRecording()
-                
-                // The current transcription will be maintained by the parent binding
-                // We don't need to do anything additional here
-            } catch {
-                // Stop the service anyway in case of error
-                self.speechService.stopRecording()
-            }
-            
-            self.isStoppingRecording = false
+        // Stop the speech service and let it finalize the transcription
+        // The directUpdateHandler will continue to receive updates until finalization is complete
+        speechService.stopRecording()
+        
+        // Reset flag after initiating stop
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            self?.isStoppingRecording = false
         }
     }
     

@@ -103,7 +103,7 @@ final class ChatService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/vnd.promptly.optimized+json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 15
+        request.timeoutInterval = 10
         
         // Get current date and time
         let currentDate = Date()
@@ -189,7 +189,7 @@ final class ChatService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/vnd.promptly.optimized+json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 15
+        request.timeoutInterval = 10
         
         // Get current date and time
         let currentDate = Date()
@@ -295,7 +295,7 @@ final class ChatService {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 15 // 15 second timeout for request
+        request.timeoutInterval = 10 // 10 second timeout for request
         
         let body: [String: Any] = [
             "title": "Mobile Chat \(Date())"
@@ -364,7 +364,7 @@ final class ChatService {
         // If server supports content negotiation, it can return the optimized format
         request.setValue("application/vnd.promptly.optimized+json", forHTTPHeaderField: "Accept")
         
-        request.timeoutInterval = 15 // 15 second timeout for request
+        request.timeoutInterval = 10 // 10 second timeout for request
         
         // We don't need to specify sequence as the server will handle that
         let body: [String: Any] = [
@@ -1144,6 +1144,7 @@ final class ChatService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(authManager.getToken() ?? "")", forHTTPHeaderField: "Authorization")
         request.httpBody = jsonData
+        request.timeoutInterval = 10  // Add 10-second timeout
         
         // Send the request
         let (data, response) = try await URLSession.shared.data(for: request)

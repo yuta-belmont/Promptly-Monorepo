@@ -637,7 +637,7 @@ struct CalendarPickerView: View {
 // MARK: - Import Popover View
 struct ImportPopoverView: View {
     @Binding var isPresented: Bool
-    @State private var showPreviousDayOptions = false
+    @State private var showPreviousDayOptions = true
     @State private var showCalendarOptions = false
     @State private var selectedDate: Date?
     @State private var showCalendar = false
@@ -681,6 +681,29 @@ struct ImportPopoverView: View {
                     
                     Button(action: {
                         feedbackGenerator.impactOccurred()
+                        onImport(previousDay, true) // Import incomplete items only
+                        isPresented = false
+                    }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "circle")
+                                .frame(width: 24)
+                            Text("Import Incomplete")
+                                .dynamicTypeSize(.xSmall...DynamicTypeSize.xLarge)
+                            Spacer(minLength: 0)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .id("import-incomplete-previous")
+                    
+                    Divider()
+                        .background(Color.white.opacity(0.2))
+                    
+                    Button(action: {
+                        feedbackGenerator.impactOccurred()
                         onImport(previousDay, false) // Import all items
                         isPresented = false
                     }) {
@@ -699,28 +722,6 @@ struct ImportPopoverView: View {
                     .buttonStyle(.plain)
                     .id("import-all-previous")
                     
-                    Divider()
-                        .background(Color.white.opacity(0.2))
-                    
-                    Button(action: {
-                        feedbackGenerator.impactOccurred()
-                        onImport(previousDay, true) // Import incomplete items only
-                        isPresented = false
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "circle")
-                                .frame(width: 24)
-                            Text("Import Incomplete")
-                                .dynamicTypeSize(.xSmall...DynamicTypeSize.xLarge)
-                            Spacer(minLength: 0)
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .id("import-incomplete-previous")
                 }
                 .background(Color.black.opacity(0.3))
                 .cornerRadius(8)

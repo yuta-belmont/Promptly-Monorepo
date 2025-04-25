@@ -147,6 +147,7 @@ struct CheckInButton: View {
                         .font(.caption)
                         .fontWeight(.regular)
                         .foregroundColor(.white)
+                        .lineLimit(1)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
                         .background(Color.blue)
@@ -522,14 +523,14 @@ struct DayView: View, Hashable {
                                         .font(.subheadline)
                                         .foregroundColor(.white.opacity(0.8))
                                         .matchedGeometryEffect(id: "text-\(dateID)", in: animationID!, properties: .position)
-                                        .fixedSize(horizontal: true, vertical: false)
                                         .lineLimit(1)
+                                        .truncationMode(.middle)
                                 } else {
                                     Text(formattedDate)
                                         .font(.subheadline)
                                         .foregroundColor(.white.opacity(0.8))
-                                        .fixedSize(horizontal: true, vertical: false)
                                         .lineLimit(1)
+                                        .truncationMode(.tail)
                                 }
                                 
                                 Image(systemName: isDateHeaderExpanded ? "chevron.up" : "chevron.down")
@@ -567,9 +568,11 @@ struct DayView: View, Hashable {
                                     .transition(.opacity)
                                     .frame(width: 60)
                                     .multilineTextAlignment(.center)
+                                    .layoutPriority(1)
                             }
                             
                             CheckInButton(currentMinute: currentMinute, currentDate: currentDate, onCheckIn: handleCheckIn)
+                                .layoutPriority(1)
                         }
                         
                         if !isToday {
@@ -590,6 +593,7 @@ struct DayView: View, Hashable {
                                     Text("today")
                                         .font(.caption)
                                         .fontWeight(.regular)
+                                        .lineLimit(1)
                                     
                                     if !isFutureDay {
                                         Image(systemName: "arrow.right")
@@ -603,6 +607,7 @@ struct DayView: View, Hashable {
                                 .cornerRadius(6)
                                 .shadow(color: Color.black.opacity(0.2), radius: 2, x: -1, y: 1)
                             }
+                            .layoutPriority(1)
                         }
 
                         // Main Menu Button
@@ -618,6 +623,7 @@ struct DayView: View, Hashable {
                                 .padding(.leading, 4)
                                 .padding(.vertical, 4)
                         }
+                        .layoutPriority(1)
                     }
                     .zIndex(2)
                     

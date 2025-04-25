@@ -14,6 +14,9 @@ struct ChatView: View {
     @Binding var isKeyboardActive: Bool
     @Binding var isExpanded: Bool
     
+    // Add a property to handle navigation to ReportsView
+    var onNavigateToReports: (() -> Void)?
+    
     // Animation state for floating text
     @State private var animatingText: String = ""
     @State private var animatingTextOpacity: Double = 0
@@ -31,6 +34,55 @@ struct ChatView: View {
     private func RemoveAllFocus() {
         focusManager.removeAllFocus()
     }
+    
+    // Helper function to check if timestamp divider is needed
+    private func shouldShowTimestampDivider(currentMessage: ChatMessage, previousMessage: ChatMessage?) -> Bool {
+        guard let previousMessage = previousMessage else {
+            // Always show timestamp for the first message
+            return true
+        }
+        
+        let calendar = Calendar.current
+        
+        // Check if messages are on different days
+        if !calendar.isDate(currentMessage.timestamp, inSameDayAs: previousMessage.timestamp) {
+            return true
+        }
+        
+        // Check if messages are in different hours
+        let currentHour = calendar.component(.hour, from: currentMessage.timestamp)
+        let previousHour = calendar.component(.hour, from: previousMessage.timestamp)
+        
+        return currentHour != previousHour
+    }
+    
+    // Format the timestamp based on how old it is
+    private func formatTimestamp(for date: Date) -> String {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        if calendar.isDateInToday(date) {
+            // Today - show "Today" with time
+            let formatter = DateFormatter()
+            formatter.dateFormat = "h:mm a"
+            return "Today \(formatter.string(from: date))"
+        } else if calendar.isDateInYesterday(date) {
+            // Yesterday - show "Yesterday" with time
+            let formatter = DateFormatter()
+            formatter.dateFormat = "h:mm a"
+            return "Yesterday \(formatter.string(from: date))"
+        } else if calendar.dateComponents([.day], from: date, to: now).day! < 7 {
+            // Within last week - show day of week with time
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE h:mm a"
+            return formatter.string(from: date)
+        } else {
+            // Older - show date with time
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMM d, h:mm a"
+            return formatter.string(from: date)
+        }
+    }
 
     var body: some View {
         NavigationView {
@@ -40,10 +92,45 @@ struct ChatView: View {
                     // Scrollable content
                     ScrollView {
                         VStack(spacing: 0) {
-                            ForEach(viewModel.messages) { msg in
-                                ChatBubbleView(message: msg)
-                                    .id(msg.id)
-                                    .offset(y: messageOffset[msg.id] ?? 0)
+                            ForEach(Array(zip(viewModel.messages.indices, viewModel.messages)), id: \.1.id) { index, msg in
+                                // Show timestamp divider if needed
+                                if shouldShowTimestampDivider(
+                                    currentMessage: msg,
+                                    previousMessage: index > 0 ? viewModel.messages[index - 1] : nil
+                                ) {
+                                    TimestampDividerView(timestamp: formatTimestamp(for: msg.timestamp))
+                                        .id("timestamp-\(msg.id)")
+                                        .padding(.vertical, 8)
+                                }
+                                
+                                ChatBubbleView(message: msg, onReportTap: {
+                                    // When a report message is tapped, navigate to the ReportsView
+                                    // Collapse the chat if it's expanded
+                                    
+                                    // Trigger haptic feedback
+                                    let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
+                                    feedbackGenerator.prepare()
+                                    feedbackGenerator.impactOccurred()
+                                    
+                                    if isExpanded {
+                                        isExpanded = false
+                                    }
+                                    
+                                    onNavigateToReports?()
+                                    
+                                    // If we don't have the external handler, post a notification
+                                    // This will be picked up by RootView to show ReportsView
+                                    if onNavigateToReports == nil {
+                                        NotificationCenter.default.post(
+                                            name: Notification.Name("ShowReportsView"),
+                                            object: nil
+                                        )
+                                    }
+                                    
+
+                                })
+                                .id(msg.id)
+                                .offset(y: messageOffset[msg.id] ?? 0)
                             }
                             
                             if viewModel.messages.isEmpty {
@@ -82,25 +169,6 @@ struct ChatView: View {
                     .onChange(of: viewModel.messages.count) { oldValue, newValue in
                         proxy.scrollTo("bottom", anchor: .bottom)
                     }
-                    /*
-                    .onChange(of: focusManager.currentFocusedView) { oldValue, newValue in
-                        if newValue == .chat {
-                            isKeyboardActive = true
-                            // Wait for keyboard animation to complete (typically 0.25s)
-                            let animationDuration = 0.25
-                            DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration) {
-                                // Scroll to bottom after height adjustment
-                                withAnimation {
-                                    proxy.scrollTo("bottom", anchor: .bottom)
-                                }
-                            }
-                        } else if oldValue == .chat {
-                            withAnimation(.easeOut(duration: 0.25)) {
-                                isKeyboardActive = false
-                            }
-                        }
-                    }
-                     */
                     .onChange(of: viewModel.isLoading) { oldValue, newValue in
                         if newValue && !viewModel.isAnimatingSend {
                             withAnimation {
@@ -124,6 +192,15 @@ struct ChatView: View {
                         // SYNCHRONOUSLY clear the input field before any async operations
                         viewModel.userInput = ""
                         lastInputClearTime = Date()
+                        
+                        // Force UI update immediately to ensure the text field clears
+                        // This is crucial for voice input which sometimes doesn't trigger binding updates properly
+                        DispatchQueue.main.async {
+                            // Double-ensure the input is cleared - fixes voice input issue
+                            if !viewModel.userInput.isEmpty {
+                                viewModel.userInput = ""
+                            }
+                        }
                         
                         // Now send the message with the captured text
                         viewModel.sendMessageWithText(inputText, withId: messageId)
@@ -162,7 +239,9 @@ struct ChatView: View {
                         isExpanded = false
                     }) {
                         Image(systemName: "xmark")
-                            .foregroundColor(.white)
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(.white.opacity(0.8))
+                            .padding(.leading, 12)
                     }
                 }
             }
@@ -262,6 +341,23 @@ struct TypingIndicatorView: View {
             RunLoop.current.add(timer, forMode: .common)
         }
     }
+}
+
+// Timestamp divider view for showing time breaks in the chat
+struct TimestampDividerView: View {
+    let timestamp: String
+    
+    var body: some View {
+        HStack {
+            
+            Text(timestamp)
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.6))
+                .padding(.horizontal, 8)
+        }
+        .padding(.horizontal)
+    }
+
 }
 
 

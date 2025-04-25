@@ -1,6 +1,15 @@
 from typing import Optional
+from enum import Enum
+from datetime import datetime
 
 from pydantic import BaseModel, EmailStr
+
+
+class PlanType(str, Enum):
+    free = "free"
+    plus = "plus"
+    pro = "pro"
+    credit = "credit"
 
 
 # Shared properties
@@ -9,6 +18,9 @@ class UserBase(BaseModel):
     is_active: Optional[bool] = True
     is_superuser: bool = False
     full_name: Optional[str] = None
+    plan: PlanType = PlanType.free
+    is_admin: bool = False
+    plan_expiry: Optional[datetime] = None
 
 
 # Properties to receive via API on creation

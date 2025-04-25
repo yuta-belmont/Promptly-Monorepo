@@ -613,6 +613,12 @@ final class EasyListViewModel: ObservableObject {
         
         // Update the checklist by appending the new items directly to the collection
         checklist.itemCollection.items.append(contentsOf: itemsToActuallyImport)
+        
+        // Automatically expand items that are not completed
+        for item in itemsToActuallyImport where !item.isCompleted {
+            expandedItemIds.insert(item.id)
+        }
+        
         hasUnsavedChanges = true
         saveChecklist()
         reloadChecklist()

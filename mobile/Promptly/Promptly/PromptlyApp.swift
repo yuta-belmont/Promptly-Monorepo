@@ -63,8 +63,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         // Set up background fetch
         notificationManager.setupBackgroundFetch()
         
-        // Clean up old chat messages (over 48 hours)
-        ChatPersistenceService.shared.deleteMessagesOlderThan48Hours()
+        // Clean up old chat messages (over 72 hours)
+        ChatPersistenceService.shared.deleteMessagesOlderThan72Hours()
         
         return true
     }

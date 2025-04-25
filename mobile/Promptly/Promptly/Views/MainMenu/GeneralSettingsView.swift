@@ -698,7 +698,7 @@ struct ThemePreviewButton: View {
 struct CheckInInfoPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Check-ins are a way to keep you accountable.\n\nEach day you will have the opportunity to check in and analyze your progress.\n\nYou have 12 hours from the check-in time to \"check in\" for that day. ")
+            Text("Check-ins are a way to keep you accountable.\n\nEach day you will have the opportunity to check in and analyze your progress.\n\nYou have 12 hours from the check-in time to \"check in\" for that day.")
                 .font(.body)
                 .foregroundColor(.white.opacity(0.8))
                 .lineSpacing(4)

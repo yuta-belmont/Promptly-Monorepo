@@ -8,6 +8,7 @@
     <entity name="ChatMessage" representedClassName=".ChatMessage" syncable="YES">
         <attribute name="content" attributeType="String" defaultValueString=""/>
         <attribute name="id" attributeType="UUID" usesScalarValueType="YES"/>
+        <attribute name="isReportMessage" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
         <attribute name="role" attributeType="String"/>
         <attribute name="timestamp" attributeType="Date" usesScalarValueType="NO"/>
         <relationship name="chatHistory" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="ChatHistory" inverseName="chatMessages" inverseEntity="ChatHistory"/>

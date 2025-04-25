@@ -409,6 +409,50 @@ struct ReportRow: View {
         self._selectedReport = selectedReport
     }
     
+    // Extract the first sentence from either response or summary
+    private var firstSentence: String {
+        // Check if there's a response first
+        if let analysis = report.analysis, !analysis.isEmpty {
+            // Extract first sentence from response
+            let components = analysis.components(separatedBy: ". ")
+            if components.count > 0 {
+                // Return first sentence with trailing period removed
+                var sentence = components[0]
+                if sentence.hasSuffix(".") {
+                    sentence = String(sentence.dropLast())
+                }
+                return sentence
+            }
+        }
+        
+        // Fall back to summary if no response or empty response
+        guard let summary = report.summary, !summary.isEmpty else {
+            return "No summary available"
+        }
+        
+        // Process summary - split by newline first to handle multi-line summaries
+        let lines = summary.components(separatedBy: "\n")
+        let firstLine = lines[0]
+        
+        // Find the first period that's not part of a number (e.g., 3.5)
+        let components = firstLine.components(separatedBy: ". ")
+        if components.count > 0 {
+            // Return first sentence with trailing period removed
+            var sentence = components[0]
+            if sentence.hasSuffix(".") {
+                sentence = String(sentence.dropLast())
+            }
+            return sentence
+        }
+        
+        // If no period found, return the whole first line (with trailing period removed if present)
+        var result = firstLine
+        if result.hasSuffix(".") {
+            result = String(result.dropLast())
+        }
+        return result
+    }
+    
     var body: some View {
         HStack(spacing: 12) {
             HStack {
@@ -418,7 +462,7 @@ struct ReportRow: View {
                     .padding(.trailing, 4)
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(report.summary ?? "")
+                    Text(firstSentence)
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.white)
                     
