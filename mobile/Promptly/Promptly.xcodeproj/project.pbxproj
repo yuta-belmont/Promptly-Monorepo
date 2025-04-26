@@ -11,6 +11,8 @@
 		8F31EDDB2D74B9A10041A5F9 /* ChatHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F31EDDA2D74B9A10041A5F9 /* ChatHistory.swift */; };
 		8F31EDDD2D74B9B00041A5F9 /* ChatPersistenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F31EDDC2D74B9B00041A5F9 /* ChatPersistenceService.swift */; };
 		8F31EDE72D753A570041A5F9 /* LoadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F31EDE62D753A570041A5F9 /* LoadingView.swift */; };
+		8F35807F2DBC53F70002ADF5 /* NetworkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F35807E2DBC53F70002ADF5 /* NetworkManager.swift */; };
+		8F3580822DBC54C00002ADF5 /* KeychainSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 8F3580812DBC54C00002ADF5 /* KeychainSwift */; };
 		8F35F35F2D81E94B00A112F1 /* ChecklistItem+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F35F35B2D81E94B00A112F1 /* ChecklistItem+CoreDataProperties.swift */; };
 		8F35F3602D81E94B00A112F1 /* Checklist+CoreDataClass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F35F3582D81E94B00A112F1 /* Checklist+CoreDataClass.swift */; };
 		8F35F3612D81E94B00A112F1 /* Checklist+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F35F3592D81E94B00A112F1 /* Checklist+CoreDataProperties.swift */; };
@@ -87,6 +89,7 @@
 		8F31EDDA2D74B9A10041A5F9 /* ChatHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatHistory.swift; sourceTree = "<group>"; };
 		8F31EDDC2D74B9B00041A5F9 /* ChatPersistenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatPersistenceService.swift; sourceTree = "<group>"; };
 		8F31EDE62D753A570041A5F9 /* LoadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingView.swift; sourceTree = "<group>"; };
+		8F35807E2DBC53F70002ADF5 /* NetworkManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkManager.swift; sourceTree = "<group>"; };
 		8F35F3582D81E94B00A112F1 /* Checklist+CoreDataClass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Checklist+CoreDataClass.swift"; sourceTree = "<group>"; };
 		8F35F3592D81E94B00A112F1 /* Checklist+CoreDataProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Checklist+CoreDataProperties.swift"; sourceTree = "<group>"; };
 		8F35F35A2D81E94B00A112F1 /* ChecklistItem+CoreDataClass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChecklistItem+CoreDataClass.swift"; sourceTree = "<group>"; };
@@ -155,6 +158,7 @@
 				8FE0E26E2D874DDA00EE0D83 /* FirebaseFirestore in Frameworks */,
 				8FE0E2622D874CA800EE0D83 /* FirebaseCore in Frameworks */,
 				8FE0E2642D874CA800EE0D83 /* FirebaseFirestore in Frameworks */,
+				8F3580822DBC54C00002ADF5 /* KeychainSwift in Frameworks */,
 				8FE0E2662D874D2600EE0D83 /* FirebaseCore in Frameworks */,
 				8FE0E2722D888CD100EE0D83 /* FirebaseAuth in Frameworks */,
 				8FE0E25E2D874C6600EE0D83 /* FirebaseFirestore in Frameworks */,
@@ -252,6 +256,7 @@
 		8F9DFF032D70AE4B00F62D5E /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				8F35807E2DBC53F70002ADF5 /* NetworkManager.swift */,
 				8F9526762DB194E70002C956 /* CheckInService.swift */,
 				8F584F812DA61F2C00DDF73A /* CheckInAnalytics.swift */,
 				8F60905E2DA423C50048CEDD /* UserSettings.swift */,
@@ -369,6 +374,7 @@
 			mainGroup = 8F9DFEE82D6FA66900F62D5E;
 			packageReferences = (
 				8F8FE7462D8747F500355B3D /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				8F3580802DBC54C00002ADF5 /* XCRemoteSwiftPackageReference "keychain-swift" */,
 			);
 			productRefGroup = 8F9DFEF22D6FA66900F62D5E /* Products */;
 			projectDirPath = "";
@@ -425,6 +431,7 @@
 				8FC4484C2D729C8A0008E3AB /* NavigationUtil.swift in Sources */,
 				8F35F35F2D81E94B00A112F1 /* ChecklistItem+CoreDataProperties.swift in Sources */,
 				8F35F3602D81E94B00A112F1 /* Checklist+CoreDataClass.swift in Sources */,
+				8F35807F2DBC53F70002ADF5 /* NetworkManager.swift in Sources */,
 				8F35F3612D81E94B00A112F1 /* Checklist+CoreDataProperties.swift in Sources */,
 				8F35F3622D81E94B00A112F1 /* ChecklistItem+CoreDataClass.swift in Sources */,
 				8F35F3632D81E94B00A112F1 /* ItemGroup+CoreDataClass.swift in Sources */,
@@ -667,6 +674,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		8F3580802DBC54C00002ADF5 /* XCRemoteSwiftPackageReference "keychain-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/evgenyneu/keychain-swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 24.0.0;
+			};
+		};
 		8F8FE7462D8747F500355B3D /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
@@ -678,6 +693,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		8F3580812DBC54C00002ADF5 /* KeychainSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8F3580802DBC54C00002ADF5 /* XCRemoteSwiftPackageReference "keychain-swift" */;
+			productName = KeychainSwift;
+		};
 		8FE0E25B2D874C6600EE0D83 /* FirebaseCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8F8FE7462D8747F500355B3D /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;

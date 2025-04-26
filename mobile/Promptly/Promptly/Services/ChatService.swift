@@ -86,24 +86,10 @@ final class ChatService {
             throw NSError(domain: "ChatService", code: -1009, userInfo: [NSLocalizedDescriptionKey: "No internet connection. Please check your network settings and try again."])
         }
         
-        guard let token = authManager.getToken() else {
-            throw NSError(domain: "ChatService", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
-        }
-        
         // Get the last user message
         guard let lastMessage = messages.last(where: { $0.role == MessageRoles.user }) else {
             throw NSError(domain: "ChatService", code: 400, userInfo: [NSLocalizedDescriptionKey: "No user message to send"])
         }
-        
-        // Use the stateless endpoint directly
-        let url = URL(string: "\(serverBaseURL)/chat/messages")!
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/vnd.promptly.optimized+json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 10
         
         // Get current date and time
         let currentDate = Date()
@@ -119,7 +105,6 @@ final class ChatService {
         ]
         
         let bodyData = try JSONSerialization.data(withJSONObject: payload)
-        request.httpBody = bodyData
         
         // Print the size of the outgoing message
         print("📤 OUTGOING MESSAGE SIZE: \(bodyData.count) bytes")
@@ -129,48 +114,71 @@ final class ChatService {
             print("📤 OUTGOING PAYLOAD: \(payloadString)")
         }
         
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        // Print the size of the incoming response
-        print("📥 INCOMING RESPONSE SIZE: \(data.count) bytes")
-        
-        // Log the raw response data
-        if let rawResponse = String(data: data, encoding: .utf8) {
-            print("RAW SERVER RESPONSE: \(rawResponse)")
-        }
-        
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 || httpResponse.statusCode == 201 else {
-            throw NSError(domain: "ChatService", code: (response as? HTTPURLResponse)?.statusCode ?? 400, 
-                        userInfo: [NSLocalizedDescriptionKey: "Failed to send message: \(String(data: data, encoding: .utf8) ?? "Unknown error")"])
-        }
-        
-        // Try parsing the optimized response format
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            // Check for the streamlined format with "response" and optional "metadata"
-            if let responseData = json["response"] as? [String: Any] {
-                // Check for metadata with message_id
-                if let metadata = json["metadata"] as? [String: Any] {
-                    if let messageId = metadata["message_id"] as? String {
-                        print("MESSAGE DEBUG: Found message_id in metadata: \(messageId)")
-                        
-                        // Store the task ID
-                        self.currentMessageTaskId = messageId
-                        
-                        // Set up a listener for this message task
-                        setupMessageTaskListener(taskId: messageId)
-        
-        // We no longer create an AI message here since it will come from the Firestore listener
-                        // Return nil for the message and false for the flag
-                        return (nil, false)
+        do {
+            // Use NetworkManager instead of direct URLSession to handle token expiration
+            let data = try await NetworkManager.shared.makeAuthenticatedRequest(
+                endpoint: "/v1/chat/messages",
+                method: "POST",
+                body: bodyData,
+                contentType: "application/json"
+            )
+            
+            // Print the size of the incoming response
+            print("📥 INCOMING RESPONSE SIZE: \(data.count) bytes")
+            
+            // Log the raw response data
+            if let rawResponse = String(data: data, encoding: .utf8) {
+                print("RAW SERVER RESPONSE: \(rawResponse)")
+            }
+            
+            // Try parsing the optimized response format
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                // Check for the streamlined format with "response" and optional "metadata"
+                if let responseData = json["response"] as? [String: Any] {
+                    // Check for metadata with message_id
+                    if let metadata = json["metadata"] as? [String: Any] {
+                        if let messageId = metadata["message_id"] as? String {
+                            print("MESSAGE DEBUG: Found message_id in metadata: \(messageId)")
+                            
+                            // Store the task ID
+                            self.currentMessageTaskId = messageId
+                            
+                            // Set up a listener for this message task
+                            setupMessageTaskListener(taskId: messageId)
+                            
+                            // We no longer create an AI message here since it will come from the Firestore listener
+                            // Return nil for the message and false for the flag
+                            return (nil, false)
+                        }
                     }
                 }
             }
+            
+            // If we reach here, something unexpected happened with the response
+            print("WARNING: Could not properly parse server response for stateless message")
+            throw NSError(domain: "ChatService", code: 400, 
+                         userInfo: [NSLocalizedDescriptionKey: "Failed to parse server response"])
+        } catch {
+            print("ERROR SENDING MESSAGE: \(error.localizedDescription)")
+            
+            // Create a more user-friendly error message
+            var errorMessage = "Unable to send message. Please try again later."
+            
+            if let networkError = error as? NetworkError {
+                switch networkError {
+                case .unauthorized:
+                    errorMessage = "You are not authorized. Please log in again."
+                case .httpError(let statusCode, _):
+                    errorMessage = "Server error (code: \(statusCode)). Please try again later."
+                case .requestFailed(let underlyingError):
+                    errorMessage = "Network error: \(underlyingError.localizedDescription)"
+                default:
+                    errorMessage = "Unexpected error occurred. Please try again."
+                }
+            }
+            
+            throw NSError(domain: "ChatService", code: 0, userInfo: [NSLocalizedDescriptionKey: errorMessage])
         }
-        
-        // If we reach here, something unexpected happened with the response
-        print("WARNING: Could not properly parse server response for stateless message")
-        throw NSError(domain: "ChatService", code: 400, 
-                     userInfo: [NSLocalizedDescriptionKey: "Failed to parse server response"])
     }
 
     /// Sends a message with context to the server and parses the response.
@@ -1137,35 +1145,43 @@ final class ChatService {
         // Print the size of the checkin data being sent
         print("📊 CHECKIN DATA SIZE: \(jsonData.count) bytes")
         
-        // Create the request
-        let url = URL(string: "\(serverBaseURL)/chat/checkin")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(authManager.getToken() ?? "")", forHTTPHeaderField: "Authorization")
-        request.httpBody = jsonData
-        request.timeoutInterval = 10  // Add 10-second timeout
-        
-        // Send the request
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        // Check response status
-        guard let httpResponse = response as? HTTPURLResponse,
-              (httpResponse.statusCode == 200 || httpResponse.statusCode == 201) else {
-            if let errorString = String(data: data, encoding: .utf8) {
-                throw ChatServiceError.invalidResponse("Failed to send checkin: \(errorString)")
+        do {
+            // Use NetworkManager to handle token expiration automatically
+            let data = try await NetworkManager.shared.makeAuthenticatedRequest(
+                endpoint: "/v1/chat/checkin",
+                method: "POST",
+                body: jsonData
+            )
+            
+            // Parse response to get task ID
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let response = json["response"] as? [String: Any],
+                  let taskId = response["id"] as? String else {
+                throw ChatServiceError.invalidResponse("Failed to get task ID from response")
             }
-            throw ChatServiceError.invalidResponse("Failed to send checkin")
+            
+            return taskId
+        } catch {
+            print("ERROR SENDING CHECKIN: \(error.localizedDescription)")
+            
+            // Create a more user-friendly error message
+            var errorMessage = "Unable to send check-in. Please try again later."
+            
+            if let networkError = error as? NetworkError {
+                switch networkError {
+                case .unauthorized:
+                    errorMessage = "You are not authorized. Please log in again."
+                case .httpError(let statusCode, _):
+                    errorMessage = "Server error (code: \(statusCode)). Please try again later."
+                case .requestFailed(let underlyingError):
+                    errorMessage = "Network error: \(underlyingError.localizedDescription)"
+                default:
+                    errorMessage = "Unexpected error occurred. Please try again."
+                }
+            }
+            
+            throw ChatServiceError.invalidResponse(errorMessage)
         }
-        
-        // Parse response to get task ID
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let response = json["response"] as? [String: Any],
-              let taskId = response["id"] as? String else {
-            throw ChatServiceError.invalidResponse("Failed to get task ID from response")
-        }
-        
-        return taskId
     }
 
     // Add new struct for structured check-in response

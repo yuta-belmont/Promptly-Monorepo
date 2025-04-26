@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import Firebase
 import FirebaseAuth
+import KeychainSwift
 
 /// Manages user authentication and session state
 class AuthManager: ObservableObject {
@@ -24,6 +25,10 @@ class AuthManager: ObservableObject {
     private let tokenKey = "auth_token"
     private let userEmailKey = "user_email"
     private let guestModeKey = "guest_mode"
+    
+    // Keychain keys
+    private let keychainEmailKey = "keychain_email"
+    private let keychainPasswordKey = "keychain_password"
     
     private init() {
         // Check if user is already logged in
@@ -50,11 +55,39 @@ class AuthManager: ObservableObject {
         }
     }
     
+    /// Attempts to silently authenticate the user using stored credentials
+    func silentAuthentication() async {
+        // Skip if already loading or in guest mode
+        if isLoading || isGuestUser { return }
+        
+        let keychain = KeychainSwift()
+        
+        // Check for stored credentials
+        guard let email = keychain.get(keychainEmailKey),
+              let password = keychain.get(keychainPasswordKey) else {
+            print("No stored credentials found for silent authentication")
+            return
+        }
+        
+        print("Attempting silent authentication with stored credentials")
+        
+        // Silent login attempt
+        let success = await login(email: email, password: password, silentMode: true)
+        
+        if success {
+            print("Silent authentication successful")
+        } else {
+            print("Silent authentication failed, will use existing token if available")
+        }
+    }
+    
     /// Login with email and password
-    func login(email: String, password: String) async -> Bool {
-        DispatchQueue.main.async {
-            self.isLoading = true
-            self.error = nil
+    func login(email: String, password: String, silentMode: Bool = false) async -> Bool {
+        if !silentMode {
+            DispatchQueue.main.async {
+                self.isLoading = true
+                self.error = nil
+            }
         }
         
         // Create form data for OAuth2 password flow
@@ -63,8 +96,10 @@ class AuthManager: ObservableObject {
         
         guard let url = URL(string: "\(baseURL)/v1/auth/login") else {
             DispatchQueue.main.async {
-                self.error = "Invalid URL"
-                self.isLoading = false
+                if !silentMode {
+                    self.error = "Invalid URL"
+                    self.isLoading = false
+                }
             }
             return false
         }
@@ -79,8 +114,10 @@ class AuthManager: ObservableObject {
             
             guard let httpResponse = response as? HTTPURLResponse else {
                 DispatchQueue.main.async {
-                    self.error = "Invalid response"
-                    self.isLoading = false
+                    if !silentMode {
+                        self.error = "Invalid response"
+                        self.isLoading = false
+                    }
                 }
                 return false
             }
@@ -90,10 +127,15 @@ class AuthManager: ObservableObject {
                 if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let token = json["access_token"] as? String {
                     
-                    // Save the token and user email
+                    // Save the token and user email in UserDefaults
                     UserDefaults.standard.set(token, forKey: tokenKey)
                     UserDefaults.standard.set(email, forKey: userEmailKey)
                     UserDefaults.standard.set(false, forKey: guestModeKey)
+                    
+                    // Save credentials in Keychain for auto-renewal
+                    let keychain = KeychainSwift()
+                    keychain.set(email, forKey: keychainEmailKey)
+                    keychain.set(password, forKey: keychainPasswordKey)
                     
                     // Sign in to Firebase anonymously
                     do {
@@ -107,13 +149,17 @@ class AuthManager: ObservableObject {
                         self.isAuthenticated = true
                         self.userEmail = email
                         self.isGuestUser = false
-                        self.isLoading = false
+                        if !silentMode {
+                            self.isLoading = false
+                        }
                     }
                     return true
                 } else {
                     DispatchQueue.main.async {
-                        self.error = "Invalid response format"
-                        self.isLoading = false
+                        if !silentMode {
+                            self.error = "Invalid response format"
+                            self.isLoading = false
+                        }
                     }
                     return false
                 }
@@ -122,21 +168,27 @@ class AuthManager: ObservableObject {
                 if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let detail = json["detail"] as? String {
                     DispatchQueue.main.async {
-                        self.error = detail
-                        self.isLoading = false
+                        if !silentMode {
+                            self.error = detail
+                            self.isLoading = false
+                        }
                     }
                 } else {
                     DispatchQueue.main.async {
-                        self.error = "Login failed with status code: \(httpResponse.statusCode)"
-                        self.isLoading = false
+                        if !silentMode {
+                            self.error = "Login failed with status code: \(httpResponse.statusCode)"
+                            self.isLoading = false
+                        }
                     }
                 }
                 return false
             }
         } catch {
             DispatchQueue.main.async {
-                self.error = "Network error: \(error.localizedDescription)"
-                self.isLoading = false
+                if !silentMode {
+                    self.error = "Network error: \(error.localizedDescription)"
+                    self.isLoading = false
+                }
             }
             return false
         }
@@ -206,10 +258,13 @@ class AuthManager: ObservableObject {
             // Continue with logout anyway
         }
         
-        // Clear stored credentials
+        // Clear stored credentials from UserDefaults
         UserDefaults.standard.removeObject(forKey: tokenKey)
         UserDefaults.standard.removeObject(forKey: userEmailKey)
         UserDefaults.standard.removeObject(forKey: guestModeKey)
+        
+        // Note: We're intentionally NOT clearing Keychain credentials
+        // This allows for faster re-login in the future
         
         // Update state
         DispatchQueue.main.async {
@@ -222,6 +277,34 @@ class AuthManager: ObservableObject {
     /// Get the authentication token
     func getToken() -> String? {
         return UserDefaults.standard.string(forKey: tokenKey)
+    }
+    
+    /// Handles expired token errors by attempting to refresh the token
+    func handleExpiredToken(originalRequest: URLRequest) async -> URLRequest? {
+        print("Token expired, attempting to refresh")
+        
+        let keychain = KeychainSwift()
+        
+        // Check for stored credentials
+        guard let email = keychain.get(keychainEmailKey),
+              let password = keychain.get(keychainPasswordKey) else {
+            print("No stored credentials found for token refresh")
+            return nil
+        }
+        
+        // Try to get a new token
+        let success = await login(email: email, password: password, silentMode: true)
+        
+        if success, let newToken = getToken() {
+            // Create a new request with the updated token
+            var newRequest = originalRequest
+            newRequest.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+            print("Token refresh successful, retrying request")
+            return newRequest
+        }
+        
+        print("Token refresh failed")
+        return nil
     }
     
     /// Get a Firebase custom token from the server

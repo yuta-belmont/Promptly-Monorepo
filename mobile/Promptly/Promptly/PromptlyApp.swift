@@ -296,6 +296,11 @@ struct RootView: View {
                         
                         // Set up notification observer
                         setupNotificationObserver()
+                        
+                        // Attempt silent authentication to refresh token when the app is launched
+                        Task {
+                            await authManager.silentAuthentication()
+                        }
                     }
                 }
                 .preferredColorScheme(.dark)

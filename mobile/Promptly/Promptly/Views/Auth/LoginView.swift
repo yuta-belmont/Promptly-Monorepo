@@ -118,7 +118,7 @@ struct LoginView: View {
         focusedField = nil // Dismiss keyboard when login is attempted
         
         Task {
-            _ = await authManager.login(email: email, password: password)
+            _ = await authManager.login(email: email, password: password, silentMode: false)
             
             DispatchQueue.main.async {
                 isLoggingIn = false
