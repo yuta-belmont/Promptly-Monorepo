@@ -411,21 +411,7 @@ struct ReportRow: View {
     
     // Extract the first sentence from either response or summary
     private var firstSentence: String {
-        // Check if there's a response first
-        if let analysis = report.analysis, !analysis.isEmpty {
-            // Extract first sentence from response
-            let components = analysis.components(separatedBy: ". ")
-            if components.count > 0 {
-                // Return first sentence with trailing period removed
-                var sentence = components[0]
-                if sentence.hasSuffix(".") {
-                    sentence = String(sentence.dropLast())
-                }
-                return sentence
-            }
-        }
         
-        // Fall back to summary if no response or empty response
         guard let summary = report.summary, !summary.isEmpty else {
             return "No summary available"
         }

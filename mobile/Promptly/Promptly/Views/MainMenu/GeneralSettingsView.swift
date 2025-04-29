@@ -11,6 +11,7 @@ struct GeneralSettingsView: View {
     @State private var showingNotificationPermissionAlert = false
     @State private var isClearingChat = false
     @State private var isAnimating = false // Track if we're currently animating
+    @State private var showingObjectivesSheet = false // Add state for objectives sheet
     
     @FocusState private var isObjectivesFocused: Bool
     
@@ -35,13 +36,9 @@ struct GeneralSettingsView: View {
                             }
                         }
                     }) {
-                        if isObjectivesFocused {
-                            Text("Done")
-                        } else {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundColor(.white.opacity(0.8))
-                        }
+                        Image(systemName: "xmark")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(.white.opacity(0.8))
                     }
                 }
                 .padding()
@@ -344,7 +341,7 @@ struct GeneralSettingsView: View {
                 if hasActiveCheckIn {
                     Text("Check in before updating the time")
                         .font(.caption)
-                        .foregroundColor(.red)
+                        .foregroundColor(.gray)
                         .padding(.top, 4)
                 }
             }
@@ -422,47 +419,75 @@ struct GeneralSettingsView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal)
                 
-                ZStack(alignment: .topLeading) {
-                    TextEditor(text: $userSettings.objectives)
-                        .foregroundColor(.white)
-                        .frame(height: 100)
-                        .scrollContentBackground(.hidden)
-                        .background(Color.black.opacity(0.2))
-                        .cornerRadius(8)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
-                        )
-                        .focused($isObjectivesFocused)
-                    
-                    if userSettings.objectives.isEmpty {
-                        Text("What are you working towards? (Informs Alfred during check-ins)")
-                            .foregroundColor(.gray)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 8)
-                            .allowsHitTesting(false)
+                Button(action: {
+                    showingObjectivesSheet = true
+                }) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if userSettings.objectives.isEmpty {
+                            Text("Provide Alfred context for check-ins")
+                                .foregroundColor(.gray)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            Text(userSettings.objectives)
+                                .foregroundColor(.white)
+                        }
                     }
-                    
-                    VStack {
-                        Spacer()
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.black.opacity(0.2))
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                    )
+                }
+                .padding(.horizontal)
+            }
+            .padding(.top, 8)
+            .sheet(isPresented: $showingObjectivesSheet) {
+                NavigationView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Detail the things you'd like Alfred to pay special attention to when generating your daily reports.")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                            .padding(.horizontal)
+                            .padding(.bottom, 14)
+                        
+                        TextEditor(text: $userSettings.objectives)
+                            .foregroundColor(.white)
+                            .frame(maxHeight: .infinity)
+                            .scrollContentBackground(.hidden)
+                            .background(Color.black.opacity(0.2))
+                            .cornerRadius(8)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                            )
+                            .padding(.horizontal)
+                        
                         HStack {
                             Spacer()
                             Text("\(userSettings.objectives.count)/200")
                                 .font(.caption)
                                 .foregroundColor(userSettings.objectives.count > 200 ? .red : .gray)
-                                .padding(4)
+                                .padding(.horizontal)
                         }
                     }
-                    .allowsHitTesting(false)
-                }
-                .padding(.horizontal)
-                .onChange(of: userSettings.objectives) { _, newValue in
-                    if newValue.count > 200 {
-                        userSettings.objectives = String(newValue.prefix(200))
+                    .navigationTitle("Objectives")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button(action: {
+                                showingObjectivesSheet = false
+                            }) {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                        }
                     }
                 }
             }
-            .padding(.top, 8)
             
             // Clear chat button
             Button(action: {
@@ -698,7 +723,7 @@ struct ThemePreviewButton: View {
 struct CheckInInfoPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Check-ins are a way to keep you accountable.\n\nEach day you will have the opportunity to check in and analyze your progress.\n\nYou have 12 hours from the check-in time to \"check in\" for that day.")
+            Text("Check-ins are a way to keep you accountable.\n\n1 check-in per day.\n\nYou have 12 hours from the check-in time to \"check in\" for that day.")
                 .font(.body)
                 .foregroundColor(.white.opacity(0.8))
                 .lineSpacing(4)
@@ -727,3 +752,4 @@ struct ChatInfoPopover: View {
         .presentationCompactAdaptation(.popover)
     }
 }
+

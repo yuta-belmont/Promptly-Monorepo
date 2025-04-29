@@ -304,7 +304,8 @@ struct GroupDetailsView: View {
                                 isEditingNotes = false
                             }) {
                                 Image(systemName: "xmark")
-                                    .foregroundColor(.white)
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.8))
                             }
                         }
                     }

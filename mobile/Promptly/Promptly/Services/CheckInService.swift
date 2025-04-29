@@ -52,9 +52,17 @@ final class CheckInService {
                 "items": checklist.items.map { item in
                     var itemDict: [String: Any] = [
                         "title": item.title,
-                        "is_completed": item.isCompleted,
-                        "group_name": item.group?.title ?? "Uncategorized"
+                        "is_completed": item.isCompleted
                     ]
+                    
+                    // Add group information if exists
+                    if let group = item.group {
+                        itemDict["group"] = [
+                            "id": group.id.uuidString,
+                            "name": group.title,
+                            "notes": group.notes
+                        ]
+                    }
                     
                     // Add notification if exists
                     if let notification = item.notification {

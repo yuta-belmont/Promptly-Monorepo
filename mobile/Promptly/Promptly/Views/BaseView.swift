@@ -98,7 +98,7 @@ struct BaseView: View {
                                 }
                             }
                             .padding(.trailing, 16)
-                            .padding(.bottom, userSettings.isChatEnabled ? 16 : 30)
+                            .padding(.bottom, userSettings.isChatEnabled ? 16 : 64)
                             
                             
                         }

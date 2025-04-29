@@ -12,6 +12,7 @@ from app.api import auth, users, chat
 from app.core.config import settings
 from app.db.base import Base
 from app.db.session import engine
+from app.db.init_db import init_db
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -19,6 +20,9 @@ logger = logging.getLogger("alfred")
 
 # Create tables if they don't exist
 Base.metadata.create_all(bind=engine)
+
+# Initialize database with new tables/columns
+init_db()
 
 # Log important settings at startup
 logger.info("⚙️ SERVER SETTINGS ⚙️")

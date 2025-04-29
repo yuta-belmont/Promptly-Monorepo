@@ -1,9 +1,10 @@
-from sqlalchemy import Boolean, Column, String, DateTime, ForeignKey, Text, Index, UniqueConstraint
+from sqlalchemy import Boolean, Column, String, DateTime, ForeignKey, Text, Index, UniqueConstraint, Float
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 import uuid
 
 from app.db.base_class import Base
+from app.models.group import Group
 
 class Checklist(Base):
     __tablename__ = "checklists"
@@ -32,13 +33,14 @@ class ChecklistItem(Base):
     title = Column(String, nullable=False)
     notification = Column(DateTime(timezone=True), nullable=True)
     is_completed = Column(Boolean, default=False)
-    group_name = Column(String, nullable=True)
     
     # Foreign Keys
     checklist_id = Column(String, ForeignKey("checklists.id"), nullable=False)
+    group_id = Column(String, ForeignKey("groups.id"), nullable=True)
     
     # Relationships
     checklist = relationship("Checklist", back_populates="items")
+    group = relationship("Group", back_populates="items")
     sub_items = relationship("SubItem", back_populates="checklist_item", cascade="all, delete-orphan")
 
     # Index for completion queries

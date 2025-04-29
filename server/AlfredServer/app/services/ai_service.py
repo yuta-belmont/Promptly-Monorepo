@@ -54,6 +54,14 @@ class LogBuffer:
 # Create a global log buffer instance
 log_buffer = LogBuffer()
 
+
+# =============================================================================
+# MODELS
+# =============================================================================
+LOWEST_TIER_MODEL = "gpt-4o-mini-2024-07-18"
+LOW_TIER_MODEL = "gpt-4.1-mini-2025-04-14"
+MID_TIER_MODEL = "gpt-4.1-2025-04-14"
+
 # =============================================================================
 # AGENT INSTRUCTIONS - Centralized for easy editing
 # =============================================================================
@@ -148,9 +156,9 @@ CHECKLIST_FORMAT_INSTRUCTIONS = """Please format your response as a JSON object 
     "checklist_data": {
         "group1": {
             "name": "Optional group name or null",
+            "notes": "Optional notes for this group or null",
             "dates": {
                 "YYYY-MM-DD": {
-                    "notes": "Optional notes for this date or null",
                     "items": [
                         {
                             "title": "Task description",
@@ -173,30 +181,28 @@ Groups can have any name as their key. Each group can contain multiple dates."""
 # -------------------------------------------------------------------------
 # Check-in Analysis Agent - High level instructions
 # -------------------------------------------------------------------------
-CHECKIN_INSTRUCTIONS = """You are Alfred, a personal assistant analyzing a user's daily checklist completion.
-Your goal is to provide meaningful, personalized feedback based on their progress and aid in accountability during a casual conversation.
+CHECKIN_INSTRUCTIONS = """
+Provide meaningful, personalized feedback based on their progress and aid in accountability.
 
 {personality_prompt}
 
-The user's objectives are: {user_objectives}
-Tailor your feedback to the user's objectives.
+The user's stated objectives are: {user_objectives}
 
 Consider:
-1. Overall completion rate and patterns
-2. The nature and difficulty of completed vs incomplete tasks
-3. The relationship between completed tasks and their stated objectives
-4. Potential challenges they might have faced
-5. The tasks in the context of the user's objectives
+1. Completion rate in the context of the historical data. Some tasks take many days to complete, so not marking off long term tasks as completed isn't necessarily a bad thing.
+2. Patterns and trends in the historical data. It is important to bring up patterns in the data that the user may not have noticed.
+3. The tasks in the context of the user's objectives.
+4. The user may have messages in the notes that are important to consider in your analysis.
 """
 
 # -------------------------------------------------------------------------
 # Check-in Analysis Agent - JSON Formatting Instructions
 # -------------------------------------------------------------------------
-CHECK_AGENT_FORMAT_INSTRUCTIONS = """Please format your response as a JSON object with the following structure:
+CHECKIN_AGENT_FORMAT_INSTRUCTIONS = """Please format your response as a JSON object with the following structure:
 {
-    "summary": "A brief summary listing out the exact numbers of completion and trends",
-    "analysis": "Detailed analysis looking for patterns over time, key insights, and observations about progress",
-    "response": "Your response to the user's progress, tailored to their objectives in your personality"
+    "summary": "A one-sentence summary focused only on today's tasks and completion rate",
+    "analysis": "Detailed analysis looking for patterns over time. Here you have to use context to determine if the task is a long term project or goal that takes many days to complete (clues may be in the historical data) or if a task is supposed to be a daily activity or habit.",
+    "response": "Your response to the user's progress, tailored to their objectives in your personality. This should be concise and provide wisdon, clarity, and motivation."
 }
 
 If there is nothing to report, respond with an EXTREMELY concise message."""
@@ -207,24 +213,31 @@ PERSONALITY_PROMPTS = {
     "2": """You are direct and concise. Keep responses brief and focused on essential information. 
            Avoid unnecessary elaboration.""",
     "3": """You are strict and focused on accountability like a drill sergeant. Maintain impossibly high standards and never be satisfied. 
-           Emphasize responsibility and the importance of following through on commitments and have distain for failure."""
+           Emphasize responsibility and the importance of following through on commitments. Have distain for laziness as it leads to a miserable life."""
 }
 
 # Pydantic models for structured responses
 class ChecklistSubItem(BaseModel):
     title: str
+    is_completed: bool = False
 
 class ChecklistItem(BaseModel):
     title: str
-    notification: Optional[str]
+    notification: Optional[str] = None
+    is_completed: bool = False
     subitems: Optional[List[ChecklistSubItem]] = []
 
 class ChecklistDate(BaseModel):
-    notes: Optional[str]
     items: List[ChecklistItem]
 
+class Group(BaseModel):
+    name: str
+    notes: Optional[str] = None
+    items: List[ChecklistItem] = []
+
 class ChecklistGroup(BaseModel):
-    name: Optional[str]
+    name: str
+    notes: Optional[str] = None
     dates: Dict[str, ChecklistDate]
 
 class AlfredResponse(BaseModel):
@@ -306,9 +319,9 @@ class AIService:
             if context_messages:
                 classification_messages.extend(context_messages)
             
-            # Use GPT-4o-mini for classification - faster and still accurate for this task
+            # Use mini model for classification - faster and still accurate for this task
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini-2024-07-18",  # Updated model name
+                model=LOWEST_TIER_MODEL,  # Updated model name
                 messages=classification_messages,
                 temperature=0.3,  # Lower temperature for more consistent classification
                 max_tokens=5  # We only need a single word response
@@ -326,7 +339,7 @@ class AIService:
             log_buffer.add(f"Query classified as: {result}")
             log_buffer.add(f"Raw: {result}")
             log_buffer.add(f"Context msgs: {len(context_messages)}")
-            log_buffer.add(f"Model: gpt-4o-mini-2024-07-18")
+            log_buffer.add(f"Model:" + LOWEST_TIER_MODEL)
             log_buffer.end_section()
             log_buffer.flush()
             
@@ -366,9 +379,9 @@ class AIService:
             if context_messages:
                 classification_messages.extend(context_messages)
 
-            # Use GPT-4o-mini for classification - faster and still accurate for this task
+            # Use mini model for classification - faster and still accurate for this task
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini-2024-07-18",  # Updated model name
+                model=LOW_TIER_MODEL,  # Updated model name
                 messages=classification_messages,
                 temperature=0.3,  # Lower temperature for more consistent classification
                 max_tokens=1  # We only need a single word response
@@ -383,7 +396,7 @@ class AIService:
             log_buffer.add(f"Raw: {result}")
             log_buffer.add(f"Output: Needs checklist: {needs_checklist}")
             log_buffer.add(f"Context msgs: {len(context_messages)}")
-            log_buffer.add(f"Model: gpt-4o-mini-2024-07-18")
+            log_buffer.add(f"Model:" + LOW_TIER_MODEL)
             log_buffer.end_section()
             log_buffer.flush()
             
@@ -437,10 +450,10 @@ class AIService:
             
             # Use GPT-4o-mini for inquiry classification
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini-2024-07-18",
+                model=LOW_TIER_MODEL,
                 messages=inquiry_messages,
                 temperature=0.3,  # Lower temperature for more consistent classification
-                max_tokens=15  # We only need a short response
+                max_tokens=5  # We only need a short response
             )
             
             # Get the classification result
@@ -451,7 +464,7 @@ class AIService:
             
             logger.info(f"Output: Needs more information: {needs_more_info}")
             logger.debug(f"Context msgs: {len(context_messages)}")
-            logger.debug(f"Model: gpt-4o-mini-2024-07-18")
+            logger.debug(f"Model:" + LOW_TIER_MODEL)
             logger.info("===========================================")
             
             # Return True if the result contains 'insufficient'
@@ -505,17 +518,17 @@ class AIService:
             
             # Generate the inquiry response using GPT-4o-mini for speed
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini-2024-07-18",
+                model=LOW_TIER_MODEL,
                 messages=inquiry_messages,
                 temperature=0.7,
-                max_tokens=100  # Keep responses short
+                max_tokens=200  # Keep responses short
             )
             
             inquiry_response = response.choices[0].message.content
             
             logger.info(f"Output: \"{inquiry_response[:75]}{'...' if len(inquiry_response) > 75 else ''}\"")
             logger.debug(f"Context msgs: {len(context_messages)}")
-            logger.debug(f"Model: gpt-4o-mini-2024-07-18")
+            logger.debug(f"Model:" + LOW_TIER_MODEL)
             logger.info("========================================")
             
             return inquiry_response
@@ -583,9 +596,10 @@ class AIService:
             
             # Generate checklist items
             checklist_response = self.client.chat.completions.create(
-                model="gpt-4o-2024-11-20",  # Always use the more capable model for checklists
+                model="gpt-4.1-2025-04-14",  # Always use the more capable model for checklists
                 messages=checklist_messages,
                 temperature=0.7,
+                max_tokens=10000,
                 response_format={"type": "json_object"}
             )
             
@@ -600,7 +614,7 @@ class AIService:
                 data_preview = json.dumps(checklist_data, indent=2)[:200] + "..." if len(json.dumps(checklist_data, indent=2)) > 200 else json.dumps(checklist_data, indent=2)
                 logger.info(f"Output: Generated checklist with {len(checklist_data)} date(s)")
                 logger.debug(f"Context msgs: {len(context_messages)}")
-                logger.debug(f"Model: gpt-4o-2024-11-20")
+                logger.debug(f"Model: gpt-4.1-2025-04-14")
                 logger.info("=====================================")
                 
                 return checklist_data
@@ -609,7 +623,7 @@ class AIService:
                 logger.error(f"Error parsing checklist JSON: {e}")
                 logger.info(f"Output: Failed to parse JSON response")
                 logger.debug(f"Context msgs: {len(context_messages)}")
-                logger.debug(f"Model: gpt-4o-2024-11-20")
+                logger.debug(f"Model: gpt-4.1-2025-04-14")
                 logger.info("=====================================")
                 # Return None if parsing fails
                 return None
@@ -680,7 +694,7 @@ class AIService:
             
             # Always use mini model for checklist acknowledgments
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini-2024-07-18",
+                model=LOWEST_TIER_MODEL,
                 messages=api_messages,
                 temperature=0.7,
             )
@@ -692,7 +706,7 @@ class AIService:
             logger.info(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
             logger.info(f"Output: \"{acknowledgment[:75]}{'...' if len(acknowledgment) > 75 else ''}\"")
             logger.debug(f"Context msgs: {len(context_messages)}")
-            logger.debug(f"Model: gpt-4o-mini-2024-07-18")
+            logger.debug(f"Model:" + LOWEST_TIER_MODEL)
             logger.info("=======================================")
             
             return acknowledgment
@@ -756,7 +770,7 @@ class AIService:
                 api_messages.append({"role": "user", "content": message})
             
             # Choose model based on query complexity
-            message_model = "gpt-4o-2024-11-20" if query_type == "complex" else "gpt-4o-mini-2024-07-18"
+            message_model = MID_TIER_MODEL if query_type == "complex" else LOWEST_TIER_MODEL
             
             try:
                 # Generate response
@@ -780,11 +794,11 @@ class AIService:
                 
             except Exception as e:
                 # If we hit a rate limit or quota error, try falling back to GPT-4o-mini
-                logger.info(f"Error with {message_model}, falling back to gpt-4o-mini-2024-07-18: {e}")
+                logger.info(f"Error with {message_model}, falling back to mini model: {e}")
                 try:
                     # Try with the fallback model
                     response = self.client.chat.completions.create(
-                        model="gpt-4o-mini-2024-07-18",
+                        model=LOW_TIER_MODEL,
                         messages=api_messages,
                         temperature=0.7,
                     )
@@ -793,7 +807,7 @@ class AIService:
                     
                     logger.info(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
                     logger.debug(f"Context msgs: {len(context_messages)}")
-                    logger.debug(f"Model: gpt-4o-mini-2024-07-18 (fallback)")
+                    logger.debug(f"Model:"+ LOW_TIER_MODEL +"(fallback)")
                     logger.info("===============================")
                     
                     return conversation_response
@@ -819,8 +833,7 @@ class AIService:
             logger.debug(f"Model: hardcoded fallback (error)")
             logger.info("===============================")
             
-            return fallback_message
-    
+            return fallback_message    
     async def generate_optimized_response(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, 
                                          user_full_name: Optional[str] = None, user_id: Optional[str] = None,
                                          client_time: Optional[str] = None) -> Dict[str, Any]:
@@ -917,101 +930,6 @@ class AIService:
             log_buffer.end_request()
             return result 
 
-    def convertFirebaseChecklistToModel(self, checklistData: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
-        logger.info("CHECKLIST DEBUG: Converting Firebase checklist data to model: %s", checklistData)
-        
-        # Verify we have data to process
-        if not checklistData:
-            logger.warning("CHECKLIST DEBUG: Empty checklist data received")
-            return None
-        
-        # Create an array to hold all checklists
-        allChecklists: List[Dict[str, Any]] = []
-        dateFormatter = datetime.strptime("%Y-%m-%d", "%Y-%m-%d")
-        
-        # Process each group in the checklist data
-        for groupKey, groupData in checklistData.items():
-            logger.debug("CHECKLIST DEBUG: Processing group: %s", groupKey)
-            
-            # Get the group name if available
-            groupName = groupData.get("name")
-            group = {"name": groupName, "dates": {}} if groupName and groupName.strip() != "" else None
-            
-            # Process dates within the group
-            if "dates" in groupData:
-                for dateString, dateData in groupData["dates"].items():
-                    # Skip any keys that aren't date strings
-                    if not re.match(r"^\d{4}-\d{2}-\d{2}$", dateString):
-                        logger.debug("CHECKLIST DEBUG: Skipping non-date key: %s", dateString)
-                        continue
-                    
-                    # Parse the date
-                    try:
-                        date = dateFormatter.parse(dateString)
-                    except ValueError:
-                        logger.warning("CHECKLIST DEBUG: Failed to parse date: %s", dateString)
-                        continue
-                    
-                    # Get the notes from the checklist
-                    notes = dateData.get("notes", "")
-                    
-                    # Parse the items array
-                    checklistItems: List[Dict[str, Any]] = []
-                    if "items" in dateData:
-                        for itemData in dateData["items"]:
-                            if "title" in itemData:
-                                # Parse notification time if present
-                                notificationDate = None
-                                if "notification" in itemData and itemData["notification"] != "null":
-                                    logger.debug("CHECKLIST DEBUG: Processing notification time: %s", itemData["notification"])
-                                    # Combine the date with the time
-                                    timeFormatter = datetime.strptime("%I:%M %p", "%I:%M %p")
-                                    try:
-                                        time = timeFormatter.parse(itemData["notification"])
-                                        notificationDate = date.replace(hour=time.hour, minute=time.minute, second=0)
-                                        
-                                        logger.debug("CHECKLIST DEBUG: Parsed time %s to components - hour: %d, minute: %d", 
-                                                    itemData["notification"], time.hour, time.minute)
-                                        logger.debug("CHECKLIST DEBUG: Created notification date: %s", notificationDate)
-                                    except ValueError:
-                                        logger.warning("CHECKLIST DEBUG: Failed to parse time format: %s", itemData["notification"])
-                                
-                                # Parse subitems if present
-                                subitems: List[Dict[str, Any]] = []
-                                if "subitems" in itemData:
-                                    for subitemData in itemData["subitems"]:
-                                        if "title" in subitemData:
-                                            subitems.append({"title": subitemData["title"], "isCompleted": False})
-                                
-                                # Create the checklist item
-                                checklistItems.append({
-                                    "title": itemData["title"],
-                                    "date": date,
-                                    "isCompleted": False,
-                                    "notification": notificationDate,
-                                    "group": group,
-                                    "subItems": subitems
-                                })
-                                
-                                logger.debug("CHECKLIST DEBUG: Added item: %s", itemData["title"])
-                            else:
-                                logger.warning("CHECKLIST DEBUG: Skipping item without title: %s", itemData)
-                    
-                    # Create and add the checklist
-                    checklist = {
-                        "id": str(uuid.uuid4()),
-                        "date": date,
-                        "items": checklistItems,
-                        "notes": notes
-                    }
-                    
-                    allChecklists.append(checklist)
-                    logger.info("CHECKLIST DEBUG: Created checklist for %s with %d items and notes: %s", 
-                              dateString, len(checklistItems), notes)
-        
-        logger.info("CHECKLIST DEBUG: Processed %d checklists in total", len(allChecklists))
-        return None if not allChecklists else allChecklists 
-
     def analyze_checkin(self, checklist_data: Dict[str, Any], user_full_name: Optional[str] = None, 
                        alfred_personality: Optional[str] = None, user_objectives: Optional[str] = None) -> Optional[str]:
         """
@@ -1029,42 +947,77 @@ class AIService:
         try:
             logger.info("Starting check-in analysis")
             
-            # Extract items from checklist data
-            items = checklist_data.get('items', [])
-            logger.info(f"Found {len(items)} items in checklist data")
+            # Check the structure of the data
+            logger.info(f"Checklist data keys: {checklist_data.keys()}")
             
-            # If no items, return a concise message
-            if not items:
-                logger.info("No items found, returning empty checklist response")
+            # Extract today's checklist data - this is the top-level data, not in historical_data
+            items = checklist_data.get('items', [])
+            date = checklist_data.get('date', 'today')
+            notes = checklist_data.get('notes', '')
+            logger.info(f"Found {len(items)} items in today's checklist (date: {date})")
+            
+            # Extract historical data if available - should NOT include today's data
+            historical_data = checklist_data.get('historical_data', [])
+            
+            # Log the dates from historical data to debug
+            if historical_data:
+                historical_dates = [hc.get('date', 'unknown') for hc in historical_data]
+                logger.info(f"Historical data dates: {historical_dates}")
+                
+                # Check if today's date is in historical data (indicating duplication)
+                if date in historical_dates:
+                    logger.warning(f"Today's date ({date}) is also in historical data - may cause duplication")
+            
+            logger.info(f"Found {len(historical_data)} historical checklists")
+            
+            # If no items and no historical data, return a concise message
+            if not items and not historical_data:
+                logger.info("No items or historical data found, returning empty checklist response")
                 return json.dumps({
                     "summary": "No tasks completed today",
                     "analysis": "No tasks were available for analysis",
                     "response": "Thanks for checking in. Keep up the great work!"
                 })
             
-            # Count completed and total items
-            completed = sum(1 for item in items if item.get('isCompleted', False))
+            # Process today's data
+            completed = sum(1 for item in items if item.get('is_completed', False))
             total = len(items)
             completion_percentage = (completed / total) * 100 if total > 0 else 0
-            logger.info(f"Checklist stats - Completed: {completed}, Total: {total}, Percentage: {completion_percentage:.1f}%")
-        
-            # Create a summary of the checklist for the AI
-            checklist_summary = {
-                "total_tasks": total,
-                "completed_tasks": completed,
-                "completion_percentage": completion_percentage,
-                "tasks": [
-                    {
-                        "title": item.get('title', ''),
-                        "completed": item.get('isCompleted', False)
-                    }
-                    for item in items
-                ]
+            logger.info(f"Today's stats - Completed: {completed}, Total: {total}, Percentage: {completion_percentage:.1f}%")
+            
+            # Create a comprehensive analysis structure with three main sections
+            analysis_data = {
+                # Section 1: Historical context (all days prior to the most recent day)
+                "historical_context": historical_data,
+                
+                # Section 2: Today's summary statistics
+                "today_stats": {
+                    "total_tasks": total,
+                    "completed_tasks": completed,
+                    "completion_percentage": completion_percentage
+                },
+                
+                # Section 3: Today's detailed checklist (emphasized for AI)
+                "today_checklist": {
+                    "date": date,
+                    "notes": notes,
+                    "items": [
+                        {
+                            "title": item.get('title', ''),
+                            "completed": item.get('is_completed', False),
+                            "group": item.get('group').name if item.get('group') else ''
+                        }
+                        for item in items
+                    ]
+                }
             }
+            
+            # Add debug logging to see exactly what keys exist in the item
             
             # Get the personality prompt based on setting, default to minimalist if not specified
             personality_prompt = PERSONALITY_PROMPTS.get(str(alfred_personality), PERSONALITY_PROMPTS["2"])
-            logger.info(f"Using personality prompt: {personality_prompt[:50]}...")            
+            logger.info(f"Using personality prompt: {personality_prompt[:50]}...")
+            
             # Format the instructions with personality and objectives
             system_message = CHECKIN_INSTRUCTIONS.format(
                 personality_prompt=personality_prompt,
@@ -1074,28 +1027,48 @@ class AIService:
             # Create messages array with both instruction sets
             api_messages = [
                 {"role": "system", "content": system_message},
-                {"role": "system", "content": CHECK_AGENT_FORMAT_INSTRUCTIONS}
+                {"role": "system", "content": CHECKIN_AGENT_FORMAT_INSTRUCTIONS}
             ]
             
-            # Add the checklist data as a user message
+            # Create user message content
+            user_message_content = f"Here is the checklist data for analysis:\n{json.dumps(analysis_data, indent=2)}"
+            
+            # Log a more structured view of the data for easier analysis
+            logger.info("=================== STRUCTURED DATA BREAKDOWN ===================")
+            logger.info(f"TODAY'S CHECKLIST DATE: {date}")
+            logger.info(f"TODAY'S ITEMS COUNT: {len(items)}")
+            logger.info(f"TODAY'S COMPLETION: {completed}/{total} ({completion_percentage:.1f}%)")
+            
+            if historical_data:
+                logger.info(f"HISTORICAL DATA COUNT: {len(historical_data)} checklists")
+            else:
+                logger.info("NO HISTORICAL DATA")
+            
+            logger.info("===============================================================")
+            
+            # Add the comprehensive checklist data as a user message
             api_messages.append({
                 "role": "user",
-                "content": f"Here is today's checklist data:\n{checklist_summary}"
+                "content": user_message_content
             })
             
             # Generate analysis using GPT-4 with explicit JSON response format
-            logger.info("Sending request to GPT-4 with JSON response format")
+            logger.info("Sending request to GPT-4.1 with JSON response format")
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini-2024-07-18",
+                model=MID_TIER_MODEL,  # Use the more capable model for checkin analysis
                 messages=api_messages,
                 temperature=0.7,
                 max_tokens=5000,
                 response_format={"type": "json_object"}  # Explicitly request JSON response
             )
-            logger.info("WTF")
-            logger.info("WTF", response)
+            
             # Print the raw response immediately after getting it
             raw_response = response.choices[0].message.content
+            
+            # Log the AI response
+            logger.info("=================== AI RESPONSE ===================")
+            logger.info(raw_response[:500] + ("..." if len(raw_response) > 500 else ""))
+            logger.info("==================================================")
             
             # Get the analysis from the response
             analysis = raw_response.strip()

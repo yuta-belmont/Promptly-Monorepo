@@ -454,7 +454,7 @@ class FirebaseService:
         Args:
             user_id: The ID of the user
             user_full_name: The full name of the user
-            checklist_data: The checklist data to analyze
+            checklist_data: The checklist data to analyze (includes current checklist and historical data)
             client_time: The current time on the client device (optional)
             alfred_personality: The personality setting for Alfred (optional)
             user_objectives: The user's objectives (optional)
