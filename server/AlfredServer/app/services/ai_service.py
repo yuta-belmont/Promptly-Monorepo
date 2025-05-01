@@ -76,12 +76,55 @@ COMPLEX: Reasoning, planning, updating checklists, multi-step tasks, detailed ex
 Respond with ONLY one word: either 'simple' or 'complex'."""
 
 # -------------------------------------------------------------------------
+# Checklist Size Classifier Agent - Determines if a checklist is large/complex
+# -------------------------------------------------------------------------
+CHECKLIST_SIZE_CLASSIFIER_INSTRUCTIONS = """You are a checklist size classifier that determines if a user's request will result in a large or complex checklist.
+YES: The checklist will span 5 or more days and have significant variety between days.
+NO: The checklist will be shorter than 5 days or have similar tasks each day.
+
+Respond with ONLY one word: either 'yes' or 'no'."""
+
+# -------------------------------------------------------------------------
+# Checklist Outline Generator Agent - Creates high-level plan structure
+# -------------------------------------------------------------------------
+CHECKLIST_OUTLINE_INSTRUCTIONS = """You are a checklist outline generator that creates a high-level structure for the user's plan.
+Use the conversation context to understand the user's goals and timeframe.
+
+Structure the outline based on the plan's duration:
+- For plans spanning weeks: Break down by weeks
+- For plans spanning several days: Break down by days
+- If the start date is not specified, assume it starts today or tomorrow depending on the client time.
+
+Each section should include:
+1. Time period (e.g., "Week 1", "Month 2")
+2. Main objectives for that period
+3. Key milestones or deliverables
+
+Keep the outline focused on the big picture - save specific tasks for the detailed checklist.
+
+Format your response as a JSON object with the following structure:
+{
+    "outline": {
+        "summary": "Brief description of the overall plan",
+        "start_date": "YYYY-MM-DD",
+        "end_date": "YYYY-MM-DD",
+        "period": "week" or "day",
+        "details": [
+            {
+                "title": "Week 1" or "Day 1",
+                "breakdown": "Key objectives and milestones for this period"
+            }
+        ]
+    }
+}"""
+
+# -------------------------------------------------------------------------
 # Checklist Classifier Agent - Determines if a checklist should be generated
 # -------------------------------------------------------------------------
 CHECKLIST_CLASSIFIER_INSTRUCTIONS = """
 You are a chat classifier inside a planner application that determines if a user wants to create a plan, task, reminder, or checklist of any kind.
 Answer the following based on the user's most recent message:
-YES: the user wants to add tasks, reminders, or plans to their planner.
+YES: the user wants to add tasks, reminders, an outline,or plans to their planner.
 NO: the user does not want to add tasks, reminders, or plans to their planner.
 Respond with ONLY ONE word: either 'yes', or 'no'
 """
@@ -123,12 +166,10 @@ CHECKLIST_AGENT_INSTRUCTIONS = """You are a checklist creation specialist.
 The current date and time is {current_date} at {current_time}.
 Your task is to create well-structured checklist items based on the user's request.
 Organize items by date in YYYY-MM-DD format.
-For complicated tasks, or upon the user's request, provide meaningful notes that summarize the tasks,
-provide broader context, and include relevant inspirational quotes or wisdom that relate to the day's
-activities. Do not add notes for simple tasks.
 Each item should have a clear title and, when requested (generally don't), a notification time in HH:MM format.
 Be specific, practical, and thorough in creating these checklist items.
 DO NOT over complicate simple tasks. A single item per day with a title is preffered.
+No need to have a group name for simple checklists that span only a couple days or less.
 """
 
 # -------------------------------------------------------------------------
@@ -156,7 +197,6 @@ CHECKLIST_FORMAT_INSTRUCTIONS = """Please format your response as a JSON object 
     "checklist_data": {
         "group1": {
             "name": "Optional group name or null",
-            "notes": "Optional notes for this group or null",
             "dates": {
                 "YYYY-MM-DD": {
                     "items": [
@@ -177,6 +217,24 @@ CHECKLIST_FORMAT_INSTRUCTIONS = """Please format your response as a JSON object 
 }
 
 Groups can have any name as their key. Each group can contain multiple dates."""
+
+# -------------------------------------------------------------------------
+# Checklist Generator Agent - Creates detailed checklists from outlines
+# -------------------------------------------------------------------------
+CHECKLIST_FROM_OUTLINE_INSTRUCTIONS = """You are a detailed checklist generator that creates specific tasks from a plan outline.
+Your goal is to break down each section of the outline into actionable tasks.
+
+The outline details a broad plan that you have to turn into regular (often daily) tasks that the user can complete.
+
+The group name should concisely describe the entire checklist in a word or 2. 
+Ensure that:
+- Tasks are specific and actionable
+- The structure matches the original outline's time periods
+- Each task has a clear completion criteria
+- Try to stick to 1 item per day with subitems for more complex tasks.
+- DO NOT add a notification time unless specified.
+
+""" + CHECKLIST_FORMAT_INSTRUCTIONS
 
 # -------------------------------------------------------------------------
 # Check-in Analysis Agent - High level instructions
@@ -834,6 +892,58 @@ class AIService:
             logger.info("===============================")
             
             return fallback_message    
+    async def _classify_checklist_size(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None) -> bool:
+        """Determine if the checklist will be large/complex."""
+        try:
+            response = self.client.chat.completions.create(
+                model=LOW_TIER_MODEL,
+                messages=[
+                    {"role": "system", "content": CHECKLIST_SIZE_CLASSIFIER_INSTRUCTIONS},
+                    *self._prepare_context_messages(message_history),
+                    {"role": "user", "content": message}
+                ],
+                temperature=0.3,
+                max_tokens=5
+            )
+            
+            result = response.choices[0].message.content.strip().lower()
+                        
+            # Log a more structured view of the data for easier analysis
+            logger.info("=================== AGENT CHECKLIST SIZE CLASSIFIER ===================")
+            logger.info(f"IS CHECKLIST LARGE: {result}")
+            logger.info("===============================================================")
+            return 'yes' in result
+        except Exception as e:
+            logger.error(f"Error classifying checklist size: {e}")
+            return False
+
+    async def _generate_checklist_outline(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, client_time: Optional[str] = None) -> Dict[str, Any]:
+        """Generate a high-level outline of the checklist."""
+        try:
+            # Use client_time for date calculations if provided
+            current_date = datetime.now()
+            if client_time:
+                try:
+                    current_date = datetime.fromisoformat(client_time)
+                except ValueError:
+                    print(f"Warning: Invalid client_time format: {client_time}")
+            
+            response = self.client.chat.completions.create(
+                model=MID_TIER_MODEL,
+                messages=[
+                    {"role": "system", "content": CHECKLIST_OUTLINE_INSTRUCTIONS},
+                    *self._prepare_context_messages(message_history),
+                    {"role": "user", "content": message}
+                ],
+                temperature=0.7,
+                response_format={"type": "json_object"}
+            )
+            
+            return json.loads(response.choices[0].message.content)
+        except Exception as e:
+            logger.error(f"Error generating checklist outline: {e}")
+            return None
+
     async def generate_optimized_response(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, 
                                          user_full_name: Optional[str] = None, user_id: Optional[str] = None,
                                          client_time: Optional[str] = None) -> Dict[str, Any]:
@@ -896,9 +1006,23 @@ class AIService:
                 
                 #Step 2b: If we have enough info, generate an acknowledgment
                 else:
-                    # It's a checklist and we have enough info, generate acknowledgment
-                    # Using the dedicated method with proper instructions
-                    result['response_text'] = await self._generate_checklist_acknowledgment(message, message_history, user_full_name, now)
+                    # Check if this is a large checklist
+                    is_large_checklist = await self._classify_checklist_size(message, message_history)
+                    
+                    if is_large_checklist:
+                        # Generate outline
+                        outline = await self._generate_checklist_outline(message, message_history, client_time)
+                        
+                        if outline:
+                            # Return the outline directly
+                            result['response_text'] = "I've created an outline for you. Let me know if you'd like to proceed with the detailed checklist."
+                            result['outline'] = outline
+                        else:
+                            # Fallback to normal checklist if outline generation fails
+                            result['response_text'] = await self._generate_checklist_acknowledgment(message, message_history, user_full_name, now)
+                    else:
+                        # Proceed with normal checklist generation
+                        result['response_text'] = await self._generate_checklist_acknowledgment(message, message_history, user_full_name, now)
             
             # Step 3: If it's not a checklist request, generate a standard response based on query complexity
             else:
@@ -1123,3 +1247,55 @@ class AIService:
                 "analysis": "Keep up the great work!",
                 "response": "Thanks for checking in!"
             }) 
+
+    async def generate_checklist_from_outline(self, summary: str, start_date: str, end_date: str, line_items: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        Generate a detailed checklist from an outline.
+        
+        Args:
+            summary: The summary of the plan
+            start_date: The start date of the plan
+            end_date: The end date of the plan
+            line_items: The line items from the outline
+            
+        Returns:
+            The generated checklist data or None if generation fails
+        """
+        try:
+            # Create a prompt that includes the outline data
+            prompt = f"""{CHECKLIST_FROM_OUTLINE_INSTRUCTIONS}
+
+            Plan Summary: {summary}
+            Start Date: {start_date}
+            End Date: {end_date}
+
+            Outline Structure:
+            {json.dumps(line_items, indent=2)}
+
+            Generate a detailed checklist that breaks down each section into specific tasks."""
+
+            # Generate the checklist using the OpenAI client
+            response = self.client.chat.completions.create(
+                model=MID_TIER_MODEL,
+                messages=[
+                    {"role": "system", "content": CHECKLIST_FROM_OUTLINE_INSTRUCTIONS},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=2000
+            )
+            
+            # Extract the response content
+            checklist_text = response.choices[0].message.content
+            
+            # Parse the response
+            try:
+                checklist_data = json.loads(checklist_text)
+                return checklist_data
+            except json.JSONDecodeError:
+                logger.error("Failed to parse checklist data from AI response")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error generating checklist from outline: {e}")
+            return None 

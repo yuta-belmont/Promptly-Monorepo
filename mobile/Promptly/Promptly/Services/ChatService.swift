@@ -138,8 +138,6 @@ final class ChatService {
                     // Check for metadata with message_id
                     if let metadata = json["metadata"] as? [String: Any] {
                         if let messageId = metadata["message_id"] as? String {
-                            print("MESSAGE DEBUG: Found message_id in metadata: \(messageId)")
-                            
                             // Store the task ID
                             self.currentMessageTaskId = messageId
                             
@@ -225,12 +223,9 @@ final class ChatService {
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
-        // Print the size of the incoming response
-        print("📥 INCOMING RESPONSE SIZE: \(data.count) bytes")
-        
-        // Log the raw response data
+        // Print raw response for standard messages
         if let rawResponse = String(data: data, encoding: .utf8) {
-            print("RAW SERVER RESPONSE: \(rawResponse)")
+            print("📥 RAW MESSAGE RESPONSE: \(rawResponse)")
         }
         
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 || httpResponse.statusCode == 201 else {
@@ -247,7 +242,6 @@ final class ChatService {
                 // Check for metadata with message_id or checklist_id
                 if let metadata = json["metadata"] as? [String: Any] {
                     if let messageId = metadata["message_id"] as? String {
-                        print("MESSAGE DEBUG: Found message_id in metadata: \(messageId)")
                         
                         // Store the task ID
                         self.currentMessageTaskId = messageId
@@ -326,6 +320,146 @@ final class ChatService {
         return chatId
     }
     
+    // Add this struct at the top of the file with other structs
+    struct StandardResponse: Codable {
+        let response: ResponseContent
+        let metadata: ResponseMetadata
+        
+        struct ResponseContent: Codable {
+            let content: String
+            let type: String?
+            let data: [String: String]?  // Changed from [String: Any] to [String: String]
+            
+            private enum CodingKeys: String, CodingKey {
+                case content, type, data
+            }
+            
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                content = try container.decode(String.self, forKey: .content)
+                type = try container.decodeIfPresent(String.self, forKey: .type)
+                data = try container.decodeIfPresent([String: String].self, forKey: .data)
+            }
+            
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(content, forKey: .content)
+                try container.encodeIfPresent(type, forKey: .type)
+                try container.encodeIfPresent(data, forKey: .data)
+            }
+        }
+        
+        struct ResponseMetadata: Codable {
+            let message_id: String
+            let status: String
+            let timestamp: String
+        }
+    }
+
+    private func parseStandardResponse(_ data: Data) -> StandardResponse? {
+        do {
+            // First check if it's valid JSON
+            if let _ = try? JSONSerialization.jsonObject(with: data) {
+                let decoder = JSONDecoder()
+                return try decoder.decode(StandardResponse.self, from: data)
+            }
+            return nil
+        } catch {
+            print("Error parsing standard response: \(error)")
+            return nil
+        }
+    }
+
+    private func handleResponse(_ data: Data) {
+        // Print raw response for debugging
+        if let rawResponse = String(data: data, encoding: .utf8) {
+            print("📥 RAW SERVER RESPONSE: \(rawResponse)")
+        }
+        
+        // First try to parse as JSON
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            // Print the complete JSON structure for debugging
+            if let jsonData = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted),
+               let jsonString = String(data: jsonData, encoding: .utf8) {
+                print("📥 COMPLETE RESPONSE STRUCTURE:\n\(jsonString)")
+            }
+            
+            // Check for pending status response
+            if let response = json["response"] as? [String: Any],
+               let content = response["content"] as? String,
+               let metadata = json["metadata"] as? [String: Any],
+               let status = metadata["status"] as? String,
+               status == "pending" {
+                print("Received pending status response, waiting for completion...")
+                return
+            }
+            
+            // Check for checklist task response
+            if let response = json["response"] as? [String: Any],
+               let content = response["content"] as? String,
+               let metadata = json["metadata"] as? [String: Any],
+               let checklistId = metadata["checklist_id"] as? String {
+                setupChecklistTaskListener(taskId: checklistId)
+                notifyAllViewModels(content)
+                return
+            }
+            
+            // Try parsing as standard response
+            if let response = parseStandardResponse(data) {
+                switch response.response.type {
+                case "checklist":
+                    if let checklistTaskId = response.response.data?["checklist_task_id"] {
+                        setupChecklistTaskListener(taskId: checklistTaskId)
+                    }
+                    notifyAllViewModels(response.response.content)
+                    
+                case "checkin":
+                    if let checkinData = response.response.data {
+                        notifyAllViewModels(response.response.content)
+                    }
+                    
+                case "outline":
+                    // Create a combined JSON structure with both response and outline
+                    let combinedData: [String: Any] = [
+                        "response": response.response.content,
+                        "outline": response.response.data ?? [:]
+                    ]
+                    
+                    if let jsonData = try? JSONSerialization.data(withJSONObject: combinedData),
+                       let jsonString = String(data: jsonData, encoding: .utf8) {
+                        notifyAllViewModels(jsonString)
+                    }
+                    
+                default: // "message" or nil
+                    notifyAllViewModels(response.response.content)
+                }
+            }
+        } else {
+            // If JSON parsing fails, try to handle as plain text
+            if let plainText = String(data: data, encoding: .utf8) {
+                // Check if it's a simple message
+                if !plainText.isEmpty {
+                    notifyAllViewModels(plainText)
+                    return
+                }
+            }
+            
+            // If all else fails, try legacy parsing
+            handleLegacyResponse(data)
+        }
+    }
+
+    private func handleLegacyResponse(_ data: Data) {
+        // Existing legacy response handling code
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let responseData = json["response"] as? [String: Any] {
+                if let content = responseData["content"] as? String {
+                    notifyAllViewModels(content)
+                }
+            }
+        }
+    }
+
     /// Sends a message to the server and parses the response.
     /// 
     /// This method supports two response formats:
@@ -391,139 +525,8 @@ final class ChatService {
         }
         
         let (data, response) = try await URLSession.shared.data(for: request)
-        
-        // Print the size of the incoming response
-        print("📥 INCOMING RESPONSE SIZE: \(data.count) bytes")
-        
-        // Log the raw response data
-        if let rawResponse = String(data: data, encoding: .utf8) {
-            print("RAW SERVER RESPONSE: \(rawResponse)")
-        }
-        
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 || httpResponse.statusCode == 201 else {
-            throw NSError(domain: "ChatService", code: (response as? HTTPURLResponse)?.statusCode ?? 400, 
-                          userInfo: [NSLocalizedDescriptionKey: "Failed to send message: \(String(data: data, encoding: .utf8) ?? "Unknown error")"])
-        }
-        
-        // Try parsing the optimized response format first
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            // Check for the new streamlined format with "response" and optional "metadata"
-            if let responseData = json["response"] as? [String: Any],
-               let responseContent = responseData["content"] as? String {
-                
-                print("📥 ASSISTANT MESSAGE SIZE: \(responseContent.utf8.count) bytes")
-                
-                // The optimized format eliminates redundant data like:
-                // - The user's message which we already have
-                // - Chat metadata (title, is_active, etc.)
-                // - Timestamps and sequence numbers
-                // This can reduce payload size by 70-80% in most cases
-                
-                // Check for metadata with message_id or checklist_id
-                if let metadata = json["metadata"] as? [String: Any] {
-                    if let messageId = metadata["message_id"] as? String {
-                        print("MESSAGE DEBUG: Found message_id in metadata: \(messageId)")
-                        
-                        // Set up a listener for this message task
-                        setupMessageTaskListener(taskId: messageId)
-                        // Return empty string immediately after setting up the listener
-                        return ""
-                    }
-                    else if let checklistId = metadata["checklist_id"] as? String {
-                        print("CHECKLIST DEBUG: Found checklist_id in metadata: \(checklistId)")
-                        
-                        // Store the task ID
-                        self.currentChecklistTaskId = checklistId
-                        
-                        // Set up a listener for this task
-                        setupChecklistTaskListener(taskId: checklistId)
-                        // Return empty string immediately after setting up the listener
-                        return ""
-                    }
-                    else if let taskId = metadata["task_id"] as? String {
-                        // Legacy format - assume it's a message task
-                        print("MESSAGE DEBUG: Found task_id in metadata (legacy format): \(taskId)")
-                        
-                        // Set up a listener for this message task
-                        setupMessageTaskListener(taskId: taskId)
-                        // Return empty string immediately after setting up the listener
-                        return ""
-                    }
-                }
-                
-                // Return placeholder content for display purposes only
-                // The actual content will come from the Firestore listener
-                // Instead of returning the content directly, return an empty string to avoid displaying placeholders
-                return ""
-            }
-        }
-        
-        // If we reach here, it means we need to fall back to the old format
-        print("FALLING BACK TO LEGACY RESPONSE FORMAT")
-        
-        // Parse the response to get the assistant's message (legacy format)
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let messages = json["messages"] as? [[String: Any]] else {
-            throw NSError(domain: "ChatService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid response format"])
-        }
-        
-        // Find the assistant's message (should be the last one)
-        if let assistantMessage = messages.last(where: { ($0["role"] as? String) == "assistant" }),
-           let content = assistantMessage["content"] as? String {
-            
-            print("ASSISTANT MESSAGE CONTENT (PRE-PARSING): \(content)")
-            
-            // Print the size of the assistant message content
-            print("📥 ASSISTANT MESSAGE SIZE: \(content.utf8.count) bytes")
-            
-            // Check if the response is structured as JSON with a flag
-            if let data = content.data(using: .utf8),
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let messageContent = json["message"] as? String {
-                
-                print("PARSED JSON FROM CONTENT: \(json)")
-                
-                // Check if the response includes task info
-                if let taskInfo = json["task_info"] as? [String: Any] {
-                    print("Found task_info in response: \(taskInfo)")
-                    
-                    // Check for checklist task ID
-                    if let checklistTaskId = taskInfo["checklist_task_id"] as? String {
-                        print("CHECKLIST DEBUG: Found checklist_task_id: \(checklistTaskId)")
-                        
-                        // Store the task ID
-                        self.currentChecklistTaskId = checklistTaskId
-                        
-                        // Set up a listener for this task
-                        setupChecklistTaskListener(taskId: checklistTaskId)
-                        
-                        print("Set up listener for checklist task: \(checklistTaskId)")
-                    } else {
-                        print("CHECKLIST DEBUG: No checklist_task_id found in task_info")
-                    }
-                } else {
-                    // Check if task IDs are directly in the message JSON
-                    if let checklistTaskId = json["checklist_task_id"] as? String {
-                        print("CHECKLIST DEBUG: Found checklist_task_id in message JSON: \(checklistTaskId)")
-                        
-                        // Store the task ID
-                        self.currentChecklistTaskId = checklistTaskId
-                        
-                        // Set up a listener for this task
-                        setupChecklistTaskListener(taskId: checklistTaskId)
-                        
-                        print("Set up listener for checklist task from message JSON: \(checklistTaskId)")
-                    }
-                }
-                
-                // Return just the message content, not the whole JSON
-                return messageContent
-            }
-            
-            return content
-        }
-        
-        throw NSError(domain: "ChatService", code: 400, userInfo: [NSLocalizedDescriptionKey: "No assistant message found in response"])
+        handleResponse(data)
+        return ""
     }
     
     private func parseChecklist(from text: String) -> [Models.Checklist]? {
@@ -633,86 +636,32 @@ final class ChatService {
     /// Set up a real-time listener for a message task
     /// - Parameter taskId: The task ID to listen for
     private func setupMessageTaskListener(taskId: String) {
-        // First ensure we have Firebase authentication
-        Task {
-            guard await authManager.ensureFirebaseAuth() else {
-                print("MESSAGE DEBUG: Cannot set up listener - no Firebase authentication")
-                return
-            }
-            
-            // Use the enhanced FirestoreService which now tracks active listeners
-            // The method will return false if a listener is already active for this task ID
-            let listenerSetup = firestoreService.listenForMessageTask(taskId: taskId) { [weak self] status, data in
-                guard let self = self else { return }
-                
-                
-                if status == "completed", let data = data {
-                    print("🔍 DEBUG: Firestore message task completed, data: \(data.keys)")
-                    
-                    // Update loading indicator based on listener status
-                    // This will automatically hide if no listeners are active
-                    Task { @MainActor in
-                        self.chatViewModel.updateLoadingIndicator()
-                    }
-                    
-                    // Check for response field, which contains the message content
-                    if let response = data["response"] as? String {
-                        print("🔍 DEBUG: Received response from Firestore: \(response.prefix(30))...")
-                        
-                        // Try to parse the response as JSON first
-                        if let responseData = response.data(using: .utf8),
-                           let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any] {
-                            
-                            // Extract the actual message content
-                            if let message = json["message"] as? String {
-                                // Send only the message content to the chat UI
-                                Task { @MainActor in
-                                    self.notifyAllViewModels(message)
-                                }
-                            }
-                            
-                            // Check for checklist task ID in both the response JSON and the task data
-                            if let checklistTaskId = json["checklist_task_id"] as? String ?? data["checklist_task_id"] as? String {
-                                // Set up a listener for the checklist task
-                                self.setupChecklistTaskListener(taskId: checklistTaskId)
-                            }
-                        } else {
-                            print("🔍 DEBUG: About to call notifyAllViewModels with raw response")
-                            // If not JSON, treat the entire response as the message
-                            Task { @MainActor in
-                                self.notifyAllViewModels(response)
-                            }
-                        }
-                    }
-                    
-                    // Listener cleanup is now handled by FirestoreService automatically
-                } else if status == "failed", let data = data {
-                    
-                    // Update loading indicator based on listener status
-                    // This will automatically hide if no listeners are active
-                    Task { @MainActor in
-                        self.chatViewModel.updateLoadingIndicator()
-                    }
-                    
-                    // If we have error details, show them to the user
-                    let errorDetails = (data["error"] as? String) ?? "Unknown error"
-                    
-                    // Add an error message to the chat
-                    Task { @MainActor in
-                        self.notifyAllViewModels("Sorry, I encountered an error: \(errorDetails)")
-                    }
-                    
-                    // Listener cleanup is now handled by FirestoreService automatically
+        firestoreService.listenForMessageTask(taskId: taskId) { [weak self] status, data in
+            if status == "completed", let data = data {
+                // Print the complete Firestore document data for debugging
+                if let jsonData = try? JSONSerialization.data(withJSONObject: data, options: .prettyPrinted),
+                   let jsonString = String(data: jsonData, encoding: .utf8) {
+                    print("📥 FIRESTORE DOCUMENT DATA:\n\(jsonString)")
                 }
-            }
-            
-            if listenerSetup {
-                // Only update our local tracking if a new listener was actually set up
-                currentMessageTaskId = taskId
                 
-                // Update the loading indicator since we just set up a listener
-                Task { @MainActor in
-                    self.chatViewModel.updateLoadingIndicator()
+                // Check if we have an outline
+                if let outline = data["outline"] as? [String: Any] {
+                    print("📥 FOUND OUTLINE DATA")
+                    // Create a combined JSON structure with both response and outline
+                    let combinedData: [String: Any] = [
+                        "response": data["response"] as? String ?? "",
+                        "outline": outline
+                    ]
+                    
+                    if let jsonData = try? JSONSerialization.data(withJSONObject: combinedData),
+                       let jsonString = String(data: jsonData, encoding: .utf8) {
+                        self?.notifyAllViewModels(jsonString)
+                    }
+                } else if let responseData = data["response"] as? Data {
+                    self?.handleResponse(responseData)
+                } else if let responseString = data["response"] as? String,
+                          let responseData = responseString.data(using: .utf8) {
+                    self?.handleResponse(responseData)
                 }
             }
         }
@@ -733,6 +682,9 @@ final class ChatService {
                 guard let self = self else { return }
                 
                 if status == "completed", let data = data {
+                    // Print raw response for checklist tasks
+                    print("📥 RAW CHECKLIST TASK RESPONSE: \(data)")
+                    
                     // Update loading indicator based on listener status
                     Task { @MainActor in
                         self.chatViewModel.updateLoadingIndicator()
@@ -1153,6 +1105,11 @@ final class ChatService {
                 body: jsonData
             )
             
+            // Print raw response for check-ins
+            if let rawResponse = String(data: data, encoding: .utf8) {
+                print("📥 RAW CHECKIN RESPONSE: \(rawResponse)")
+            }
+            
             // Parse response to get task ID
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let response = json["response"] as? [String: Any],
@@ -1231,6 +1188,73 @@ final class ChatService {
         
         // Fallback to using the message as the response with default values for summary and analysis
         return ("Daily Check-in Report", "Check-in completed", message)
+    }
+
+    // Method to send an outline to create a checklist
+    func sendOutline(_ outline: ChecklistOutline) async throws -> String {
+        // Check for connectivity first
+        guard checkConnectivity() else {
+            throw NSError(domain: "ChatService", code: -1009, userInfo: [NSLocalizedDescriptionKey: "No internet connection. Please check your network settings and try again."])
+        }
+        
+        // Get current date and time
+        let currentDate = Date()
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.timeZone = TimeZone.current
+        let currentTimeString = dateFormatter.string(from: currentDate)
+        
+        // Convert outline to dictionary
+        let outlineDict: [String: Any] = [
+            "summary": outline.summary ?? "",
+            "period": outline.period ?? "",
+            "start_date": outline.startDate?.ISO8601Format() ?? "",
+            "end_date": outline.endDate?.ISO8601Format() ?? "",
+            "line_item": outline.lineItem as? [String] ?? []
+        ]
+        
+        // Create payload
+        let payload: [String: Any] = [
+            "outline": outlineDict,
+            "current_time": currentTimeString
+        ]
+        
+        let bodyData = try JSONSerialization.data(withJSONObject: payload)
+        
+        do {
+            // Use NetworkManager to make the authenticated request
+            let data = try await NetworkManager.shared.makeAuthenticatedRequest(
+                endpoint: "/v1/chat/outlines",
+                method: "POST",
+                body: bodyData,
+                contentType: "application/json"
+            )
+            
+            // Print raw response for outlines
+            if let rawResponse = String(data: data, encoding: .utf8) {
+                print("📥 RAW OUTLINE RESPONSE: \(rawResponse)")
+            }
+            
+            // Parse the response
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let metadata = json["metadata"] as? [String: Any],
+               let taskId = metadata["task_id"] as? String {
+                
+                // Store the task ID
+                self.currentChecklistTaskId = taskId
+                
+                // Set up a listener for this checklist task
+                setupChecklistTaskListener(taskId: taskId)
+                
+                return taskId
+            }
+            
+            throw NSError(domain: "ChatService", code: 400, 
+                         userInfo: [NSLocalizedDescriptionKey: "Failed to parse server response"])
+            
+        } catch {
+            print("ERROR SENDING OUTLINE: \(error.localizedDescription)")
+            throw error
+        }
     }
 }
 

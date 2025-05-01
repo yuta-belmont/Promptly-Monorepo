@@ -72,6 +72,10 @@ class CheckinRequest(BaseModel):
     alfred_personality: Optional[str] = None
     user_objectives: Optional[str] = None
 
+class OutlineAcceptRequest(BaseModel):
+    outline: Dict[str, Any]
+    current_time: str
+
 # Stateless message endpoint that doesn't use the chat model
 @router.post("/messages", response_model=OptimizedChatResponse)
 async def send_stateless_message(
@@ -303,4 +307,45 @@ async def send_checkin(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process checkin: {str(e)}",
-        ) 
+        )
+
+@router.post("/outlines")
+async def accept_outline(
+    *,
+    current_user: User = Depends(deps.get_current_user),
+    request: OutlineAcceptRequest
+):
+    """
+    Accept an outline and create a checklist task.
+    
+    Args:
+        request: The outline acceptance request
+        current_user: The current user (from auth)
+        
+    Returns:
+        The task ID for the created checklist task
+    """
+    try:
+        # Get services
+        firebase_service = FirebaseService()
+        
+        # Create checklist task with outline data
+        task_id = firebase_service.add_checklist_task(
+            user_id=str(current_user.id),
+            chat_id='',  # Not needed for outline-based tasks
+            message_id='',  # Not needed for outline-based tasks
+            message_content='',  # Not needed for outline-based tasks
+            message_history=[],  # Not needed for outline-based tasks
+            client_time=request.current_time,
+            outline_data=request.outline
+        )
+        
+        return {
+            "metadata": {
+                "task_id": task_id
+            }
+        }
+        
+    except Exception as e:
+        print(f"DEBUG: ERROR in outline acceptance: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e)) 

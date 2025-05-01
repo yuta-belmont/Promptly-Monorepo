@@ -118,7 +118,6 @@ class FirestoreService {
                     
                     // Then remove the listener
                     self.removeMessageListener(for: "message_task_\(taskId)")
-                    print("MESSAGE DEBUG: Auto-removed listener after task completion/failure")
                 } else {
                     // For other statuses, just call the callback
                     onUpdate(status, data)
@@ -145,13 +144,11 @@ class FirestoreService {
     func listenForChecklistTask(taskId: String, onUpdate: @escaping FirestoreTaskCallback) -> Bool {
         // Check if we're already listening to this task
         if isChecklistTaskActive(taskId) {
-            print("CHECKLIST DEBUG: Already listening for checklist task: \(taskId)")
             return false
         }
         
         // Check if we have a listener registered but it's not marked as active
         if messageListeners["checklist_task_\(taskId)"] != nil {
-            print("CHECKLIST DEBUG: Removing stale listener for checklist task: \(taskId)")
             removeMessageListener(for: "checklist_task_\(taskId)")
         }
                 
@@ -163,12 +160,10 @@ class FirestoreService {
                 }
                 
                 guard let snapshot = snapshot else {
-                    print("CHECKLIST DEBUG: Snapshot is nil for task: \(taskId)")
                     return
                 }
                 
                 if !snapshot.exists {
-                    print("CHECKLIST DEBUG: Checklist task document doesn't exist: \(taskId)")
                     return
                 }
                 
@@ -182,7 +177,6 @@ class FirestoreService {
                     
                     // Then remove the listener
                     self.removeMessageListener(for: "checklist_task_\(taskId)")
-                    print("CHECKLIST DEBUG: Auto-removed listener after task completion/failure")
                 } else {
                     // For other statuses, just call the callback
                     onUpdate(status, data)

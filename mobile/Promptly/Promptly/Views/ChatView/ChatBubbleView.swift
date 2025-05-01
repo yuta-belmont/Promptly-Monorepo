@@ -9,6 +9,7 @@ import SwiftUI
 struct ChatBubbleView: View {
     let message: ChatMessage
     var onReportTap: (() -> Void)? = nil
+    var onOutlineTap: (() -> Void)? = nil
     @State private var isGlowing: Bool = false
     
     var body: some View {
@@ -26,15 +27,27 @@ struct ChatBubbleView: View {
                                 .foregroundColor(.white.opacity(0.9))
                                 .font(.system(size: 14))
                         }
+                        
+                        // Add "Go To" arrow for outline messages
+                        if message.outline != nil {
+                            Image(systemName: "arrow.right.circle.fill")
+                                .foregroundColor(.white.opacity(0.9))
+                                .font(.system(size: 14))
+                        }
                     }
                     .padding(8)
                     .foregroundColor(.white)
                     .background(
                         ZStack {
-                            Color.gray.opacity(0.5)
+                            // Make tappable bubbles darker
+                            if message.isReportMessage || message.outline != nil {
+                                Color.gray.opacity(0.2)  // Darker background for tappable bubbles
+                            } else {
+                                Color.gray.opacity(0.5)  // Regular background for non-tappable bubbles
+                            }
                             
                             // Glow effect when tapped
-                            if isGlowing && message.isReportMessage {
+                            if isGlowing && (message.isReportMessage || message.outline != nil) {
                                 Color.white
                                     .blur(radius: 8)
                                     .opacity(0.15)
@@ -44,15 +57,15 @@ struct ChatBubbleView: View {
                     .cornerRadius(16)
                     .overlay(
                         Group {
-                            if message.isReportMessage {
-                                // Default subtle outline for report messages
+                            if message.isReportMessage || message.outline != nil {
+                                // More prominent outline for report/outline messages
                                 RoundedRectangle(cornerRadius: 16)
-                                    .strokeBorder(.white.opacity(0.1), lineWidth: 0.5)
+                                    .strokeBorder(.white.opacity(0.3), lineWidth: 1)  // More visible outline
                                 
                                 // Animated outline that appears when tapped
                                 if isGlowing {
                                     RoundedRectangle(cornerRadius: 16)
-                                        .strokeBorder(.white.opacity(0.5), lineWidth: 1)
+                                        .strokeBorder(.white.opacity(0.7), lineWidth: 1.5)  // Even more prominent when tapped
                                 }
                             }
                         }
@@ -61,7 +74,7 @@ struct ChatBubbleView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle()) // Ensure the entire area is tappable
                 .onTapGesture {
-                    if message.isReportMessage {
+                    if message.isReportMessage || message.outline != nil {
                         // Create haptic feedback
                         let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
                         feedbackGenerator.prepare()
@@ -69,7 +82,13 @@ struct ChatBubbleView: View {
                         
                         // Start the glow animation
                         isGlowing = true
-                        onReportTap?()
+                        
+                        // Call the appropriate handler
+                        if message.isReportMessage {
+                            onReportTap?()
+                        } else if message.outline != nil {
+                            onOutlineTap?()
+                        }
                         
                         // End the animation after a delay
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {

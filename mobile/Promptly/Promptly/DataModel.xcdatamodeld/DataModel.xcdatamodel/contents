@@ -12,6 +12,7 @@
         <attribute name="role" attributeType="String"/>
         <attribute name="timestamp" attributeType="Date" usesScalarValueType="NO"/>
         <relationship name="chatHistory" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="ChatHistory" inverseName="chatMessages" inverseEntity="ChatHistory"/>
+        <relationship name="outline" optional="YES" maxCount="1" deletionRule="Cascade" destinationEntity="ChecklistOutline"/>
     </entity>
     <entity name="Checklist" representedClassName="Promptly.Checklist" syncable="YES">
         <attribute name="date" attributeType="Date" usesScalarValueType="NO"/>
@@ -29,6 +30,16 @@
         <relationship name="checklist" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Checklist" inverseName="checklistItem" inverseEntity="Checklist"/>
         <relationship name="itemGroup" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="ItemGroup" inverseName="checklistItem" inverseEntity="ItemGroup"/>
         <relationship name="subItems" optional="YES" toMany="YES" deletionRule="Cascade" ordered="YES" destinationEntity="SubItem" inverseName="parent" inverseEntity="SubItem"/>
+    </entity>
+    <entity name="ChecklistOutline" representedClassName="ChecklistOutline" syncable="YES" codeGenerationType="class">
+        <attribute name="endDate" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="YES"/>
+        <attribute name="isDone" optional="YES" attributeType="Boolean" usesScalarValueType="YES"/>
+        <attribute name="lineItem" optional="YES" attributeType="Transformable" valueTransformerName="NSSecureUnarchiveFromData" customClassName="NSArray"/>
+        <attribute name="period" optional="YES" attributeType="String"/>
+        <attribute name="startDate" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="summary" attributeType="String" defaultValueString=""/>
+        <attribute name="timestamp" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
     <entity name="GroupOrder" representedClassName="GroupOrder" syncable="YES" codeGenerationType="class">
         <relationship name="orderedGroups" optional="YES" toMany="YES" deletionRule="Cascade" ordered="YES" destinationEntity="ItemGroup" inverseName="groupOrder" inverseEntity="ItemGroup"/>

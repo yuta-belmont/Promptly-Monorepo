@@ -252,38 +252,46 @@ class UnifiedWorker:
         return await self.process_stateless_message_task(task_id, task_data)
     
     async def process_checklist_task(self, task_id, task_data):
-        """
-        Process a checklist task.
-        
-        Args:
-            task_id: The task ID
-            task_data: The task data
-        """
-        # Convert Firestore data to JSON-serializable format
-        task_data = convert_firestore_data(task_data)
-        
+        """Process a checklist task."""
         try:
-            # Extract task data
             user_id = task_data.get('user_id')
-            message_content = task_data.get('message_content')
-            message_history = task_data.get('message_history', [])
-            client_time = task_data.get('client_time')  # Get client time if provided
-            
-            # Parse client time if provided
-            client_datetime = None
-            if client_time:
-                try:
-                    client_datetime = datetime.fromisoformat(client_time.replace('Z', '+00:00'))
-                    logger.info(f"Using client time for checklist generation: {client_datetime}")
-                except (ValueError, TypeError) as e:
-                    logger.warning(f"Error parsing client time: {e}. Using server time instead.")
-            
-            # Generate the checklist
-            checklist_data = await self.ai_service.generate_checklist(
-                message=message_content,
-                message_history=message_history,
-                now=client_datetime
-            )
+            if not user_id:
+                logger.error(f"Task {task_id}: No user_id found")
+                return False
+
+            # Check if this is an outline-based task
+            outline_data = task_data.get('outline_data')
+            if outline_data:
+                # Process outline-based task
+                logger.info(f"Processing outline-based checklist task {task_id}")
+                
+                # Extract outline data
+                summary = outline_data.get('summary', '')
+                start_date = outline_data.get('start_date', '')
+                end_date = outline_data.get('end_date', '')
+                line_items = outline_data.get('line_item', [])
+                
+                # Generate checklist from outline
+                checklist_data = await self.ai_service.generate_checklist_from_outline(
+                    summary=summary,
+                    start_date=start_date,
+                    end_date=end_date,
+                    line_items=line_items
+                )
+            else:
+                # Process message-based task as before
+                message_content = task_data.get('message_content')
+                message_history = task_data.get('message_history', [])
+                
+                if not message_content:
+                    logger.error(f"Task {task_id}: No message_content found")
+                    return False
+                
+                # Generate checklist from message
+                checklist_data = await self.ai_service.generate_checklist(
+                    message=message_content,
+                    message_history=message_history
+                )
             
             if checklist_data:
                 # Store the checklist in Firestore using the date-sharded method
@@ -362,11 +370,12 @@ class UnifiedWorker:
             ai_response = result['response_text']
             needs_checklist = result['needs_checklist']
             needs_more_info = result['needs_more_info']
+            has_outline = 'outline' in result
             
             # Process checklist if needed
             checklist_task_id = None
             
-            if needs_checklist and not needs_more_info:
+            if needs_checklist and not needs_more_info and not has_outline:
                 # Create a checklist task in "pending" state
                 checklist_task_data = {
                     'user_id': user_id,
@@ -390,10 +399,14 @@ class UnifiedWorker:
             # Create the initial response with checklist task ID if applicable
             final_message_content = ai_response
             if checklist_task_id:
-                # Include checklist task ID in the response
+                # Include checklist task ID in the response, using the correct format
                 final_message_content = json.dumps({
-                    "message": ai_response,
-                    "checklist_task_id": checklist_task_id
+                    "response": {
+                        "content": ai_response
+                    },
+                    "metadata": {
+                        "checklist_id": checklist_task_id
+                    }
                 })
             
             # Update message task status to completed immediately
@@ -403,7 +416,8 @@ class UnifiedWorker:
                 status='completed',
                 data={
                     'response': final_message_content,
-                    'checklist_task_id': checklist_task_id
+                    'checklist_task_id': checklist_task_id,
+                    'outline': result.get('outline', {}).get('outline')  # Unwrap the nested outline
                 }
             )
             

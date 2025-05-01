@@ -382,7 +382,6 @@ final class ChatViewModel: ObservableObject {
     }
     
     private func cooldownExpired() {
-        print("Cooldown expired")
         isInCooldown = false
         
         // If we have a pending message, process it and start a new cooldown
@@ -602,19 +601,109 @@ final class ChatViewModel: ObservableObject {
     // Method to handle messages from ChatService
     @MainActor
     func handleMessage(_ message: String, isReportMessage : Bool = false) {
-        print("🔍 DEBUG: handleMessage called with: \(message.prefix(20))...")
+        print("🔍 DEBUG: handleMessage called with message: \(message)")
         
-        // Create a new message entity using the proper ChatMessage.create method
-        let chatMessage = ChatMessage.create(
-            in: context,
-            role: MessageRoles.assistant,
-            content: message,
-            isReportMessage: isReportMessage
-        )
-        
-        Task {
-            print("🔍 DEBUG: About to call addMessageAndNotify from handleMessage")
-            await addMessageAndNotify(chatMessage)
+        // Try to parse the message as JSON first
+        if let data = message.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            
+            // Check if this is a combined response with outline
+            if let response = json["response"] as? String,
+               let outlineJson = json["outline"] as? [String: Any] {
+                print("🔍 DEBUG: Found combined response with outline")
+                
+                // Create a new ChecklistOutline from the JSON
+                let context = persistenceService.viewContext
+                let outlineEntity = NSEntityDescription.insertNewObject(forEntityName: "ChecklistOutline", into: context) as! ChecklistOutline
+                outlineEntity.id = UUID()
+                outlineEntity.timestamp = Date()
+                
+                // Set the outline properties
+                if let summary = outlineJson["summary"] as? String {
+                    outlineEntity.summary = summary
+                }
+                
+                if let period = outlineJson["period"] as? String {
+                    outlineEntity.period = period
+                }
+                
+                // Parse dates
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd"
+                dateFormatter.timeZone = TimeZone.current
+                
+                if let startDateStr = outlineJson["start_date"] as? String {
+                    print("🔍 DEBUG: Parsing start date string: \(startDateStr)")
+                    if let startDate = dateFormatter.date(from: startDateStr) {
+                        print("🔍 DEBUG: Successfully parsed start date: \(startDate)")
+                        outlineEntity.startDate = startDate
+                    } else {
+                        print("🔍 DEBUG: Failed to parse start date from: \(startDateStr)")
+                    }
+                }
+                
+                if let endDateStr = outlineJson["end_date"] as? String {
+                    print("🔍 DEBUG: Parsing end date string: \(endDateStr)")
+                    if let endDate = dateFormatter.date(from: endDateStr) {
+                        print("🔍 DEBUG: Successfully parsed end date: \(endDate)")
+                        outlineEntity.endDate = endDate
+                    } else {
+                        print("🔍 DEBUG: Failed to parse end date from: \(endDateStr)")
+                    }
+                }
+                
+                // Store the details array in lineItem
+                if let details = outlineJson["details"] as? [[String: Any]] {
+                    var lineItems: [String] = []
+                    for detail in details {
+                        if let title = detail["title"] as? String,
+                           let breakdown = detail["breakdown"] as? String {
+                            lineItems.append("\(title): \(breakdown)")
+                        }
+                    }
+                    outlineEntity.lineItem = lineItems as NSArray
+                }
+                
+                // Save the context
+                try? context.save()
+                
+                // Create a new message entity with both the response and outline
+                let chatMessage = ChatMessage.create(
+                    in: context,
+                    role: MessageRoles.assistant,
+                    content: response,
+                    isReportMessage: isReportMessage,
+                    outline: outlineEntity
+                )
+                
+                Task {
+                    await addMessageAndNotify(chatMessage)
+                }
+            } else {
+                // If not a combined response, treat as a regular message
+                let chatMessage = ChatMessage.create(
+                    in: context,
+                    role: MessageRoles.assistant,
+                    content: message,
+                    isReportMessage: isReportMessage
+                )
+                
+                Task {
+                    await addMessageAndNotify(chatMessage)
+                }
+            }
+        } else {
+            // If not JSON, treat as a regular message
+            let chatMessage = ChatMessage.create(
+                in: context,
+                role: MessageRoles.assistant,
+                content: message,
+                isReportMessage: isReportMessage
+            )
+            
+            Task {
+                await addMessageAndNotify(chatMessage)
+            }
         }
     }
     
@@ -648,5 +737,72 @@ final class ChatViewModel: ObservableObject {
         
         // Clear unread counts
         self.clearUnreadCount()
+    }
+    
+    // Add computed property to check for pending outlines
+    var hasPendingOutline: Bool {
+        let hasPending = messages.contains { $0.outline?.isDone == false }
+        return hasPending
+    }
+    
+    // Add methods to handle outline actions
+    func acceptOutline() {
+        print("🔍 DEBUG: Accept outline called")
+        if let outline = messages.first(where: { $0.outline?.isDone == false })?.outline {
+            print("🔍 DEBUG: Found pending outline, setting isDone to true")
+            outline.isDone = true
+            
+            // Send the outline to the server
+            Task {
+                do {
+                    let taskId = try await chatService.sendOutline(outline)
+                    print("🔍 DEBUG: Created checklist task with ID: \(taskId)")
+                    
+                    // Save the context after successful server response
+                    try? context.save()
+                    // Force UI update
+                    objectWillChange.send()
+                } catch {
+                    print("🔍 DEBUG: Error sending outline: \(error)")
+                    objectWillChange.send()
+
+                }
+            }
+        }
+    }
+    
+    /// Sends an outline directly to the server without checking isDone status
+    /// - Parameter outline: The outline to send to the server
+    func sendOutlineToServer(_ outline: ChecklistOutline) {
+        print("🔍 DEBUG: Sending outline directly to server")
+        // Mark the outline as done before sending
+        outline.isDone = true
+        
+        Task {
+            do {
+                let taskId = try await chatService.sendOutline(outline)
+                print("🔍 DEBUG: Created checklist task with ID: \(taskId)")
+                
+                // Save the context after successful server response
+                try? context.save()
+                // Force UI update
+                objectWillChange.send()
+            } catch {
+                print("🔍 DEBUG: Error sending outline: \(error)")
+                objectWillChange.send()
+
+            }
+        }
+    }
+    
+    func declineOutline() {
+        print("🔍 DEBUG: Decline outline called")
+        if let outline = messages.first(where: { $0.outline?.isDone == false })?.outline {
+            print("🔍 DEBUG: Found pending outline, setting isDone to true")
+            outline.isDone = true
+            try? context.save()
+            // Force UI update
+            objectWillChange.send()
+        }
     }
 }

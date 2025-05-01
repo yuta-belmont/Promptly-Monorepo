@@ -91,7 +91,8 @@ class FirebaseService:
                           message_id: str,
                           message_content: str,
                           message_history: List[Dict[str, Any]],
-                          client_time: Optional[str] = None) -> str:
+                          client_time: Optional[str] = None,
+                          outline_data: Optional[Dict[str, Any]] = None) -> str:
         """
         Add a checklist generation task to Firestore.
         
@@ -102,6 +103,7 @@ class FirebaseService:
             message_content: The content of the user's message
             message_history: The history of messages in the chat
             client_time: The current time on the client device (optional)
+            outline_data: The outline data to use for checklist generation (optional)
             
         Returns:
             The ID of the created task
@@ -129,6 +131,10 @@ class FirebaseService:
             # Include client time if provided
             if client_time:
                 task_data['client_time'] = client_time
+                
+            # Include outline data if provided
+            if outline_data:
+                task_data['outline_data'] = outline_data
                 
             task_ref.set(task_data)
             

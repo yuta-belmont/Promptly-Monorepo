@@ -344,10 +344,8 @@ struct ReportDetailView: View {
                         Text("Analysis")
                             .font(.subheadline)
                             .foregroundColor(.white.opacity(0.8))
-                        
-                        Text(report.analysis ?? "")
-                            .font(.body)
-                            .foregroundColor(.white)
+                         
+                        AnalyticsDetailView(report: report)
                         
                         if let analysis = report.analysis, !analysis.isEmpty {
                             Divider()
@@ -355,8 +353,9 @@ struct ReportDetailView: View {
                             
                         }
                         
-                        AnalyticsDetailView(report: report)
-
+                        Text(report.analysis ?? "")
+                            .font(.body)
+                            .foregroundColor(.white)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()

@@ -22,6 +22,7 @@ public class ChatMessage: NSManagedObject, Identifiable {
     @NSManaged public var role: String // Direct string property instead of computed property
     @NSManaged public var timestamp: Date
     @NSManaged public var isReportMessage: Bool
+    @NSManaged public var outline: ChecklistOutline?
 
     @NSManaged public var chatHistory: ChatHistory?
 }
@@ -36,7 +37,8 @@ extension ChatMessage {
                       content: String,
                       timestamp: Date = Date(),
                       isReportMessage: Bool = false,
-                      chatHistory: ChatHistory? = nil) -> ChatMessage {
+                      chatHistory: ChatHistory? = nil,
+                      outline: ChecklistOutline? = nil) -> ChatMessage {
         // Use insertNewObject instead of direct initialization for better reliability
         let message = NSEntityDescription.insertNewObject(forEntityName: "ChatMessage", into: context) as! ChatMessage
         message.id = id
@@ -45,6 +47,7 @@ extension ChatMessage {
         message.timestamp = timestamp
         message.isReportMessage = isReportMessage
         message.chatHistory = chatHistory
+        message.outline = outline
         return message
     }
 }

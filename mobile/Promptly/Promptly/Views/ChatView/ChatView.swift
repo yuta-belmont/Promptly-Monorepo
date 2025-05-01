@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import CoreData
 
 struct ChatView: View {
     @EnvironmentObject private var viewModel: ChatViewModel
@@ -11,6 +12,7 @@ struct ChatView: View {
     @State private var isDragging = false
     @State private var viewUpdateTrigger: Bool = false
     @State private var lastInputClearTime: Date? = nil
+    @State private var selectedOutline: ChecklistOutline? = nil
     @Binding var isKeyboardActive: Bool
     @Binding var isExpanded: Bool
     
@@ -127,7 +129,11 @@ struct ChatView: View {
                                         )
                                     }
                                     
-
+                                }, onOutlineTap: {
+                                    // When an outline message is tapped, show the ChecklistOutlineView
+                                    if let outline = msg.outline {
+                                        selectedOutline = outline
+                                    }
                                 })
                                 .id(msg.id)
                                 .offset(y: messageOffset[msg.id] ?? 0)
@@ -214,6 +220,15 @@ struct ChatView: View {
                             }
                         }
                     },
+                    onAccept: {
+                        print("🔍 DEBUG: Accept button tapped in ChatView")
+                        viewModel.acceptOutline()
+                    },
+                    onDecline: {
+                        print("🔍 DEBUG: Decline button tapped in ChatView")
+                        viewModel.declineOutline()
+                    },
+                    hasPendingOutline: viewModel.hasPendingOutline,
                     isSendDisabled: viewModel.userInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                     isDragging: isDragging,
                     isDisabled: false
@@ -244,6 +259,19 @@ struct ChatView: View {
                             .padding(.leading, 12)
                     }
                 }
+            }
+            .sheet(item: $selectedOutline) { outline in
+                ChecklistOutlineView(
+                    outline: outline,
+                    onAccept: {
+                        viewModel.sendOutlineToServer(outline)
+                        selectedOutline = nil
+                    },
+                    onDecline: {
+                        viewModel.declineOutline()
+                        selectedOutline = nil
+                    }
+                )
             }
         }
         .onAppear {
