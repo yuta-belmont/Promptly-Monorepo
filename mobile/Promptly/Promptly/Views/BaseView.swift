@@ -257,8 +257,7 @@ struct BaseView: View {
         let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
         feedbackGenerator.prepare()
         feedbackGenerator.impactOccurred()
-            
-            
+                    
         if isItemDetailsViewShowing {
             // Post notification to trigger ItemDetailsView's plus button functionality
             NotificationCenter.default.post(

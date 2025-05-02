@@ -206,7 +206,6 @@ struct ItemDetailsView: View {
             // Remove focus which will trigger saves in subitems
             removeAllFocus()
             
-            print("ITEMDETAILSVIEW DISAPPEAR!")
             // Save changes when view disappears
             viewModel.saveChanges()
             
@@ -577,18 +576,15 @@ struct ItemDetailsView: View {
                             row = "subitemLimitMessage"
                             topAnchor = false
                         }
-                        
-                        withAnimation(.linear(duration: 0.2)) {
+                        DispatchQueue.main.async {
                             proxy.scrollTo(row, anchor: topAnchor ? .top : .bottom)
                             //sometimes there's a timing issue so we force it to scroll again
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                withAnimation(.easeOut(duration: 0.2)) {
-                                    proxy.scrollTo(row, anchor: topAnchor ? .top : .bottom)
-                                }
+                                proxy.scrollTo(row, anchor: topAnchor ? .top : .bottom)
+                                
                             }
                         }
                     }
-                     
                 }
             }
         }

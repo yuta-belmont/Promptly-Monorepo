@@ -316,6 +316,7 @@ struct NewItemRow: View {
     let onSubmit: () -> Void
     let onDone: () -> Void
     @Binding var isListEmpty: Bool
+    @Binding var focusRequested: Bool
     
     var body: some View {
         HStack(alignment: .top) {
@@ -332,6 +333,8 @@ struct NewItemRow: View {
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
                     .focused(isFocused)
+                    .onChange(of: isFocused.wrappedValue) { oldValue, newValue in
+                    }
                     .padding(.top, 2)
                     .onChange(of: text) { oldValue, newValue in
                         // Check if user pressed return (added a newline)
@@ -378,6 +381,19 @@ struct NewItemRow: View {
         .frame(height: (isFocused.wrappedValue || isListEmpty) ? nil : 0, alignment: .top)
         // Hide completely when not visible
         .accessibility(hidden: !(isFocused.wrappedValue || isListEmpty))
+        // Add onChange for focusRequested
+        .onChange(of: focusRequested) { oldValue, newValue in
+            if newValue {
+                // Request focus directly from within the component
+                DispatchQueue.main.async {
+                    isFocused.wrappedValue = true
+                    // Reset the request flag after handling it
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        focusRequested = false
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -392,6 +408,9 @@ struct ListContent: View {
     let headerTitle: String
     let removeAllFocus: () -> Void
     
+    // Add a state to track focus requests
+    @State private var focusRequested: Bool = false
+    
     // Computed property to check if list is empty
     private var isListEmpty: Bool {
         return viewModel.items.isEmpty
@@ -403,11 +422,18 @@ struct ListContent: View {
     // Consolidated scroll helper function
     private func scrollToNewItem(_ proxy: ScrollViewProxy) {
         
-        // Scroll immediately with a short animation
+        // Scroll immediately with NO animation
         DispatchQueue.main.async {
-            withAnimation(.easeOut(duration: 0.2)) {
-                // Try scrolling to the test element at the bottom of the list
-                proxy.scrollTo("newItemRow", anchor: .top)
+            // Remove animation wrapper for instantaneous scrolling
+            proxy.scrollTo("newItemRow", anchor: .top)
+            
+            // Request focus after scroll is complete
+            // This is a key change - we request focus AFTER the scroll completes
+            DispatchQueue.main.asyncAfter(deadline: .now()) {
+                focusRequested = true
+                
+                // Also try direct focus as a backup approach
+                isNewItemFocused = true
             }
         }
     }
@@ -417,7 +443,6 @@ struct ListContent: View {
             viewModel.addItem(newItemText)
             newItemText = ""
             if !viewModel.isItemLimitReached {
-                print("ListContent handleNewItemSubmit: Setting isNewItemFocused = true")
                 isNewItemFocused = true
             }
         }
@@ -444,9 +469,13 @@ struct ListContent: View {
                                 focusManager.isEasyListFocused = false
                             },
                             isListEmpty: Binding(
-                                get: { viewModel.items.isEmpty },
+                                get: { 
+                                    let isEmpty = viewModel.items.isEmpty
+                                    return isEmpty
+                                },
                                 set: { _ in }
-                            )
+                            ),
+                            focusRequested: $focusRequested
                         )
                         .id("newItemRow")
                         .listRowSeparator(.hidden)
@@ -545,9 +574,7 @@ struct ListContent: View {
                 // No need to post notification - view handles its own state
             },
             onGroupChange: { groupId in
-                print("EasyListView - Group change requested for item \(item.id) to group \(String(describing: groupId))")
                 viewModel.updateItemGroup(itemId: item.id, with: groupId)
-                print("EasyListView - Group change completed for item \(item.id)")
             },
             onItemTap: { itemId in
                 // Remove any focus first
@@ -840,6 +867,7 @@ struct EasyListView: View {
     @ObservedObject private var groupStore = GroupStore.shared
     @State private var keyboardHeight: CGFloat = 0
     @State private var isInViewTransition: Bool = false // Add flag to track transition state
+    @State private var lastTransitionTime: Date? = nil // Track when transition ended
     
     init() {
         // No need to create a view model here anymore
@@ -851,18 +879,19 @@ struct EasyListView: View {
             return
         }
         
+        // If we're in notes view, toggle back first
         if viewModel.isShowingNotes {
             onNotesToggle()
+            
+            // Add a bigger delay when coming from notes view
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                NotificationCenter.default.post(name: Notification.Name("ScrollToAddItem"), object: nil)
+            }
+            return
         }
         
-        isNewItemFocused = true
-        focusManager.requestFocus(for: .easyList)
-        
-        // Then trigger scroll notification after a tiny delay
-        // to ensure focus state has been processed
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            NotificationCenter.default.post(name: Notification.Name("ScrollToAddItem"), object: nil)
-        }
+        // Otherwise post notification immediately
+        NotificationCenter.default.post(name: Notification.Name("ScrollToAddItem"), object: nil)
     }
     
     private func onNotesToggle() {
@@ -875,7 +904,6 @@ struct EasyListView: View {
         isInViewTransition = true
         
         // Remove focus
-        print("onNotesToggle: Setting isEditing = false, isNewItemFocused = false, isNotesFocused = false")
         isEditing = false
         isNewItemFocused = false
         isNotesFocused = false
@@ -889,6 +917,7 @@ struct EasyListView: View {
         // Reset transition flag after animation completes
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             isInViewTransition = false
+            lastTransitionTime = Date() // Record when the transition ended
         }
     }
     

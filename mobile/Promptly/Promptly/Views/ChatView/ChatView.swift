@@ -126,10 +126,11 @@ struct ChatView: View {
                                     // If we don't have the external handler, post a notification
                                     // This will be picked up by RootView to show ReportsView
                                     if onNavigateToReports == nil {
-                                        NotificationCenter.default.post(
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {                             NotificationCenter.default.post(
                                             name: Notification.Name("ShowReportsView"),
                                             object: nil
-                                        )
+                                            )
+                                        }
                                     }
                                     
                                 }, onOutlineTap: {
