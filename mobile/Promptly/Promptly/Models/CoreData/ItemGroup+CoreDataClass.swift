@@ -11,21 +11,18 @@ public class ItemGroup: NSManagedObject {
         // Safely access the checklistItem relationship
         var itemsDictionary: [UUID: Models.ChecklistItem] = [:]
         
-        // Use a safer approach to access the relationship
-        if let checklistItemSet = checklistItem {
-            // Convert NSSet to Array safely
-            let itemsArray = checklistItemSet.allObjects as? [ChecklistItem] ?? []
-            
-            // Process each item safely
-            for item in itemsArray {
-                if let id = item.id {
-                    // Safely convert each item to its struct representation
-                    do {
-                        let itemStruct = item.toStruct()
-                        itemsDictionary[id] = itemStruct
-                    } catch {
-                        print("Error converting item to struct: \(error)")
-                    }
+        // Access the ordered relationship using mutableOrderedSetValue which is more reliable
+        let orderedItems = self.mutableOrderedSetValue(forKey: "checklistItem")
+        
+        // Process each item in the maintained order
+        for i in 0..<orderedItems.count {
+            if let item = orderedItems[i] as? ChecklistItem, let id = item.id {
+                // Safely convert each item to its struct representation
+                do {
+                    let itemStruct = item.toStruct()
+                    itemsDictionary[id] = itemStruct
+                } catch {
+                    print("Error converting item to struct: \(error)")
                 }
             }
         }

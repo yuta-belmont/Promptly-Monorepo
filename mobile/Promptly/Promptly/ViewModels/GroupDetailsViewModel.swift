@@ -194,8 +194,11 @@ final class GroupDetailsViewModel: ObservableObject {
             // Directly fetch the latest version of each item by ID from persistence
             let freshItems = persistence.loadItemsByIds(itemIds)
             
+            // Sort the items by date before assigning to groupItems
+            let sortedItems = freshItems.sorted { $0.date < $1.date }
+            
             await MainActor.run {
-                self.groupItems = freshItems
+                self.groupItems = sortedItems  // Use the date-sorted items
                 self.isLoadingItems = false
             }
         }

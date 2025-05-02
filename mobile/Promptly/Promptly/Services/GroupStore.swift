@@ -176,6 +176,10 @@ final class GroupStore: ObservableObject {
         let newGroup = ItemGroup.create(from: newStructGroup, context: context)
         let structRepresentation = newGroup.toStruct()
         
+        // Add to the ordered set
+        let groupOrder = getOrCreateGroupOrder()
+        groupOrder.insertIntoOrderedGroups(newGroup, at: 0)
+        
         do {
             try context.save()
             
@@ -422,8 +426,19 @@ final class GroupStore: ObservableObject {
                 let itemResults = try context.fetch(itemFetchRequest)
                 
                 if let group = groupResults.first, let cdItem = itemResults.first {
-                    // Update the relationship
-                    cdItem.itemGroup = group
+                    // Get the ordered relationship using mutableOrderedSetValue
+                    let orderedItems = group.mutableOrderedSetValue(forKey: "checklistItem")
+                    
+                    // Find the correct insertion index based on date
+                    let insertionIndex = (0..<orderedItems.count).first(where: { index in
+                        guard let existingItem = orderedItems[index] as? ChecklistItem else { return false }
+                        // Compare dates - insert before the first item with a later date
+                        return (cdItem.date ?? Date()) < (existingItem.date ?? Date())
+                    }) ?? orderedItems.count // Append at the end if no later date found
+                    
+                    // Insert the item at the correct position
+                    orderedItems.insert(cdItem, at: insertionIndex)
+                    
                     try context.save()
                     
                     // Reload groups and update timestamp on main queue

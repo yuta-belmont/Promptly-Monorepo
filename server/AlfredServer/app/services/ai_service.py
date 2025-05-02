@@ -79,8 +79,8 @@ Respond with ONLY one word: either 'simple' or 'complex'."""
 # Checklist Size Classifier Agent - Determines if a checklist is large/complex
 # -------------------------------------------------------------------------
 CHECKLIST_SIZE_CLASSIFIER_INSTRUCTIONS = """You are a checklist size classifier that determines if a user's request will result in a large or complex checklist.
-YES: The checklist will span 5 or more days and have significant variety between days.
-NO: The checklist will be shorter than 5 days or have similar tasks each day.
+YES: The checklist will span 5+ days and have any variety between days.
+NO: The checklist will be shorter than 5 days or have identical tasks each day.
 
 Respond with ONLY one word: either 'yes' or 'no'."""
 
@@ -134,7 +134,7 @@ Respond with ONLY ONE word: either 'yes', or 'no'
 # -------------------------------------------------------------------------
 CHECKLIST_INQUIRY_INSTRUCTIONS = """You are an inquiry classifier that determines if we have enough information to create a meaningful checklist.
 The current date and time is {current_date} at {current_time}.
-We are in the process of updating the user's planner/calendar/checklist but we need to know when and what they want to add.
+We are in the process of updating the user's daily planner/calendar/checklist but we need to know when and what they want to add.
 
 Based on the context, can we infer the task(s) and on what day(s) the tasks on are?
 Respond with ONLY one word: 'more' or 'enough'.
@@ -168,8 +168,9 @@ Your task is to create well-structured checklist items based on the user's reque
 Organize items by date in YYYY-MM-DD format.
 Each item should have a clear title and, when requested (generally don't), a notification time in HH:MM format.
 Be specific, practical, and thorough in creating these checklist items.
-DO NOT over complicate simple tasks. A single item per day with a title is preffered.
-No need to have a group name for simple checklists that span only a couple days or less.
+DO NOT over complicate simple tasks. A single item per day with a title is preferred.
+
+IMPORTANT: NEVER include a group name for these checklists. Always set the "name" field to null (JSON null value, not the string "null").
 """
 
 # -------------------------------------------------------------------------
@@ -196,7 +197,7 @@ CHECKLIST_FORMAT_INSTRUCTIONS = """Please format your response as a JSON object 
 {
     "checklist_data": {
         "group1": {
-            "name": "Optional group name or null",
+            "name": "Optional group name or null - follow context-specific instructions",
             "dates": {
                 "YYYY-MM-DD": {
                     "items": [
@@ -226,7 +227,8 @@ Your goal is to break down each section of the outline into actionable tasks.
 
 The outline details a broad plan that you have to turn into regular (often daily) tasks that the user can complete.
 
-The group name should concisely describe the entire checklist in a word or 2. 
+IMPORTANT: ALWAYS provide a descriptive group name that summarizes the entire plan. This should be a concise title (1-3 words) that captures the essence of the plan. The "name" field MUST be a non-empty string.
+
 Ensure that:
 - Tasks are specific and actionable
 - The structure matches the original outline's time periods
@@ -657,7 +659,7 @@ class AIService:
                 model="gpt-4.1-2025-04-14",  # Always use the more capable model for checklists
                 messages=checklist_messages,
                 temperature=0.7,
-                max_tokens=10000,
+                max_tokens=5000,
                 response_format={"type": "json_object"}
             )
             
@@ -711,229 +713,29 @@ class AIService:
         # Default fallback response
         return f"{greeting}! I'm here to help you with your tasks and objectives. How can I assist you today?"
         
-    async def _generate_checklist_acknowledgment(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, user_full_name: Optional[str] = None, now: Optional[datetime] = None) -> str:
-        """
-        Generate a simple acknowledgment for checklist creation.
-        Uses the MESSAGE_AGENT_CHECKLIST_INSTRUCTIONS.
-        
-        Args:
-            message: The user's message
-            message_history: Previous message history for context
-            user_full_name: The user's full name for personalization
-            now: Current datetime (optional)
-            
-        Returns:
-            str: A brief acknowledgment message
-        """
-        try:
-            # Get current date and time
-            if now is None:
-                now = datetime.now()
-            current_date = now.strftime("%A, %B %d, %Y")
-            current_time = now.strftime("%I:%M %p")
-            
-            # Create a personalized system message with date/time combining both instruction sets
-            system_message = MESSAGE_AGENT_CHECKLIST_INSTRUCTIONS
-            
-            # Create messages array
-            api_messages = [
-                {"role": "system", "content": system_message}
-            ]
-            
-            # Prepare context from message history
-            context_messages = self._prepare_context_messages(message_history)
-            
-            # Add context messages if available
-            if context_messages:
-                api_messages.extend(context_messages)
-            
-            # Add the current message
-            api_messages.append({"role": "user", "content": message})
-            
-            # Always use mini model for checklist acknowledgments
-            response = self.client.chat.completions.create(
-                model=LOWEST_TIER_MODEL,
-                messages=api_messages,
-                temperature=0.7,
-            )
-            
-            acknowledgment = response.choices[0].message.content
-            
-            # Log the response
-            logger.info("=== AGENT: Checklist Acknowledgment Generator ===")
-            logger.info(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
-            logger.info(f"Output: \"{acknowledgment[:75]}{'...' if len(acknowledgment) > 75 else ''}\"")
-            logger.debug(f"Context msgs: {len(context_messages)}")
-            logger.debug(f"Model:" + LOWEST_TIER_MODEL)
-            logger.info("=======================================")
-            
-            return acknowledgment
-            
-        except Exception as e:
-            logger.error(f"Error generating checklist acknowledgment: {e}")
-            # Return a simple hardcoded acknowledgment
-            greeting = f"{user_full_name.split()[0] if user_full_name else 'there'}"
-            fallback = f"I'll update your planner with those items."
-            
-            # Log the fallback
-            logger.info(f"Output: Using fallback acknowledgment: \"{fallback}\"")
-            logger.info("=======================================")
-            
-            return fallback
-    
-    async def _generate_standard_response(self, message: str, query_type: str, 
-                                         message_history: Optional[List[Dict[str, Any]]] = None,
-                                         user_full_name: Optional[str] = None, now: Optional[datetime] = None) -> str:
-        """
-        Generate a standard response for non-checklist queries based on complexity.
-        Uses MESSAGE_AGENT_BASE_INSTRUCTIONS.
-        
-        Args:
-            message: The user's message
-            query_type: Classification of the query ('simple' or 'complex')
-            message_history: Previous message history for context
-            user_full_name: The user's full name for personalization
-            now: Current datetime (optional)
-            
-        Returns:
-            str: A response message
-        """
-        try:
-            # Use the provided time or default to current time
-            if now is None:
-                now = datetime.now()
-            current_date = now.strftime("%A, %B %d, %Y")
-            current_time = now.strftime("%I:%M %p")
-            
-            # Create a personalized system message with date/time
-            system_message = MESSAGE_AGENT_BASE_INSTRUCTIONS.format(
-                user_full_name=user_full_name or 'the user',
-                current_date=current_date,
-                current_time=current_time
-            )
-            
-            # Create messages array
-            api_messages = [
-                {"role": "system", "content": system_message}
-            ]
-            
-            # Prepare context from message history
-            context_messages = self._prepare_context_messages(message_history)
-            
-            # Add context messages if available
-            if context_messages:
-                api_messages.extend(context_messages)
-            else:
-                # If no history provided, just add the current message
-                api_messages.append({"role": "user", "content": message})
-            
-            # Choose model based on query complexity
-            message_model = MID_TIER_MODEL if query_type == "complex" else LOWEST_TIER_MODEL
-            
-            try:
-                # Generate response
-                response = self.client.chat.completions.create(
-                    model=message_model,
-                    messages=api_messages,
-                    temperature=0.7,
-                )
-                
-                conversation_response = response.choices[0].message.content
-                
-                # Log the response
-                logger.info("=== AGENT: Standard Response Generator ===")
-                logger.info(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
-                logger.info(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
-                logger.debug(f"Context msgs: {len(context_messages)}")
-                logger.debug(f"Model: {message_model}")
-                logger.info("===============================")
-                
-                return conversation_response
-                
-            except Exception as e:
-                # If we hit a rate limit or quota error, try falling back to GPT-4o-mini
-                logger.info(f"Error with {message_model}, falling back to mini model: {e}")
-                try:
-                    # Try with the fallback model
-                    response = self.client.chat.completions.create(
-                        model=LOW_TIER_MODEL,
-                        messages=api_messages,
-                        temperature=0.7,
-                    )
-                    
-                    conversation_response = response.choices[0].message.content
-                    
-                    logger.info(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
-                    logger.debug(f"Context msgs: {len(context_messages)}")
-                    logger.debug(f"Model:"+ LOW_TIER_MODEL +"(fallback)")
-                    logger.info("===============================")
-                    
-                    return conversation_response
-                    
-                except Exception as fallback_error:
-                    # If even the fallback fails, provide a hardcoded response
-                    logger.error(f"Fallback model also failed: {fallback_error}")
-                    fallback_message = self._generate_fallback_response(message, user_full_name)
-                    
-                    logger.info(f"Output: \"{fallback_message[:75]}{'...' if len(fallback_message) > 75 else ''}\"")
-                    logger.debug(f"Context msgs: {len(context_messages)}")
-                    logger.debug(f"Model: hardcoded fallback")
-                    logger.info("===============================")
-                    
-                    return fallback_message
-        except Exception as e:
-            logger.error(f"Error in _generate_standard_response: {e}")
-            # Provide a fallback response
-            fallback_message = self._generate_fallback_response(message, user_full_name)
-            
-            logger.info(f"Output: \"{fallback_message[:75]}{'...' if len(fallback_message) > 75 else ''}\"")
-            logger.debug(f"Context msgs: 0")
-            logger.debug(f"Model: hardcoded fallback (error)")
-            logger.info("===============================")
-            
-            return fallback_message    
-    async def _classify_checklist_size(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None) -> bool:
-        """Determine if the checklist will be large/complex."""
-        try:
-            response = self.client.chat.completions.create(
-                model=LOW_TIER_MODEL,
-                messages=[
-                    {"role": "system", "content": CHECKLIST_SIZE_CLASSIFIER_INSTRUCTIONS},
-                    *self._prepare_context_messages(message_history),
-                    {"role": "user", "content": message}
-                ],
-                temperature=0.3,
-                max_tokens=5
-            )
-            
-            result = response.choices[0].message.content.strip().lower()
-                        
-            # Log a more structured view of the data for easier analysis
-            logger.info("=================== AGENT CHECKLIST SIZE CLASSIFIER ===================")
-            logger.info(f"IS CHECKLIST LARGE: {result}")
-            logger.info("===============================================================")
-            return 'yes' in result
-        except Exception as e:
-            logger.error(f"Error classifying checklist size: {e}")
-            return False
-
     async def _generate_checklist_outline(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, client_time: Optional[str] = None) -> Dict[str, Any]:
         """Generate a high-level outline of the checklist."""
         try:
             # Use client_time for date calculations if provided
+            logger.info(f"Generating checklist outline with client_time: {client_time}")
             current_date = datetime.now()
+            date_str = current_date.strftime("%Y-%m-%d")
             if client_time:
                 try:
                     current_date = datetime.fromisoformat(client_time)
+                    date_str = current_date.strftime("%Y-%m-%d")
                 except ValueError:
                     print(f"Warning: Invalid client_time format: {client_time}")
+            
+            # Add client time to the message
+            user_message = f"Current date: {date_str}\n\n{message}"
             
             response = self.client.chat.completions.create(
                 model=MID_TIER_MODEL,
                 messages=[
                     {"role": "system", "content": CHECKLIST_OUTLINE_INSTRUCTIONS},
                     *self._prepare_context_messages(message_history),
-                    {"role": "user", "content": message}
+                    {"role": "user", "content": user_message}
                 ],
                 temperature=0.7,
                 response_format={"type": "json_object"}
@@ -1015,7 +817,7 @@ class AIService:
                         
                         if outline:
                             # Return the outline directly
-                            result['response_text'] = "I've created an outline for you. Let me know if you'd like to proceed with the detailed checklist."
+                            result['response_text'] = "I've created an outline for you. Let me know if you'd like to proceed with the detailed checklists."
                             result['outline'] = outline
                         else:
                             # Fallback to normal checklist if outline generation fails
@@ -1282,7 +1084,9 @@ class AIService:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
-                max_tokens=2000
+                max_tokens=20000,
+                response_format={"type": "json_object"}
+
             )
             
             # Extract the response content
@@ -1290,7 +1094,8 @@ class AIService:
             
             # Parse the response
             try:
-                checklist_data = json.loads(checklist_text)
+                checklist_json = json.loads(checklist_text)
+                checklist_data = checklist_json.get("checklist_data", {})
                 return checklist_data
             except json.JSONDecodeError:
                 logger.error("Failed to parse checklist data from AI response")
@@ -1298,4 +1103,211 @@ class AIService:
                 
         except Exception as e:
             logger.error(f"Error generating checklist from outline: {e}")
-            return None 
+            return None
+
+    async def _classify_checklist_size(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None) -> bool:
+        """Determine if the checklist will be large/complex."""
+        try:
+            response = self.client.chat.completions.create(
+                model=LOW_TIER_MODEL,
+                messages=[
+                    {"role": "system", "content": CHECKLIST_SIZE_CLASSIFIER_INSTRUCTIONS},
+                    *self._prepare_context_messages(message_history),
+                    {"role": "user", "content": message}
+                ],
+                temperature=0.3,
+                max_tokens=5
+            )
+            
+            result = response.choices[0].message.content.strip().lower()
+                        
+            # Log a more structured view of the data for easier analysis
+            logger.info("=================== AGENT CHECKLIST SIZE CLASSIFIER ===================")
+            logger.info(f"IS CHECKLIST LARGE: {result}")
+            logger.info("===============================================================")
+            return 'yes' in result
+        except Exception as e:
+            logger.error(f"Error classifying checklist size: {e}")
+            return False
+
+    async def _generate_checklist_acknowledgment(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, user_full_name: Optional[str] = None, now: Optional[datetime] = None) -> str:
+        """
+        Generate a simple acknowledgment for checklist creation.
+        Uses the MESSAGE_AGENT_CHECKLIST_INSTRUCTIONS.
+        
+        Args:
+            message: The user's message
+            message_history: Previous message history for context
+            user_full_name: The user's full name for personalization
+            now: Current datetime (optional)
+            
+        Returns:
+            str: A brief acknowledgment message
+        """
+        try:
+            # Get current date and time
+            if now is None:
+                now = datetime.now()
+            current_date = now.strftime("%A, %B %d, %Y")
+            current_time = now.strftime("%I:%M %p")
+            
+            # Create a personalized system message with date/time combining both instruction sets
+            system_message = MESSAGE_AGENT_CHECKLIST_INSTRUCTIONS
+            
+            # Create messages array
+            api_messages = [
+                {"role": "system", "content": system_message}
+            ]
+            
+            # Prepare context from message history
+            context_messages = self._prepare_context_messages(message_history)
+            
+            # Add context messages if available
+            if context_messages:
+                api_messages.extend(context_messages)
+            
+            # Add the current message
+            api_messages.append({"role": "user", "content": message})
+            
+            # Always use mini model for checklist acknowledgments
+            response = self.client.chat.completions.create(
+                model=LOWEST_TIER_MODEL,
+                messages=api_messages,
+                temperature=0.7,
+            )
+            
+            acknowledgment = response.choices[0].message.content
+            
+            # Log the response
+            logger.info("=== AGENT: Checklist Acknowledgment Generator ===")
+            logger.info(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
+            logger.info(f"Output: \"{acknowledgment[:75]}{'...' if len(acknowledgment) > 75 else ''}\"")
+            logger.debug(f"Context msgs: {len(context_messages)}")
+            logger.debug(f"Model:" + LOWEST_TIER_MODEL)
+            logger.info("=======================================")
+            
+            return acknowledgment
+            
+        except Exception as e:
+            logger.error(f"Error generating checklist acknowledgment: {e}")
+            # Return a simple hardcoded acknowledgment
+            greeting = f"{user_full_name.split()[0] if user_full_name else 'there'}"
+            fallback = f"I'll update your planner with those items."
+            
+            # Log the fallback
+            logger.info(f"Output: Using fallback acknowledgment: \"{fallback}\"")
+            logger.info("=======================================")
+            
+            return fallback
+    
+    async def _generate_standard_response(self, message: str, query_type: str, 
+                                         message_history: Optional[List[Dict[str, Any]]] = None,
+                                         user_full_name: Optional[str] = None, now: Optional[datetime] = None) -> str:
+        """
+        Generate a standard response for non-checklist queries based on complexity.
+        Uses MESSAGE_AGENT_BASE_INSTRUCTIONS.
+        
+        Args:
+            message: The user's message
+            query_type: Classification of the query ('simple' or 'complex')
+            message_history: Previous message history for context
+            user_full_name: The user's full name for personalization
+            now: Current datetime (optional)
+            
+        Returns:
+            str: A response message
+        """
+        try:
+            # Use the provided time or default to current time
+            if now is None:
+                now = datetime.now()
+            current_date = now.strftime("%A, %B %d, %Y")
+            current_time = now.strftime("%I:%M %p")
+            
+            # Create a personalized system message with date/time
+            system_message = MESSAGE_AGENT_BASE_INSTRUCTIONS.format(
+                user_full_name=user_full_name or 'the user',
+                current_date=current_date,
+                current_time=current_time
+            )
+            
+            # Create messages array
+            api_messages = [
+                {"role": "system", "content": system_message}
+            ]
+            
+            # Prepare context from message history
+            context_messages = self._prepare_context_messages(message_history)
+            
+            # Add context messages if available
+            if context_messages:
+                api_messages.extend(context_messages)
+            else:
+                # If no history provided, just add the current message
+                api_messages.append({"role": "user", "content": message})
+            
+            # Choose model based on query complexity
+            message_model = MID_TIER_MODEL if query_type == "complex" else LOWEST_TIER_MODEL
+            
+            try:
+                # Generate response
+                response = self.client.chat.completions.create(
+                    model=message_model,
+                    messages=api_messages,
+                    temperature=0.7,
+                )
+                
+                conversation_response = response.choices[0].message.content
+                
+                # Log the response
+                logger.info("=== AGENT: Standard Response Generator ===")
+                logger.info(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
+                logger.info(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
+                logger.debug(f"Context msgs: {len(context_messages)}")
+                logger.debug(f"Model: {message_model}")
+                logger.info("===============================")
+                
+                return conversation_response
+                
+            except Exception as e:
+                # If we hit a rate limit or quota error, try falling back to GPT-4o-mini
+                logger.info(f"Error with {message_model}, falling back to mini model: {e}")
+                try:
+                    # Try with the fallback model
+                    response = self.client.chat.completions.create(
+                        model=LOW_TIER_MODEL,
+                        messages=api_messages,
+                        temperature=0.7,
+                    )
+                    
+                    conversation_response = response.choices[0].message.content
+                    
+                    logger.info(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
+                    logger.debug(f"Context msgs: {len(context_messages)}")
+                    logger.debug(f"Model:"+ LOW_TIER_MODEL +"(fallback)")
+                    logger.info("===============================")
+                    
+                    return conversation_response
+                    
+                except Exception as fallback_error:
+                    # If even the fallback fails, provide a hardcoded response
+                    logger.error(f"Fallback model also failed: {fallback_error}")
+                    fallback_message = self._generate_fallback_response(message, user_full_name)
+                    
+                    logger.info(f"Output: \"{fallback_message[:75]}{'...' if len(fallback_message) > 75 else ''}\"")
+                    logger.debug(f"Context msgs: {len(context_messages)}")
+                    logger.debug(f"Model: hardcoded fallback")
+                    logger.info("===============================")
+                    
+                    return fallback_message
+        except Exception as e:
+            logger.error(f"Error in _generate_standard_response: {e}")
+            # Provide a fallback response
+            fallback_message = self._generate_fallback_response(message, user_full_name)
+            
+            logger.info(f"Output: \"{fallback_message[:75]}{'...' if len(fallback_message) > 75 else ''}\"")
+            logger.debug(f"Context msgs: 0")
+            logger.debug(f"Model: hardcoded fallback (error)")
+            logger.info("===============================")
+            
+            return fallback_message    

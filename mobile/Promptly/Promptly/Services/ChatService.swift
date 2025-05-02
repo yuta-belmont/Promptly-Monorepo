@@ -712,8 +712,46 @@ final class ChatService {
                         // Process the checklist data
                         if let jsonData = try? JSONSerialization.data(withJSONObject: checklistData),
                            let jsonString = String(data: jsonData, encoding: .utf8) {
-                            // Convert and save the checklist data
-                            if let checklists = self.convertFirebaseChecklistToModel(checklistData: checklistData) {
+                            
+                            // Create outline notes if outline data exists
+                            var outlineNotes = ""
+                            if let outlineData = data["outline_data"] as? [String: Any] {
+                                print("OUTLINE DEBUG: Found outline data: \(outlineData)")
+                                
+                                // Add summary
+                                if let summary = outlineData["summary"] as? String {
+                                    outlineNotes += summary + "\n\n"
+                                }
+                                
+                                // Add line items - fixed to handle different possible structures
+                                if let lineItems = outlineData["line_item"] as? [Any] {
+                                    print("OUTLINE DEBUG: Found line items: \(lineItems)")
+                                    
+                                    for item in lineItems {
+                                        if let itemDict = item as? [String: Any], 
+                                           let title = itemDict["title"] as? String {
+                                            // Handle standard dictionary format with title key
+                                            outlineNotes += "- " + title + "\n"
+                                        } else if let itemString = item as? String {
+                                            // Handle simple string format
+                                            outlineNotes += "- " + itemString + "\n"
+                                        } else {
+                                            // Log for debugging if format is unexpected
+                                            print("OUTLINE DEBUG: Unexpected line item format: \(item)")
+                                        }
+                                    }
+                                } else {
+                                    print("OUTLINE DEBUG: No line items found or unexpected format")
+                                }
+                                
+                                print("OUTLINE DEBUG: Final notes: \(outlineNotes)")
+                            }
+                            
+                            // Convert and save the checklist data, passing the outline notes
+                            if let checklists = self.convertFirebaseChecklistToModel(
+                                checklistData: checklistData, 
+                                outlineNotes: outlineNotes
+                            ) {
                                 Task { @MainActor in
                                     // Save the checklists
                                     self.saveOrAppendChecklists(checklists)
@@ -768,9 +806,11 @@ final class ChatService {
     // MARK: - Firebase Checklist Conversion
 
     /// Converts a Firebase checklist JSON structure to a local model Checklist
-    /// - Parameter checklistData: The raw checklist data from Firebase
+    /// - Parameters:
+    ///   - checklistData: The raw checklist data from Firebase
+    ///   - outlineNotes: Optional notes from outline data to include in group notes
     /// - Returns: A Models.Checklist object or nil if the data can't be parsed
-    func convertFirebaseChecklistToModel(checklistData: [String: Any]) -> [Models.Checklist]? {
+    func convertFirebaseChecklistToModel(checklistData: [String: Any], outlineNotes: String = "") -> [Models.Checklist]? {
         print("CHECKLIST DEBUG: Converting Firebase checklist data to model: \(checklistData)")
         
         // Verify we have data to process
@@ -780,7 +820,7 @@ final class ChatService {
         }
         
         // First, create a dictionary to store the group information
-        var groupsByKey: [String: (UUID, String)] = [:]
+        var groupsByKey: [String: (UUID, String, String)] = [:]  // Updated to include notes
         
         // Create an array to hold all checklists
         var allChecklists: [Models.Checklist] = []
@@ -800,7 +840,8 @@ final class ChatService {
                 let groupId = UUID()
                 
                 // Store group info for later use - we'll create the actual group later
-                groupsByKey[groupKey] = (groupId, groupName)
+                // Include the outline notes with the group info
+                groupsByKey[groupKey] = (groupId, groupName, outlineNotes)
                 
             }
         }
@@ -812,10 +853,10 @@ final class ChatService {
                 let groupInfo = groupsByKey[groupKey]
                 var group: Models.ItemGroup? = nil
                 
-                if let (groupId, groupTitle) = groupInfo {
+                if let (groupId, groupTitle, groupNotes) = groupInfo {
                     // Create a temporary group object for item creation
-                    // We'll handle the actual GroupStore registration separately
-                    group = Models.ItemGroup(id: groupId, title: groupTitle, items: [:])
+                    // Include the notes from the outline
+                    group = Models.ItemGroup(id: groupId, title: groupTitle, items: [:], notes: groupNotes)
                 }
                 
                 // Process dates within the group
@@ -995,23 +1036,24 @@ final class ChatService {
         var totalItemsAdded = 0
         
         // STEP 1: Create all required groups in GroupStore
-        var groupsToCreate: [UUID: String] = [:]
+        var groupsToCreate: [UUID: (String, String)] = [:]  // Updated to include notes
         
         // Extract all unique groups from items
         for checklist in checklists {
             for item in checklist.items {
                 if let group = item.group {
-                    groupsToCreate[group.id] = group.title
+                    groupsToCreate[group.id] = (group.title, group.notes)
                 }
             }
         }
         
         // Create all groups first (using @MainActor-isolated GroupStore)
-        for (groupId, groupTitle) in groupsToCreate {
+        for (groupId, groupInfo) in groupsToCreate {
+            let (groupTitle, groupNotes) = groupInfo
             print("GROUP DEBUG: Creating group in GroupStore - ID: \(groupId), Title: \(groupTitle)")
             
-            // Use the new method to create a group with a specific ID
-            let createdGroup = groupStore.createGroupWithID(id: groupId, title: groupTitle)
+            // Use the new method to create a group with a specific ID and notes
+            let createdGroup = groupStore.createGroupWithID(id: groupId, title: groupTitle, notes: groupNotes)
             print("GROUP DEBUG: Group created/retrieved in GroupStore - ID: \(createdGroup.id), Title: \(createdGroup.title)")
         }
         
@@ -1056,8 +1098,7 @@ final class ChatService {
             for date in updatedDates {
                 NotificationCenter.default.post(name: Notification.Name("NewChecklistAvailable"), object: date)
             }
-            // After a short delay, add the simple "Done." message properly to the chat
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            DispatchQueue.main.asyncAfter(deadline: .now()) {
                 Task { @MainActor in
                     // Properly add the confirmation message to chat history
                     self.notifyAllViewModels("Done.")

@@ -25,6 +25,9 @@ struct ChatView: View {
     @State private var animatingTextPosition: CGPoint = .zero
     @State private var animatingTextSize: CGFloat = 16
     
+    // Add ScrollView proxy reference to control scrolling programmatically
+    @State private var scrollViewProxy: ScrollViewProxy? = nil
+    
     // State management functions
     private func resetChatState() {
         viewModel.isExpanded = isExpanded
@@ -171,9 +174,21 @@ struct ChatView: View {
                         if !viewModel.messages.isEmpty {
                             proxy.scrollTo("bottom", anchor: .bottom)
                         }
+                        
+                        // Store the proxy reference for later use
+                        scrollViewProxy = proxy
                     }
                     .onChange(of: viewModel.messages.count) { oldValue, newValue in
-                        proxy.scrollTo("bottom", anchor: .bottom)
+                        // Animate scrolling to bottom when new messages are added
+                        // This creates a smoother experience where content slides up rather than jumping
+                        if newValue > oldValue {
+                            withAnimation(.spring(response: 0.5, dampingFraction: 0.9)) {
+                                proxy.scrollTo("bottom", anchor: .bottom)
+                            }
+                        } else {
+                            // If messages are being removed, scroll without animation
+                            proxy.scrollTo("bottom", anchor: .bottom)
+                        }
                     }
                     .onChange(of: viewModel.isLoading) { oldValue, newValue in
                         if newValue && !viewModel.isAnimatingSend {
@@ -208,15 +223,29 @@ struct ChatView: View {
                             }
                         }
                         
+                        // Set initial offset for the new message (position it at the input field)
+                        messageOffset[messageId] = UIScreen.main.bounds.height * 0.3
+                        
                         // Now send the message with the captured text
                         viewModel.sendMessageWithText(inputText, withId: messageId)
                         
                         // Animation happens after clearing input and starting the send process
+                        // Use the same animation timing as the scroll animation for coordination
                         let animationDuration = 0.5
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                             // Animate the message bubble to its final position
+                            // Using the same spring animation as the scroll to create a unified effect
                             withAnimation(.spring(response: animationDuration, dampingFraction: 0.9)) {
                                 messageOffset[messageId] = 0
+                            }
+                            
+                            // Clean up the messageOffset dictionary after animation completes
+                            // to prevent it from growing indefinitely
+                            DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration + 0.3) {
+                                // Only remove if this is not the newest message (avoid disrupting ongoing animations)
+                                if lastSentMessageId != messageId {
+                                    messageOffset.removeValue(forKey: messageId)
+                                }
                             }
                         }
                     },
@@ -282,6 +311,17 @@ struct ChatView: View {
             viewModel.isExpanded = newValue
             if newValue {
                 resetChatState()
+            }
+        }
+        // Add observer for chat focus changes
+        .onChange(of: focusManager.isChatFocused) { oldValue, newValue in
+            if newValue {
+                // When chat is focused, scroll to bottom
+                DispatchQueue.main.async {
+                    withAnimation {
+                        scrollViewProxy?.scrollTo("bottom", anchor: .bottom)
+                    }
+                }
             }
         }
         .manageFocus(for: .chat)
