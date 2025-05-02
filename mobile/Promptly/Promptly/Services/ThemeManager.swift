@@ -12,9 +12,11 @@ enum AppTheme: String, CaseIterable, Identifiable {
     case lava = "Lava"
     case sunshine = "Sunshine"
     case bubblegum = "Bubblegum"
+    case cream = "Cream"
     case roseGold = "RoseGold"
     case emerald = "Emerald"
     case diamond = "Crystalline"
+    case dawn = "Dawn"
     case sunrise = "Sunrise"
     case starryNight = "Starry"
     case vibrant = "Vibrant"
@@ -36,9 +38,11 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .lava: return 5
         case .sunshine: return 10
         case .bubblegum: return 20
+        case .cream: return 50
         case .roseGold: return 100
         case .emerald: return 100
         case .diamond: return 100
+        case .dawn: return 100
         case .sunrise: return 200
         case .starryNight: return 500
         case .vibrant: return 1000
@@ -46,6 +50,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .hyperVibrant: return 3000
         case .nightmare: return 5000
         case .theEnd: return 10000
+
         }
     }
     
@@ -91,6 +96,10 @@ enum AppTheme: String, CaseIterable, Identifiable {
             Bubblegum()
         case .diamond:
             Diamond()
+        case .dawn:
+            Dawn()
+        case .cream:
+            Cream()
         }
     }
     
@@ -124,6 +133,55 @@ enum AppTheme: String, CaseIterable, Identifiable {
                         endRadius: 30
                     )
                     .blendMode(.screen)
+                )
+        case .dawn:
+            RoundedRectangle(cornerRadius: 8)
+                .fill(LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 0.3, green: 0.35, blue: 0.8),    // Deep blue-purple in top-left
+                        Color(red: 0.4, green: 0.3, blue: 0.9),     // Slightly lighter blue-purple
+                        Color(red: 0.3, green: 0.35, blue: 0.8)     // Back to deep blue-purple
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ))
+                .overlay(
+                    // Add subtle highlight with purple tint
+                    RadialGradient(
+                        gradient: Gradient(colors: [
+                            Color(red: 0.8, green: 0.75, blue: 1.0).opacity(0.2),  // Subtle purple-white glow
+                            Color.clear
+                        ]),
+                        center: .init(x: 0.3, y: 0.3),
+                        startRadius: 0,
+                        endRadius: 30
+                    )
+                    .blendMode(.screen)
+                )
+        case .cream:
+            RoundedRectangle(cornerRadius: 8)
+                .fill(RadialGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 0.97, green: 0.95, blue: 0.91),    // Light cream center
+                        Color(red: 0.95, green: 0.93, blue: 0.88),    // Medium cream
+                        Color(red: 0.92, green: 0.89, blue: 0.82)     // Slightly darker cream edges
+                    ]),
+                    center: .center,
+                    startRadius: 1,
+                    endRadius: 50
+                ))
+                .overlay(
+                    // Subtle warm overlay
+                    RadialGradient(
+                        gradient: Gradient(colors: [
+                            Color(red: 1.0, green: 0.95, blue: 0.85).opacity(0.3),  // Warm glow
+                            Color.clear
+                        ]),
+                        center: .init(x: 0.4, y: 0.4),
+                        startRadius: 10,
+                        endRadius: 30
+                    )
+                    .blendMode(.softLight)
                 )
         case .hallucination:
             RoundedRectangle(cornerRadius: 8)
@@ -388,7 +446,6 @@ enum AppTheme: String, CaseIterable, Identifiable {
             RoundedRectangle(cornerRadius: 8)
                 .fill(LinearGradient(
                     gradient: Gradient(colors: [
-                        Color(red: 0.1, green: 0.05, blue: 0.3),
                         Color(red: 0.9, green: 0.3, blue: 0.1),
                         Color(red: 1.0, green: 0.7, blue: 0.4)
                     ]),
@@ -410,9 +467,9 @@ enum AppTheme: String, CaseIterable, Identifiable {
             RoundedRectangle(cornerRadius: 8)
                 .fill(RadialGradient(
                     gradient: Gradient(colors: [
-                        Color(red: 0.55, green: 0.65, blue: 0.9),    // Bright bluish center
-                        Color(red: 0.4, green: 0.55, blue: 0.8),    // Mid-tone blue crystal
-                        Color(red: 0.2, green: 0.3, blue: 0.6)      // Darker blue edges
+                        Color(red: 0.50, green: 0.65, blue: 0.9),    // Bright bluish center
+                        Color(red: 0.35, green: 0.55, blue: 0.8),    // Mid-tone blue crystal
+                        Color(red: 0.15, green: 0.3, blue: 0.6)      // Darker blue edges
                     ]),
                     center: .center,
                     startRadius: 5,

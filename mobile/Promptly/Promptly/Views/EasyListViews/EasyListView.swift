@@ -634,7 +634,7 @@ struct EasyListFooter: View {
                 }
             }
         }
-        .padding(.bottom, 5)
+        .padding(.bottom, 24)
         .padding(.top, 2)
         .padding(.horizontal, 32)
         .cornerRadius(16, corners: [.bottomLeft, .bottomRight])
@@ -1025,7 +1025,6 @@ struct EasyListView: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         isInViewTransition = false
                     }
-                
                 }
             }
         }
@@ -1035,6 +1034,8 @@ struct EasyListView: View {
             RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
         )
+        .animation(.easeInOut(duration: 0.4), value: viewModel.isShowingNotes)
+        .ignoresSafeArea(viewModel.isShowingNotes ? [] : [.keyboard, .container], edges: .bottom)
         .preference(key: IsEditingPreferenceKey.self, value: isEditing)
         .onChange(of: isEditing) { oldValue, newValue in
             if newValue {

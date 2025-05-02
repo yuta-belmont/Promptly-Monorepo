@@ -251,6 +251,12 @@ struct DayView: View, Hashable {
     private let dateHeaderFeedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     private let selectionFeedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
+    // In DayView, keep the state property but set default to true
+    @State private var isIgnoringSafeArea: Bool = true
+    
+    // In DayView, add a state to track if notes view is showing
+    @State private var isShowingNotes: Bool = false
+    
     private func updateToNewDate(_ newDate: Date) {
         // Do this first to minimize time between UI updates
         easyListViewModel.updateToDate(newDate)
@@ -765,6 +771,17 @@ struct DayView: View, Hashable {
                         .rotationEffect(rotation)
                         .transition(.opacity.combined(with: .scale(scale: 0.98)))
                         .id("easyListView-\(currentDate.timeIntervalSince1970)") // Force complete view reconstruction
+                        .ignoresSafeArea(isShowingNotes ? [] : [.keyboard, .container], edges: .bottom)
+                        .onAppear {
+                            // Initialize with the current state
+                            isShowingNotes = easyListViewModel.isShowingNotes
+                        }
+                        .onChange(of: easyListViewModel.isShowingNotes) { oldValue, newValue in
+                            // Animate the safe area transition for smoother visual effect
+                            withAnimation(.easeInOut(duration: 0.4)) {
+                                isShowingNotes = newValue
+                            }
+                        }
                         .gesture(
                             DragGesture()
                                 .onChanged { value in

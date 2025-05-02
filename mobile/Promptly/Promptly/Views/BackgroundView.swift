@@ -23,9 +23,9 @@ struct Diamond: View {
                 // Base gradient with stronger blue tint and darker edges
                 RadialGradient(
                     gradient: Gradient(colors: [
-                        Color(red: 0.55, green: 0.65, blue: 0.9),    // Bright bluish center
-                        Color(red: 0.4, green: 0.55, blue: 0.8),    // Mid-tone blue crystal
-                        Color(red: 0.2, green: 0.3, blue: 0.6)      // Darker blue edges
+                        Color(red: 0.50, green: 0.65, blue: 0.9),    // Bright bluish center
+                        Color(red: 0.35, green: 0.55, blue: 0.8),    // Mid-tone blue crystal
+                        Color(red: 0.15, green: 0.3, blue: 0.6)      // Darker blue edges
                     ]),
                     center: .center,
                     startRadius: 30,
@@ -433,7 +433,6 @@ struct SunriseBackground: View {
                 // Sky gradient
                 LinearGradient(
                     gradient: Gradient(colors: [
-                        Color(red: 0.1, green: 0.05, blue: 0.3), // Deep midnight blue
                         Color(red: 0.9, green: 0.3, blue: 0.1), // Warm orange horizon
                         Color(red: 1.0, green: 0.7, blue: 0.4)  // Soft sunrise glow
                     ]),
@@ -1374,6 +1373,199 @@ struct NightmareWaves: View {
                 var colorContext = blurredContext
                 colorContext.opacity = wave.opacity * 0.2
                 colorContext.stroke(path, with: .color(wave.colorHint), lineWidth: wave.width)
+            }
+        }
+    }
+}
+
+//Dawn background ===============
+struct Dawn: View {
+    var body: some View {
+        OptimizedBackground {
+            ZStack {
+                // Base diagonal gradient with more purple tint added to the blue
+                LinearGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color(red: 0.3, green: 0.35, blue: 0.8),    // Deep blue-purple in top-left
+                        Color(red: 0.4, green: 0.3, blue: 0.9),     // Slightly lighter blue-purple
+                        Color(red: 0.3, green: 0.35, blue: 0.8),    // Back to deep blue-purple
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                
+                // Soft light trails effect
+                DawnTrails()
+                    .blendMode(.softLight)
+                
+                // Add subtle highlight with slight purple tint
+                RadialGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color(red: 0.8, green: 0.75, blue: 1.0).opacity(0.2),  // Subtle purple-white glow
+                        Color.clear
+                    ]),
+                    center: .init(x: 0.3, y: 0.3),
+                    startRadius: 0,
+                    endRadius: 300
+                )
+                .blendMode(.screen)
+                
+                // Add subtle shadow edges for depth
+                LinearGradient(
+                    gradient: SwiftUI.Gradient(colors: [
+                        Color.black.opacity(0.3),
+                        Color.clear,
+                        Color.clear,
+                        Color.black.opacity(0.3)
+                    ]),
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .blendMode(.multiply)
+            }
+        }
+    }
+}
+
+// Light trails for Dawn background
+struct DawnTrails: View {
+    // Pre-generate trail data for consistency
+    private let trails: [(start: UnitPoint, end: UnitPoint, width: Double, opacity: Double)] = {
+        var trailData: [(start: UnitPoint, end: UnitPoint, width: Double, opacity: Double)] = []
+        for _ in 0..<10 {
+            // Create diagonal trails in the same direction as the gradient
+            let x1 = Double.random(in: -0.2...0.6)
+            let y1 = Double.random(in: -0.2...0.6)
+            let length = Double.random(in: 0.4...1.0)
+            let angle = Double.random(in: -0.1...0.1) + 0.785 // Base around 45° (π/4) with slight variation
+            
+            let x2 = x1 + cos(angle) * length
+            let y2 = y1 + sin(angle) * length
+            
+            let width = Double.random(in: 10...60)
+            let opacity = Double.random(in: 0.1...0.4)
+            
+            trailData.append((
+                start: UnitPoint(x: x1, y: y1),
+                end: UnitPoint(x: x2, y: y2),
+                width: width,
+                opacity: opacity
+            ))
+        }
+        return trailData
+    }()
+    
+    var body: some View {
+        Canvas { context, size in
+            // Apply a single blur to the entire context
+            var blurredContext = context
+            blurredContext.addFilter(.blur(radius: 20))
+            
+            // Draw all trails in a single pass
+            for trail in trails {
+                let start = CGPoint(
+                    x: trail.start.x * size.width,
+                    y: trail.start.y * size.height
+                )
+                let end = CGPoint(
+                    x: trail.end.x * size.width,
+                    y: trail.end.y * size.height
+                )
+                
+                // Create a path for the trail
+                var path = Path()
+                path.move(to: start)
+                path.addLine(to: end)
+                
+                // Set line width and opacity - using purple-blue-white color for trails
+                blurredContext.stroke(path, with: .color(Color(red: 0.7, green: 0.75, blue: 1.0)), lineWidth: trail.width)
+                blurredContext.opacity = trail.opacity
+            }
+        }
+    }
+}
+
+//Cream background ===============
+struct Cream: View {
+    var body: some View {
+        OptimizedBackground {
+            ZStack {
+                // Cream radial gradient - lighter in center, slightly darker on the outside
+                RadialGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 0.97, green: 0.95, blue: 0.91),    // Light cream center
+                        Color(red: 0.95, green: 0.93, blue: 0.88),    // Medium cream
+                        Color(red: 0.75, green: 0.74, blue: 0.68)     // Slightly darker cream edges
+                    ]),
+                    center: .center,
+                    startRadius: 1,
+                    endRadius: 600
+                )
+                
+                // Subtle warm overlay
+                RadialGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 1.0, green: 0.95, blue: 0.85).opacity(0.3),  // Warm glow
+                        Color.clear
+                    ]),
+                    center: .init(x: 0.4, y: 0.4),
+                    startRadius: 50,
+                    endRadius: 250
+                )
+                .blendMode(.softLight)
+                
+                // Very soft texture
+                CreamTexture()
+                    .blendMode(.overlay)
+                    .opacity(0.1)
+            }
+        }
+    }
+}
+
+// Subtle texture for cream background
+struct CreamTexture: View {
+    // Pre-generate texture data for consistency
+    private let textures: [(x: Double, y: Double, width: Double, height: Double, opacity: Double)] = {
+        var textureData: [(x: Double, y: Double, width: Double, height: Double, opacity: Double)] = []
+        for _ in 0..<15 {
+            let x = Double.random(in: 0...1)
+            let y = Double.random(in: 0...1)
+            let width = Double.random(in: 80...200)
+            let height = Double.random(in: 50...120)
+            let opacity = Double.random(in: 0.05...0.15)
+            
+            textureData.append((
+                x: x, y: y, width: width, height: height, opacity: opacity
+            ))
+        }
+        return textureData
+    }()
+    
+    var body: some View {
+        Canvas { context, size in
+            // Apply a gentle blur to the entire context
+            var blurredContext = context
+            blurredContext.addFilter(.blur(radius: 30))
+            
+            // Draw all texture elements in a single pass
+            for texture in textures {
+                let centerX = texture.x * size.width
+                let centerY = texture.y * size.height
+                
+                // Create an oval path for the texture element
+                let rect = CGRect(
+                    x: centerX - texture.width/2,
+                    y: centerY - texture.height/2,
+                    width: texture.width,
+                    height: texture.height
+                )
+                
+                let path = Path(ellipseIn: rect)
+                
+                // Set opacity and fill with warm cream color
+                blurredContext.opacity = texture.opacity
+                blurredContext.fill(path, with: .color(Color(red: 1.0, green: 0.97, blue: 0.9)))
             }
         }
     }
