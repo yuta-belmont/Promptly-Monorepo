@@ -30,7 +30,11 @@ struct ChatView: View {
     
     // State management functions
     private func resetChatState() {
-        viewModel.isExpanded = isExpanded
+        // Only update viewModel.isExpanded if it's different to avoid triggering unnecessary state changes
+        if viewModel.isExpanded != isExpanded {
+            viewModel.isExpanded = isExpanded
+        }
+        
         if isExpanded {
             viewModel.clearUnreadCount()
         }
@@ -307,11 +311,29 @@ struct ChatView: View {
         .onAppear {
             setupKeyboardNotifications()
             resetChatState()
+            
+            // Trigger save of EasyListView when chat appears
+            NotificationCenter.default.post(
+                name: NSNotification.Name("SaveEasyListState"),
+                object: nil
+            )
         }
         .onChange(of: isExpanded) { oldValue, newValue in
             viewModel.isExpanded = newValue
             if newValue {
                 resetChatState()
+                
+                // Trigger save of EasyListView when chat expands
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("SaveEasyListState"),
+                    object: nil
+                )
+            }
+        }
+        // Add observer for viewModel's isExpanded to keep in sync with our binding
+        .onChange(of: viewModel.isExpanded) { oldValue, newValue in
+            if isExpanded != newValue {
+                isExpanded = newValue
             }
         }
         // Add observer for chat focus changes

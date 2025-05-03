@@ -13,6 +13,7 @@ import signal
 import time
 import random
 from typing import List
+import traceback
 
 # Add the project root to the path so we can import app modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -33,10 +34,11 @@ logger = logging.getLogger(__name__)
 shutdown_flag = False
 
 # Worker configuration
-MAX_TASKS_PER_THREAD = 10  # Each thread handles up to 10 tasks
-NUM_WORKER_THREADS = 5     # Number of worker threads
-POLL_INTERVAL = 0.1        # 100ms between cycles
-POLL_FREQUENCY = 1.0       # 1 second between polling Firebase when no tasks are found
+MAX_TASKS_PER_THREAD = 25  # Each thread handles up to 10 tasks
+NUM_WORKER_THREADS = 1     # Number of worker threads
+POLL_FREQUENCY = 0.2       # How often to poll for new tasks (in seconds)
+MAX_RUNTIME = 60.0         # Maximum time to run before checking for shutdown (in seconds)
+RESTART_PROCESSING_DELAY = 5.0
 
 class WorkerThread:
     """Thread that runs a worker with its own event loop."""
@@ -49,36 +51,41 @@ class WorkerThread:
         self.worker = None
         self.running = False
         # Add initial delay based on thread index (0-4)
-        self.initial_delay = thread_id * 0.2  # Stagger by 200ms per thread
+        self.initial_delay = thread_id * float(POLL_FREQUENCY/NUM_WORKER_THREADS)  # Stagger by thread index
     
     async def _run_worker(self):
-        """Run the worker in this thread's event loop."""
+        """Run the worker in an event loop."""
+        logger.info(f"Worker thread {self.thread_id} started")
         try:
             # Add initial staggered delay
             if self.initial_delay > 0:
                 logger.info(f"Thread {self.thread_id} waiting {self.initial_delay:.1f}s before starting")
                 await asyncio.sleep(self.initial_delay)
             
-            self.worker = UnifiedWorker(
-                worker_id=f"worker-{self.worker_id}-{self.thread_id}",
-                max_concurrent_tasks=MAX_TASKS_PER_THREAD
+            worker = UnifiedWorker(
+                max_concurrent_tasks=MAX_TASKS_PER_THREAD,
+                worker_id=f"worker-{self.thread_id}"
             )
+            logger.info(f"Thread {self.thread_id} initialized with capacity for {MAX_TASKS_PER_THREAD} tasks")
             
-            # Run the worker until shutdown
+            # Main work loop
             while not shutdown_flag:
                 try:
-                    # Process tasks with a timeout to allow for graceful shutdown
-                    await self.worker.process_tasks(max_runtime=POLL_FREQUENCY)
+                    # Process available tasks
+                    await worker.process_tasks(
+                        max_runtime=MAX_RUNTIME,
+                        poll_frequency=POLL_FREQUENCY
+                    )
                 except Exception as e:
                     logger.error(f"Error in worker thread {self.thread_id}: {e}")
-                    if not shutdown_flag:
-                        await asyncio.sleep(POLL_FREQUENCY)  # Wait before retrying
-                        
-            logger.info(f"Worker thread {self.thread_id} shutting down")
-            
+                    logger.error(traceback.format_exc())
+                    # Avoid tight error loops
+                    await asyncio.sleep(1)
         except Exception as e:
-            logger.error(f"Worker thread {self.thread_id} error: {e}")
-            raise
+            logger.error(f"Fatal error in worker thread {self.thread_id}: {e}")
+            logger.error(traceback.format_exc())
+        finally:
+            logger.info(f"Worker thread {self.thread_id} shutting down")
 
 class WorkerManager:
     """Manages multiple worker threads."""
@@ -92,30 +99,41 @@ class WorkerManager:
         logger.info(f"Starting {NUM_WORKER_THREADS} worker threads")
         for i in range(NUM_WORKER_THREADS):
             worker = WorkerThread(i, f"thread-{i}")
-            asyncio.run(worker._run_worker())
+            # Create a proper thread that runs the worker's _run_worker method
+            worker.thread = threading.Thread(
+                target=asyncio.run,
+                args=(worker._run_worker(),),
+                name=f"worker-thread-{i}"
+            )
+            # Start the thread
+            worker.thread.start()
             self.worker_threads.append(worker)
             
-    def stop(self):
-        """Stop all worker threads."""
-        logger.info("Stopping all worker threads")
+    def shutdown(self, signum=None, frame=None):
+        """Shutdown all worker threads."""
+        logger.info("Shutting down worker threads")
+        global shutdown_flag
+        shutdown_flag = True
+        # Wait for threads to finish
         for worker in self.worker_threads:
-            if worker.thread:
-                worker.thread.join(timeout=5.0)
+            if worker.thread and worker.thread.is_alive():
+                logger.info(f"Waiting for worker thread {worker.thread_id} to finish")
+                worker.thread.join()
+        logger.info("All worker threads shut down")
 
 def signal_handler(sig, frame):
-    """Handle termination signals to gracefully shut down workers."""
+    """Handle signals."""
+    logger.info(f"Received signal {sig}")
     global shutdown_flag
-    logger.info(f"Received signal {sig}, initiating graceful shutdown...")
     shutdown_flag = True
-    
-    # Give workers time to shut down gracefully
-    time.sleep(2)
-    
-    logger.info("All workers shut down")
-    sys.exit(0)
+    # Let the manager handle the shutdown
+    if 'manager' in globals():
+        manager.shutdown(sig, frame)
 
 def main():
     """Main entry point for the script."""
+    global manager
+    
     # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -139,8 +157,16 @@ def main():
             for i, worker in enumerate(manager.worker_threads[:]):
                 if not worker.thread.is_alive() and not shutdown_flag:
                     logger.warning(f"Worker thread {i} died unexpectedly, restarting...")
+                    # Create a new worker thread
                     new_worker = WorkerThread(i, f"thread-{i}")
-                    asyncio.run(new_worker._run_worker())
+                    # Create and start a new thread
+                    new_worker.thread = threading.Thread(
+                        target=asyncio.run,
+                        args=(new_worker._run_worker(),),
+                        name=f"worker-thread-{i}"
+                    )
+                    new_worker.thread.start()
+                    # Replace the old worker in the list
                     manager.worker_threads[i] = new_worker
     
     except KeyboardInterrupt:
@@ -149,7 +175,7 @@ def main():
     
     finally:
         # Clean up
-        manager.stop()
+        manager.shutdown()
         if os.path.exists("worker.pid"):
             os.remove("worker.pid")
 

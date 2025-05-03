@@ -17,6 +17,7 @@ final class ChatViewModel: ObservableObject {
     @Published private var unreadCounts: [String: Int] = [:] // Map of date strings to unread counts
     @Published var isExpanded: Bool = false
     @Published var isFullyExpanded: Bool = false
+    private var preserveExpansionState: Bool = false
     
     private let chatService = ChatService.shared
     private let persistenceService = ChatPersistenceService.shared
@@ -603,6 +604,9 @@ final class ChatViewModel: ObservableObject {
     func handleMessage(_ message: String, isReportMessage : Bool = false) {
         print("🔍 DEBUG: handleMessage called with message: \(message)")
         
+        // Store the current expansion state to preserve it
+        preserveExpansionState = isExpanded
+        
         // Try to parse the message as JSON first
         if let data = message.data(using: .utf8),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -678,6 +682,12 @@ final class ChatViewModel: ObservableObject {
                 
                 Task {
                     await addMessageAndNotify(chatMessage)
+                    
+                    // Restore the expansion state after everything is processed
+                    // Use a slight delay to ensure UI has updated
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        self.isExpanded = self.preserveExpansionState
+                    }
                 }
             } else {
                 // If not a combined response, treat as a regular message

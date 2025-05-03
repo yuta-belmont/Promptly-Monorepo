@@ -1094,6 +1094,15 @@ struct EasyListView: View {
             ) { _ in
                 onAddTap()
             }
+            
+            // Listen for the save state notification from chat opening
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("SaveEasyListState"),
+                object: nil,
+                queue: .main
+            ) { _ in
+                viewModel.saveChecklist()
+            }
         }
         .onDisappear {
             // Remove the notification observer

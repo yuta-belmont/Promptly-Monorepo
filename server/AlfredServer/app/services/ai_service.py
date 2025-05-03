@@ -78,7 +78,7 @@ Respond with ONLY one word: either 'simple' or 'complex'."""
 # -------------------------------------------------------------------------
 # Checklist Size Classifier Agent - Determines if a checklist is large/complex
 # -------------------------------------------------------------------------
-CHECKLIST_SIZE_CLASSIFIER_INSTRUCTIONS = """You are a checklist size classifier that determines if a user's request will result in a large or complex checklist.
+CHECKLIST_SIZE_CLASSIFIER_INSTRUCTIONS = """You are a checklist size classifier that determines if a user's request requires an outline.
 YES: The checklist will span 5+ days and have any variety between days.
 NO: The checklist will be shorter than 5 days or have identical tasks each day.
 

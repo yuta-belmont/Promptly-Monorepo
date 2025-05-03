@@ -109,6 +109,13 @@ struct BaseView: View {
                                 Button(action: {
                                     // Remove all focus when opening the chat
                                     focusManager.removeAllFocus()
+                                    
+                                    // Save EasyListView state before opening chat
+                                    NotificationCenter.default.post(
+                                        name: NSNotification.Name("SaveEasyListState"),
+                                        object: nil
+                                    )
+                                    
                                     isChatExpanded = true
                                 }) {
                                     ZStack {

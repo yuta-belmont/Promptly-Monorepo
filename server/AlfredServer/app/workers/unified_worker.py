@@ -23,7 +23,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Maximum time for processing a single task
-MAX_TASK_PROCESSING_TIME = 60  # 60 seconds per task
+MAX_TASK_PROCESSING_TIME = 120  # 60 seconds per task
 MAX_PENDING_TASK_AGE = 60  # 60 seconds
 
 class UnifiedWorker:
@@ -32,7 +32,7 @@ class UnifiedWorker:
     Each worker runs in its own thread with a limited number of concurrent tasks.
     """
     
-    def __init__(self, worker_id: str = "default", max_concurrent_tasks: int = 10):
+    def __init__(self, max_concurrent_tasks: int, worker_id: str = "default"):
         """Initialize the worker with thread-specific settings."""
         self.worker_id = worker_id
         self.firebase_service = FirebaseService()
@@ -46,11 +46,20 @@ class UnifiedWorker:
         """Get the total number of active tasks across both types."""
         return len(self.active_message_tasks) + len(self.active_checklist_tasks)
     
-    async def process_tasks(self, max_runtime=None):
+    async def process_tasks(self, max_runtime=None, poll_frequency=1.0, total_capacity=None):
         """
         Process pending tasks from Firestore, handling all task types.
         This method runs in a loop, polling for new tasks.
+        
+        Args:
+            max_runtime: Maximum runtime in seconds before returning (optional)
+            poll_frequency: How often to poll for new tasks in seconds (default: 1.0)
+            total_capacity: Maximum total number of tasks to process across all collections (defaults to semaphore value)
         """
+        # Use semaphore value if total_capacity is not provided
+        if total_capacity is None:
+            total_capacity = self.semaphore._value
+            
         # Track start time for the polling window
         start_time = time.time() if max_runtime else None
         tasks_processed = 0
@@ -69,7 +78,7 @@ class UnifiedWorker:
                 
                 # Calculate available capacity
                 total_active = self.total_active_tasks
-                available_capacity = self.semaphore._value - total_active
+                available_capacity = min(self.semaphore._value - total_active, total_capacity)
                 
                 if available_capacity > 0:
                     # IMPORTANT: We need to poll for all three types of tasks:
@@ -78,20 +87,35 @@ class UnifiedWorker:
                     # 3. Checkin tasks: Tasks for analyzing completed checklists and providing insights
                     # DO NOT REMOVE any of these task types as they are all critical for the system to function properly
                     
+                    # Prioritize tasks in this order: messages first, then checklists, then checkins
+                    # Start with message tasks (highest priority)
+                    remaining_capacity = available_capacity
                     message_tasks = self.firebase_service.get_pending_tasks(
                         collection=self.firebase_service.MESSAGE_TASKS_COLLECTION,
-                        limit=available_capacity
+                        limit=remaining_capacity
                     )
+                    remaining_capacity -= len(message_tasks)
                     
-                    checklist_tasks = self.firebase_service.get_pending_tasks(
-                        collection=self.firebase_service.CHECKLIST_TASKS_COLLECTION,
-                        limit=available_capacity
-                    )
+                    # If we still have capacity, get checklist tasks (medium priority)
+                    checklist_tasks = []
+                    if remaining_capacity > 0:
+                        checklist_tasks = self.firebase_service.get_pending_tasks(
+                            collection=self.firebase_service.CHECKLIST_TASKS_COLLECTION,
+                            limit=remaining_capacity
+                        )
+                        remaining_capacity -= len(checklist_tasks)
                     
-                    checkin_tasks = self.firebase_service.get_pending_tasks(
-                        collection=self.firebase_service.CHECKIN_TASKS_COLLECTION,
-                        limit=available_capacity
-                    )
+                    # If we still have capacity, get checkin tasks (lowest priority)
+                    checkin_tasks = []
+                    if remaining_capacity > 0:
+                        checkin_tasks = self.firebase_service.get_pending_tasks(
+                            collection=self.firebase_service.CHECKIN_TASKS_COLLECTION,
+                            limit=remaining_capacity
+                        )
+                    
+                    logger.debug(f"Worker {self.worker_id} processing: {len(message_tasks)} message tasks, " +
+                                f"{len(checklist_tasks)} checklist tasks, {len(checkin_tasks)} checkin tasks " +
+                                f"(total: {len(message_tasks) + len(checklist_tasks) + len(checkin_tasks)})")
                     
                     # Process all tasks from all collections
                     for task in message_tasks + checklist_tasks + checkin_tasks:
@@ -158,7 +182,7 @@ class UnifiedWorker:
                 pending_tasks = [task for task in pending_tasks if not task.done()]
                 
                 # Brief pause before next polling cycle
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(poll_frequency)
                 
             except Exception as e:
                 logger.error(f"Error in process_tasks: {e}")
