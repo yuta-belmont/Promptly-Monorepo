@@ -204,71 +204,85 @@ struct ChatView: View {
                     }
                 }
                 
-                ChatInputFieldView(
-                    userInput: $viewModel.userInput,
-                    onSend: {
-                        // SYNCHRONOUSLY capture the current input value
-                        let inputText = viewModel.userInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !inputText.isEmpty else { return }
-                        
-                        // Generate message ID
-                        let messageId = UUID()
-                        lastSentMessageId = messageId
-                        
-                        // SYNCHRONOUSLY clear the input field before any async operations
-                        viewModel.userInput = ""
-                        lastInputClearTime = Date()
-                        
-                        // Force UI update immediately to ensure the text field clears
-                        // This is crucial for voice input which sometimes doesn't trigger binding updates properly
-                        DispatchQueue.main.async {
-                            // Double-ensure the input is cleared - fixes voice input issue
-                            if !viewModel.userInput.isEmpty {
-                                viewModel.userInput = ""
-                            }
-                        }
-                        
-                        // Set initial offset for the new message (position it at the input field)
-                        messageOffset[messageId] = UIScreen.main.bounds.height * 0.3
-                        
-                        // Now send the message with the captured text
-                        viewModel.sendMessageWithText(inputText, withId: messageId)
-                        
-                        // Animation happens after clearing input and starting the send process
-                        // Use the same animation timing as the scroll animation for coordination
-                        let animationDuration = 0.5
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            // Animate the message bubble to its final position
-                            // Using the same spring animation as the scroll to create a unified effect
-                            withAnimation(.spring(response: animationDuration, dampingFraction: 0.9)) {
-                                messageOffset[messageId] = 0
-                            }
+                // New ZStack approach with rounded top corners
+                ZStack(alignment: .bottom) {
+                    // Background layer that extends into safe area
+                    Color.clear
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(16, corners: [.topLeft, .topRight])
+                        .overlay(
+                            RoundedCorner(radius: 16, corners: [.topLeft, .topRight])
+                                .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+                        )
+                        .ignoresSafeArea(edges: .bottom) // Makes background extend to bottom of screen
+                    
+                    // Actual input field with normal padding
+                    ChatInputFieldView(
+                        userInput: $viewModel.userInput,
+                        onSend: {
+                            // SYNCHRONOUSLY capture the current input value
+                            let inputText = viewModel.userInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !inputText.isEmpty else { return }
                             
-                            // Clean up the messageOffset dictionary after animation completes
-                            // to prevent it from growing indefinitely
-                            DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration + 0.3) {
-                                // Only remove if this is not the newest message (avoid disrupting ongoing animations)
-                                if lastSentMessageId != messageId {
-                                    messageOffset.removeValue(forKey: messageId)
+                            // Generate message ID
+                            let messageId = UUID()
+                            lastSentMessageId = messageId
+                            
+                            // SYNCHRONOUSLY clear the input field before any async operations
+                            viewModel.userInput = ""
+                            lastInputClearTime = Date()
+                            
+                            // Force UI update immediately to ensure the text field clears
+                            // This is crucial for voice input which sometimes doesn't trigger binding updates properly
+                            DispatchQueue.main.async {
+                                // Double-ensure the input is cleared - fixes voice input issue
+                                if !viewModel.userInput.isEmpty {
+                                    viewModel.userInput = ""
                                 }
                             }
-                        }
-                    },
-                    onAccept: {
-                        print("🔍 DEBUG: Accept button tapped in ChatView")
-                        viewModel.acceptOutline()
-                    },
-                    onDecline: {
-                        print("🔍 DEBUG: Decline button tapped in ChatView")
-                        viewModel.declineOutline()
-                    },
-                    hasPendingOutline: viewModel.hasPendingOutline,
-                    isSendDisabled: viewModel.userInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                    isDragging: isDragging,
-                    isDisabled: false
-                )
-                .background(.ultraThinMaterial)
-                .opacity(1.0)
+                            
+                            // Set initial offset for the new message (position it at the input field)
+                            messageOffset[messageId] = UIScreen.main.bounds.height * 0.3
+                            
+                            // Now send the message with the captured text
+                            viewModel.sendMessageWithText(inputText, withId: messageId)
+                            
+                            // Animation happens after clearing input and starting the send process
+                            // Use the same animation timing as the scroll animation for coordination
+                            let animationDuration = 0.5
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                // Animate the message bubble to its final position
+                                // Using the same spring animation as the scroll to create a unified effect
+                                withAnimation(.spring(response: animationDuration, dampingFraction: 0.9)) {
+                                    messageOffset[messageId] = 0
+                                }
+                                
+                                // Clean up the messageOffset dictionary after animation completes
+                                // to prevent it from growing indefinitely
+                                DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration + 0.3) {
+                                    // Only remove if this is not the newest message (avoid disrupting ongoing animations)
+                                    if lastSentMessageId != messageId {
+                                        messageOffset.removeValue(forKey: messageId)
+                                    }
+                                }
+                            }
+                        },
+                        onAccept: {
+                            print("🔍 DEBUG: Accept button tapped in ChatView")
+                            viewModel.acceptOutline()
+                        },
+                        onDecline: {
+                            print("🔍 DEBUG: Decline button tapped in ChatView")
+                            viewModel.declineOutline()
+                        },
+                        hasPendingOutline: viewModel.hasPendingOutline,
+                        isSendDisabled: viewModel.userInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                        isDragging: isDragging,
+                        isDisabled: false
+                    )
+                    .padding(.bottom, 8) // Add some padding to avoid bottom edge
+                }
+                .fixedSize(horizontal: false, vertical: true) // Take minimum vertical height
                 .animation(.easeInOut(duration: 0.2), value: viewModel.isPendingResponse)
                 .contentShape(Rectangle().inset(by: -20))
                 .gesture(

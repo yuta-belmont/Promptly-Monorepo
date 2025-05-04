@@ -22,4 +22,8 @@ openai>=1.0.0
 
 # Utilities
 requests>=2.31.0
-python-dateutil>=2.8.2 
+python-dateutil>=2.8.2
+
+# New dependencies for messaging
+google-cloud-pubsub>=2.13.0
+redis>=4.5.1 

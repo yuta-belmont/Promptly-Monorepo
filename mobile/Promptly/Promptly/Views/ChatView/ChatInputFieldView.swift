@@ -80,14 +80,9 @@ struct ChatInputFieldView: View {
                 HStack(alignment: .center, spacing: 8) {
                     TextField("Message Alfred...", text: $userInput, axis: .vertical)
                         .lineLimit(1...10)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 6)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color.gray.opacity(0.4), lineWidth: 1)
-                        )
-                        .cornerRadius(16)
-                        .contentShape(Rectangle())
+                        .padding(.leading, 12)
+                        .padding(.trailing, 12)
+                        .padding(.vertical, 16)
                         .focused($isTextFieldFocused)
                         .disabled(viewModel.isRecording || isDisabled)
                         .opacity(viewModel.isRecording || isDisabled ? 0.6 : 1)
@@ -96,8 +91,14 @@ struct ChatInputFieldView: View {
                                 focusManager.requestFocus(for: .chat)
                             }
                         }
-                        .padding(.leading, 6)
-                        .padding(.vertical, 2)
+                        .background(
+                            Rectangle()
+                                .fill(Color.clear)
+                                .contentShape(Rectangle())
+                        )
+                        .onTapGesture {
+                            isTextFieldFocused = true
+                        }
                     
                     Button(action: {
                         if shouldShowMic || viewModel.isRecording {
@@ -132,21 +133,6 @@ struct ChatInputFieldView: View {
                 }
                 .padding(.leading, 12)
                 .padding(.trailing, 16)
-                .padding(.vertical, 8)
-                .background(
-                    GeometryReader { geometry in
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .gesture(
-                                DragGesture(minimumDistance: 20)
-                                    .onChanged { value in
-                                        if value.translation.height > 20 {
-                                            isTextFieldFocused = false
-                                        }
-                                    }
-                            )
-                    }
-                )
             }
         }
         .onAppear {
