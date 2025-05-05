@@ -41,6 +41,24 @@ Backend server for the Alfred application.
 
 4. The server will be available at http://localhost:8080
 
+## Environment Files
+
+The application uses the following environment files:
+
+1. `/server/.env` - Main environment file for the server application
+   - Contains OpenAI API keys, database settings, and Firebase configurations
+   - Used by the main server components
+
+2. `/server/AlfredServer/.env` - Environment file for AlfredServer
+   - Contains settings specific to AlfredServer including Google Cloud Pub/Sub credentials
+   - Used by the Docker services and AlfredServer components
+
+3. `/server/.env.example` and `/server/AlfredServer/.env.example`
+   - Example templates that show the required environment variables
+   - Use these as starting points when setting up a new environment
+
+When making changes to configuration, update the appropriate `.env` file based on which component you're configuring.
+
 ## Development
 
 ### Running the Server

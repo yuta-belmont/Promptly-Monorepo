@@ -3,19 +3,17 @@ services:
   api:
     volumes:
       - ${PWD}/firebase-credentials:/app/firebase-credentials
-      - ${PWD}/pubsub-credentials:/app/pubsub-credentials
+    env_file:
+      - .env
     environment:
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/pubsub-credentials/pubsub-credentials.json
-      - GOOGLE_CLOUD_PROJECT=alfred-9fa73
       - FIREBASE_SERVICE_ACCOUNT=/app/firebase-credentials/alfred-9fa73-firebase-adminsdk-fbsvc-294854bb8e.json
       - FIREBASE_PROJECT_ID=alfred-9fa73
   
   worker:
     volumes:
       - ${PWD}/firebase-credentials:/app/firebase-credentials
-      - ${PWD}/pubsub-credentials:/app/pubsub-credentials
+    env_file:
+      - .env
     environment:
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/pubsub-credentials/pubsub-credentials.json
-      - GOOGLE_CLOUD_PROJECT=alfred-9fa73
       - FIREBASE_SERVICE_ACCOUNT=/app/firebase-credentials/alfred-9fa73-firebase-adminsdk-fbsvc-294854bb8e.json
       - FIREBASE_PROJECT_ID=alfred-9fa73

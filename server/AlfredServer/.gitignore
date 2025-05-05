@@ -25,6 +25,8 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Virtual Environment
 venv/
 
 # Docker
@@ -43,6 +45,16 @@ Thumbs.db
 # Logs
 logs/
 *.log
+
+# Credentials files
+*credentials*.json
+*-credentials/
+firebase-credentials/
+pubsub-credentials/
+
+# Local configuration
+.env.local
+.env
 
 # Database
 *.sqlite3
