@@ -6,6 +6,8 @@ struct StreamingChatView: View {
     @EnvironmentObject private var focusManager: FocusManager
     @State private var isKeyboardActive: Bool = false
     @State private var selectedOutline: ChecklistOutline? = nil
+    @FocusState private var isTextFieldFocused: Bool
+    @StateObject private var inputViewModel = ChatInputViewModel()
     
     // Animation state for messages
     @State private var messageOffset: [UUID: CGFloat] = [:]
@@ -29,24 +31,6 @@ struct StreamingChatView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                // Chat header
-                HStack {
-                    Text("Alfred")
-                        .font(.headline)
-                    Spacer()
-                    // Badge for unread messages
-                    if viewModel.unreadCount > 0 {
-                        Text("\(viewModel.unreadCount)")
-                            .font(.caption)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Circle().fill(Color.red))
-                    }
-                }
-                .padding()
-                .background(Color.black.opacity(0.3))
-                
                 // Main content
                 ScrollViewReader { proxy in
                     // Scrollable content
@@ -164,17 +148,41 @@ struct StreamingChatView: View {
                         .padding()
                     } else {
                         // Standard input field
-                        HStack {
-                            TextField("Message", text: $viewModel.userInput)
-                                .padding(12)
-                                .background(Color.black.opacity(0.2))
-                                .cornerRadius(20)
-                                .foregroundColor(.white)
-                                .manageFocus(for: .chat)
+                        HStack(alignment: .center, spacing: 8) {
+                            TextField("Message Alfred...", text: $viewModel.userInput, axis: .vertical)
+                                .lineLimit(1...10)
+                                .padding(.leading, 12)
+                                .padding(.trailing, 12)
+                                .padding(.vertical, 16)
+                                .focused($isTextFieldFocused)
+                                .disabled(inputViewModel.isRecording)
+                                .opacity(inputViewModel.isRecording ? 0.6 : 1)
+                                .onChange(of: isTextFieldFocused) { oldValue, newValue in
+                                    if newValue {
+                                        focusManager.requestFocus(for: .chat)
+                                    }
+                                }
+                                .background(
+                                    Rectangle()
+                                        .fill(Color.clear)
+                                        .contentShape(Rectangle())
+                                )
+                                .onTapGesture {
+                                    isTextFieldFocused = true
+                                }
                             
                             Button(action: {
-                                let text = viewModel.userInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                                if !text.isEmpty {
+                                if shouldShowMic || inputViewModel.isRecording {
+                                    if inputViewModel.isRecording {
+                                        inputViewModel.toggleRecording(directUpdateHandler: { transcription in
+                                            viewModel.userInput = transcription
+                                        })
+                                    } else {
+                                        inputViewModel.toggleRecording(directUpdateHandler: { transcription in
+                                            viewModel.userInput = transcription
+                                        })
+                                    }
+                                } else if hasText {
                                     // Generate message ID
                                     let messageId = UUID()
                                     lastSentMessageId = messageId
@@ -183,7 +191,12 @@ struct StreamingChatView: View {
                                     messageOffset[messageId] = UIScreen.main.bounds.height * 0.3
                                     
                                     // Send the message
-                                    viewModel.sendMessage(text)
+                                    viewModel.sendMessage(viewModel.userInput.trimmingCharacters(in: .whitespacesAndNewlines))
+                                    
+                                    // Clear input
+                                    DispatchQueue.main.async {
+                                        viewModel.userInput = ""
+                                    }
                                     
                                     // Animate the message
                                     let animationDuration = 0.5
@@ -204,13 +217,17 @@ struct StreamingChatView: View {
                                     }
                                 }
                             }) {
-                                Image(systemName: "arrow.up.circle.fill")
+                                Image(systemName: buttonImageName)
                                     .font(.system(size: 28))
-                                    .foregroundColor(viewModel.userInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : .blue)
+                                    .foregroundColor(buttonColor)
+                                    .frame(width: 32, height: 32)
+                                    .contentShape(Rectangle())
                             }
-                            .disabled(viewModel.userInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .disabled(buttonDisabled)
                         }
-                        .padding()
+                        .padding(.leading, 12)
+                        .padding(.trailing, 16)
+                        .padding(.vertical, 8)
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -224,6 +241,7 @@ struct StreamingChatView: View {
                         }
                 )
             }
+            .navigationTitle("Chat")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -256,14 +274,71 @@ struct StreamingChatView: View {
             if viewModel.isExpanded {
                 viewModel.clearUnreadCount()
             }
+            
+            // Set up speech recognition
+            if !inputViewModel.isSpeechSetup {
+                inputViewModel.setupSpeechRecognition(directUpdateHandler: { transcription in
+                    viewModel.userInput = transcription
+                })
+            }
         }
         .onChange(of: viewModel.isExpanded) { oldValue, newValue in
             if newValue {
                 viewModel.clearUnreadCount()
             }
         }
+        .onChange(of: inputViewModel.isRecording) { oldValue, newValue in
+            if newValue {
+                isTextFieldFocused = false
+            }
+        }
+        .alert("Speech Recognition Error", isPresented: .constant(inputViewModel.errorMessage != nil)) {
+            Button("OK") {
+                inputViewModel.errorMessage = nil
+            }
+        } message: {
+            Text(inputViewModel.errorMessage ?? "")
+        }
         .onDisappear {
             removeKeyboardNotifications()
+        }
+    }
+    
+    private var hasText: Bool {
+        !viewModel.userInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    
+    private var shouldShowMic: Bool {
+        !hasText && !inputViewModel.isRecording
+    }
+    
+    private var buttonImageName: String {
+        if inputViewModel.isRecording {
+            return "stop.circle.fill"
+        } else if shouldShowMic {
+            return "mic.circle.fill"
+        } else {
+            return "arrow.up.circle.fill"
+        }
+    }
+    
+    private var buttonColor: Color {
+        if inputViewModel.isRecording {
+            return .red
+        } else if shouldShowMic {
+            return inputViewModel.isSpeechSetup ? .blue : .gray
+        } else {
+            return .blue
+        }
+    }
+    
+    private var buttonDisabled: Bool {
+        if shouldShowMic {
+            return !inputViewModel.isSpeechSetup
+        } else if inputViewModel.isRecording {
+            return false
+        } else {
+            return !hasText
         }
     }
     

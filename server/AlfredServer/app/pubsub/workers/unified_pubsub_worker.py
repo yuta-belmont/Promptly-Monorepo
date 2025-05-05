@@ -109,14 +109,20 @@ class UnifiedPubSubWorker(PubSubWorker):
                 logger.error(f"Missing required parameters for message task {request_id}")
                 return False
             
-            # Generate optimized response using the AI service
+            # Create a callback function for streaming chunks to Redis
+            def stream_callback(chunk: str):
+                # Stream the chunk via Redis for real-time delivery
+                self.results_publisher.publish_chunk(request_id, chunk)
+            
+            # Generate optimized response using the AI service with streaming
             response = self.loop.run_until_complete(
-                self.ai_service.generate_optimized_response(
+                self.ai_service.generate_streaming_response(
                     message=message_content,
                     message_history=message_history,
                     user_full_name=user_full_name,
                     user_id=user_id,
-                    client_time=client_time
+                    client_time=client_time,
+                    stream_callback=stream_callback
                 )
             )
             
@@ -124,10 +130,6 @@ class UnifiedPubSubWorker(PubSubWorker):
             response_text = response.get("response_text", "")
             needs_checklist = response.get("needs_checklist", False)
             needs_more_info = response.get("needs_more_info", False)
-            
-            # Stream the result back via Redis for real-time delivery
-            if response_text:
-                self.results_publisher.publish_chunk(request_id, response_text)
             
             # Create completion data
             completion_data = {

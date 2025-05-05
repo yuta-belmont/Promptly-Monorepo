@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Script to run Pub/Sub workers for processing AI tasks.
-This script starts worker processes for handling different types of tasks.
+Script to run the unified Pub/Sub worker for processing AI tasks.
+This script starts a worker process for handling all types of tasks through a single subscription.
 """
 
 import os
@@ -11,7 +11,6 @@ import signal
 import argparse
 import time
 import threading
-from concurrent.futures import ThreadPoolExecutor
 
 # Add the project root to the path so we can import app modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -19,9 +18,6 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # Import the set_env module to set environment variables
 import set_env
 
-from app.pubsub.workers.message_worker import MessageWorker
-from app.pubsub.workers.checklist_worker import ChecklistWorker
-from app.pubsub.workers.checkin_worker import CheckinWorker
 from app.pubsub.workers.unified_pubsub_worker import UnifiedPubSubWorker
 
 # Set up logging
@@ -35,57 +31,25 @@ logger = logging.getLogger(__name__)
 shutdown_flag = False
 
 class WorkerManager:
-    """Manages multiple worker instances."""
+    """Manages unified worker instances."""
     
-    def __init__(self, message_workers=1, checklist_workers=1, checkin_workers=1, unified_workers=0):
+    def __init__(self, unified_workers=1):
         """
         Initialize the worker manager.
         
         Args:
-            message_workers: Number of message workers to start
-            checklist_workers: Number of checklist workers to start
-            checkin_workers: Number of checkin workers to start
             unified_workers: Number of unified workers to start
         """
         self.worker_threads = []
         self.workers = []
-        self.message_workers = message_workers
-        self.checklist_workers = checklist_workers
-        self.checkin_workers = checkin_workers
         self.unified_workers = unified_workers
         
     def start(self):
         """Start all worker instances."""
-        logger.info(
-            f"Starting {self.message_workers} message workers, "
-            f"{self.checklist_workers} checklist workers, "
-            f"{self.checkin_workers} checkin workers, and "
-            f"{self.unified_workers} unified workers"
-        )
+        logger.info(f"Starting {self.unified_workers} unified workers")
         
         # Create worker instances
         worker_count = 0
-        
-        # Message workers
-        for i in range(self.message_workers):
-            worker_id = f"message-worker-{i}"
-            worker = MessageWorker(worker_id=worker_id)
-            self.workers.append(worker)
-            worker_count += 1
-            
-        # Checklist workers
-        for i in range(self.checklist_workers):
-            worker_id = f"checklist-worker-{i}"
-            worker = ChecklistWorker(worker_id=worker_id)
-            self.workers.append(worker)
-            worker_count += 1
-            
-        # Check-in workers
-        for i in range(self.checkin_workers):
-            worker_id = f"checkin-worker-{i}"
-            worker = CheckinWorker(worker_id=worker_id)
-            self.workers.append(worker)
-            worker_count += 1
         
         # Unified workers
         for i in range(self.unified_workers):
@@ -144,16 +108,10 @@ def signal_handler(sig, frame):
 
 def parse_arguments():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='Run Pub/Sub workers for AI tasks')
+    parser = argparse.ArgumentParser(description='Run unified Pub/Sub worker for AI tasks')
     
-    parser.add_argument('--message-workers', type=int, default=1,
-                        help='Number of message workers to start (default: 1)')
-    parser.add_argument('--checklist-workers', type=int, default=1,
-                        help='Number of checklist workers to start (default: 1)')
-    parser.add_argument('--checkin-workers', type=int, default=1,
-                        help='Number of checkin workers to start (default: 1)')
-    parser.add_argument('--unified-workers', type=int, default=0,
-                        help='Number of unified workers to start (default: 0)')
+    parser.add_argument('--unified-workers', type=int, default=1,
+                        help='Number of unified workers to start (default: 1)')
     
     return parser.parse_args()
 
@@ -173,13 +131,10 @@ def main():
     with open("pubsub_workers.pid", "w") as f:
         f.write(str(pid))
     
-    logger.info(f"Pub/Sub worker manager started with PID {pid}")
+    logger.info(f"Unified Pub/Sub worker manager started with PID {pid}")
     
     # Start worker manager with specified number of workers
     manager = WorkerManager(
-        message_workers=args.message_workers,
-        checklist_workers=args.checklist_workers,
-        checkin_workers=args.checkin_workers,
         unified_workers=args.unified_workers
     )
     manager.start()

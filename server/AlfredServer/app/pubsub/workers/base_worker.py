@@ -4,10 +4,12 @@ Base worker class for consuming tasks from Pub/Sub.
 
 import json
 import logging
+import threading
 import time
 import traceback
 from typing import Dict, Any, Optional
 from google.cloud import pubsub_v1
+from google.api_core.exceptions import GoogleAPICallError
 
 from app.pubsub.config import GCP_PROJECT_ID
 from app.pubsub.messaging.redis_publisher import ResultsPublisher
@@ -39,6 +41,9 @@ class PubSubWorker:
         # Initialize Redis publisher for streaming results
         self.results_publisher = ResultsPublisher()
         
+        self.max_retries = 5  # Maximum number of retry attempts
+        self.retry_counts = {}  # Track retry counts per message
+        
         logger.info(f"Worker {self.worker_id} initialized for subscription {self.subscription_id}")
     
     def process_message(self, message):
@@ -64,11 +69,31 @@ class PubSubWorker:
             if success:
                 # Acknowledge the message
                 message.ack()
+                # Reset retry count on success
+                if request_id in self.retry_counts:
+                    del self.retry_counts[request_id]
                 logger.info(f"Message {request_id} processed successfully")
             else:
-                # Negative acknowledge to retry
-                message.nack()
-                logger.warning(f"Message {request_id} processing failed, will retry")
+                # Check retry count
+                retry_count = self.retry_counts.get(request_id, 0) + 1
+                self.retry_counts[request_id] = retry_count
+                
+                if retry_count <= self.max_retries:
+                    # Negative acknowledge to retry
+                    message.nack()
+                    logger.warning(f"Message {request_id} processing failed, retry {retry_count}/{self.max_retries}")
+                else:
+                    # Max retries reached, acknowledge to stop retrying
+                    message.ack()
+                    logger.error(f"Message {request_id} processing failed after {self.max_retries} retries, giving up")
+                    # Publish error via Redis
+                    try:
+                        self.results_publisher.publish_error(
+                            request_id, 
+                            f"Processing failed after {self.max_retries} retries"
+                        )
+                    except Exception as e:
+                        logger.error(f"Error publishing failure via Redis: {e}")
                 
         except json.JSONDecodeError as e:
             logger.error(f"Error decoding message: {e}")
@@ -77,8 +102,21 @@ class PubSubWorker:
         except Exception as e:
             logger.error(f"Error processing message: {e}")
             logger.error(traceback.format_exc())
-            # Negative acknowledge to retry
-            message.nack()
+            # Check retry count using message ID if request_id not available
+            message_id = message.message_id if hasattr(message, 'message_id') else 'unknown'
+            retry_key = message_id if 'request_id' not in locals() else locals()['request_id']
+            
+            retry_count = self.retry_counts.get(retry_key, 0) + 1
+            self.retry_counts[retry_key] = retry_count
+            
+            if retry_count <= self.max_retries:
+                # Negative acknowledge to retry
+                message.nack()
+                logger.warning(f"Message {retry_key} processing failed, retry {retry_count}/{self.max_retries}")
+            else:
+                # Max retries reached, acknowledge to stop retrying
+                message.ack()
+                logger.error(f"Message {retry_key} processing failed after {self.max_retries} retries, giving up")
     
     def _process_message(self, data: Dict[str, Any]) -> bool:
         """

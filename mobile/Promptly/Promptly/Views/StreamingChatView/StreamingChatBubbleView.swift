@@ -5,7 +5,6 @@ struct StreamingChatBubbleView: View {
     var onReportTap: (() -> Void)? = nil
     var onOutlineTap: (() -> Void)? = nil
     
-    @State private var showTimestamp: Bool = false
     @State private var timeString: String = ""
     
     private var isUser: Bool {
@@ -50,11 +49,6 @@ struct StreamingChatBubbleView: View {
                     )
                     .frame(maxWidth: UIScreen.main.bounds.width * 0.75, alignment: alignment)
                     .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation {
-                            showTimestamp.toggle()
-                        }
-                    }
                 
                 // Streaming indicator
                 if message.isStreaming {
@@ -83,19 +77,6 @@ struct StreamingChatBubbleView: View {
                         RoundedRectangle(cornerRadius: 12)
                             .fill(backgroundColor.opacity(0.6))
                     )
-                }
-                
-                // Timestamp when visible
-                if showTimestamp {
-                    Text(formatTime(message.timestamp))
-                        .font(.caption2)
-                        .foregroundColor(.white.opacity(0.7))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(Color.black.opacity(0.4))
-                        .cornerRadius(8)
-                        .padding(.horizontal, 8)
-                        .transition(.opacity)
                 }
                 
                 // Outline button if available

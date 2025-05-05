@@ -11,9 +11,6 @@ from google.cloud import pubsub_v1
 
 from app.pubsub.config import (
     GCP_PROJECT_ID,
-    MESSAGE_TASKS_TOPIC,
-    CHECKLIST_TASKS_TOPIC,
-    CHECKIN_TASKS_TOPIC,
     UNIFIED_TASKS_TOPIC
 )
 
@@ -40,13 +37,8 @@ class TaskPublisher:
             self.project_id = GCP_PROJECT_ID
             self.publisher = pubsub_v1.PublisherClient()
             
-            # Define topic paths for each task type
-            self.topics = {
-                'message': self.publisher.topic_path(self.project_id, MESSAGE_TASKS_TOPIC),
-                'checklist': self.publisher.topic_path(self.project_id, CHECKLIST_TASKS_TOPIC),
-                'checkin': self.publisher.topic_path(self.project_id, CHECKIN_TASKS_TOPIC),
-                'unified': self.publisher.topic_path(self.project_id, UNIFIED_TASKS_TOPIC)
-            }
+            # Define topic path for unified tasks
+            self.unified_topic = self.publisher.topic_path(self.project_id, UNIFIED_TASKS_TOPIC)
             
             self._initialized = True
             logger.info(f"TaskPublisher initialized with project: {self.project_id}")
@@ -102,19 +94,8 @@ class TaskPublisher:
         # Add timestamp
         payload['timestamp'] = int(time.time())
         
-        try:
-            # Encode and publish
-            message_data = json.dumps(payload).encode("utf-8")
-            future = self.publisher.publish(self.topics['message'], message_data)
-            
-            # Wait for confirmation (optional)
-            pub_message_id = future.result()
-            logger.info(f"Published message task {request_id} with Pub/Sub message ID: {pub_message_id}")
-            
-            return request_id
-        except Exception as e:
-            logger.error(f"Error publishing message task: {e}")
-            raise
+        # Use publish_to_unified_topic instead of direct publishing
+        return self.publish_to_unified_topic(payload)
     
     def publish_checklist_task(self,
                              user_id: str,
@@ -161,18 +142,8 @@ class TaskPublisher:
         # Add timestamp
         payload['timestamp'] = int(time.time())
         
-        try:
-            # Encode and publish
-            message_data = json.dumps(payload).encode("utf-8")
-            future = self.publisher.publish(self.topics['checklist'], message_data)
-            
-            pub_message_id = future.result()
-            logger.info(f"Published checklist task {request_id} with Pub/Sub message ID: {pub_message_id}")
-            
-            return request_id
-        except Exception as e:
-            logger.error(f"Error publishing checklist task: {e}")
-            raise
+        # Use publish_to_unified_topic instead of direct publishing
+        return self.publish_to_unified_topic(payload)
     
     def publish_checkin_task(self,
                            user_id: str,
@@ -217,18 +188,8 @@ class TaskPublisher:
         # Add timestamp
         payload['timestamp'] = int(time.time())
         
-        try:
-            # Encode and publish
-            message_data = json.dumps(payload).encode("utf-8")
-            future = self.publisher.publish(self.topics['checkin'], message_data)
-            
-            pub_message_id = future.result()
-            logger.info(f"Published checkin task {request_id} with Pub/Sub message ID: {pub_message_id}")
-            
-            return request_id
-        except Exception as e:
-            logger.error(f"Error publishing checkin task: {e}")
-            raise
+        # Use publish_to_unified_topic instead of direct publishing
+        return self.publish_to_unified_topic(payload)
 
     def publish_to_unified_topic(self, task_data: Dict[str, Any]) -> str:
         """
@@ -248,22 +209,25 @@ class TaskPublisher:
         request_id = task_data['request_id']
         task_type = task_data.get('task_type')
         
-        # Validate the task type
+        # Validate task type
         if task_type not in ['message', 'checklist', 'checkin']:
-            raise ValueError(f"Invalid task_type: {task_type}. Must be one of: message, checklist, checkin")
-        
-        # Add timestamp
-        task_data['timestamp'] = int(time.time())
-        
+            logger.error(f"Invalid task type: {task_type}")
+            raise ValueError(f"Invalid task type: {task_type}")
+            
+        # Ensure timestamp
+        if 'timestamp' not in task_data:
+            task_data['timestamp'] = int(time.time())
+            
         try:
             # Encode and publish
             message_data = json.dumps(task_data).encode("utf-8")
-            future = self.publisher.publish(self.topics['unified'], message_data)
+            future = self.publisher.publish(self.unified_topic, message_data)
             
+            # Wait for confirmation
             pub_message_id = future.result()
-            logger.info(f"Published {task_type} task {request_id} to unified topic with Pub/Sub message ID: {pub_message_id}")
+            logger.info(f"Published {task_type} task {request_id} to unified topic with message ID: {pub_message_id}")
             
             return request_id
         except Exception as e:
-            logger.error(f"Error publishing {task_type} task {request_id} to unified topic: {e}")
+            logger.error(f"Error publishing to unified topic: {e}")
             raise 

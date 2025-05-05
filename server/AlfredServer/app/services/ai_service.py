@@ -537,14 +537,14 @@ class AIService:
             logger.info("===========================================")
             return True
         
-    async def generate_inquiry_response(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, user_full_name: Optional[str] = None, now: Optional[datetime] = None) -> str:
+    async def generate_inquiry_response(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, user_full_name: Optional[str] = None, now: Optional[datetime] = None):
         """
         Generate a response asking for more details needed to create a meaningful checklist.
         
         This is used when the checklist_inquiry_agent determines we need more information.
         """
         try:
-            logger.info("=== AGENT: Inquiry Response Generator ===")
+            logger.info("=== AGENT: Inquiry Response Generator (Streaming) ===")
             logger.info(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
             
             # Get current date and time
@@ -576,30 +576,38 @@ class AIService:
             # Add the current message
             inquiry_messages.append({"role": "user", "content": message})
             
-            # Generate the inquiry response using GPT-4o-mini for speed
-            response = self.client.chat.completions.create(
+            # Generate the inquiry response using GPT-4o-mini with streaming
+            full_response = ""
+            stream = self.client.chat.completions.create(
                 model=LOW_TIER_MODEL,
                 messages=inquiry_messages,
                 temperature=0.7,
-                max_tokens=200  # Keep responses short
+                max_tokens=200,  # Keep responses short
+                stream=True,  # Enable streaming
             )
             
-            inquiry_response = response.choices[0].message.content
+            # Process and yield each chunk as it arrives
+            for chunk in stream:
+                if hasattr(chunk.choices[0].delta, "content") and chunk.choices[0].delta.content:
+                    content_chunk = chunk.choices[0].delta.content
+                    full_response += content_chunk
+                    # Return the chunk for immediate streaming
+                    yield content_chunk
             
-            logger.info(f"Output: \"{inquiry_response[:75]}{'...' if len(inquiry_response) > 75 else ''}\"")
+            logger.info(f"Output: \"{full_response[:75]}{'...' if len(full_response) > 75 else ''}\"")
             logger.debug(f"Context msgs: {len(context_messages)}")
             logger.debug(f"Model:" + LOW_TIER_MODEL)
             logger.info("========================================")
             
-            return inquiry_response
-                
         except Exception as e:
             logger.error(f"Error generating inquiry response: {e}")
             # Provide a fallback response
             fallback = f"I'd be happy to help with that. Could you provide a bit more detail about what specific tasks you'd like me to track and any relevant timeframes?"
             logger.info(f"Output: Using fallback response due to error")
             logger.info("========================================")
-            return fallback
+            
+            # Yield the fallback message as a single chunk
+            yield fallback
     
     async def generate_checklist(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, now: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
         """
@@ -1130,7 +1138,7 @@ class AIService:
             logger.error(f"Error classifying checklist size: {e}")
             return False
 
-    async def _generate_checklist_acknowledgment(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, user_full_name: Optional[str] = None, now: Optional[datetime] = None) -> str:
+    async def _generate_checklist_acknowledgment(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, user_full_name: Optional[str] = None, now: Optional[datetime] = None):
         """
         Generate a simple acknowledgment for checklist creation.
         Uses the MESSAGE_AGENT_CHECKLIST_INSTRUCTIONS.
@@ -1142,7 +1150,7 @@ class AIService:
             now: Current datetime (optional)
             
         Returns:
-            str: A brief acknowledgment message
+            Generator yielding chunks of the acknowledgment message
         """
         try:
             # Get current date and time
@@ -1169,24 +1177,30 @@ class AIService:
             # Add the current message
             api_messages.append({"role": "user", "content": message})
             
-            # Always use mini model for checklist acknowledgments
-            response = self.client.chat.completions.create(
+            # Use mini model for checklist acknowledgments with streaming
+            full_response = ""
+            stream = self.client.chat.completions.create(
                 model=LOWEST_TIER_MODEL,
                 messages=api_messages,
                 temperature=0.7,
+                stream=True,  # Enable streaming
             )
             
-            acknowledgment = response.choices[0].message.content
+            # Process and yield each chunk as it arrives
+            for chunk in stream:
+                if hasattr(chunk.choices[0].delta, "content") and chunk.choices[0].delta.content:
+                    content_chunk = chunk.choices[0].delta.content
+                    full_response += content_chunk
+                    # Return the chunk for immediate streaming
+                    yield content_chunk
             
-            # Log the response
-            logger.info("=== AGENT: Checklist Acknowledgment Generator ===")
+            # Log the complete response after streaming
+            logger.info("=== AGENT: Checklist Acknowledgment Generator (Streaming) ===")
             logger.info(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
-            logger.info(f"Output: \"{acknowledgment[:75]}{'...' if len(acknowledgment) > 75 else ''}\"")
+            logger.info(f"Output: \"{full_response[:75]}{'...' if len(full_response) > 75 else ''}\"")
             logger.debug(f"Context msgs: {len(context_messages)}")
             logger.debug(f"Model:" + LOWEST_TIER_MODEL)
             logger.info("=======================================")
-            
-            return acknowledgment
             
         except Exception as e:
             logger.error(f"Error generating checklist acknowledgment: {e}")
@@ -1198,7 +1212,8 @@ class AIService:
             logger.info(f"Output: Using fallback acknowledgment: \"{fallback}\"")
             logger.info("=======================================")
             
-            return fallback
+            # Yield the fallback message as a single chunk
+            yield fallback
     
     async def _generate_standard_response(self, message: str, query_type: str, 
                                          message_history: Optional[List[Dict[str, Any]]] = None,
@@ -1250,44 +1265,58 @@ class AIService:
             message_model = MID_TIER_MODEL if query_type == "complex" else LOWEST_TIER_MODEL
             
             try:
-                # Generate response
-                response = self.client.chat.completions.create(
+                # Generate response with streaming enabled
+                full_response = ""
+                stream = self.client.chat.completions.create(
                     model=message_model,
                     messages=api_messages,
                     temperature=0.7,
+                    stream=True,  # Enable streaming
                 )
                 
-                conversation_response = response.choices[0].message.content
+                # Process and yield each chunk as it arrives
+                for chunk in stream:
+                    if hasattr(chunk.choices[0].delta, "content") and chunk.choices[0].delta.content:
+                        content_chunk = chunk.choices[0].delta.content
+                        full_response += content_chunk
+                        # Return the chunk for immediate streaming
+                        yield content_chunk
                 
-                # Log the response
-                logger.info("=== AGENT: Standard Response Generator ===")
+                # Log the complete response after streaming
+                logger.info("=== AGENT: Standard Response Generator (Streaming) ===")
                 logger.info(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
-                logger.info(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
+                logger.info(f"Output: \"{full_response[:75]}{'...' if len(full_response) > 75 else ''}\"")
                 logger.debug(f"Context msgs: {len(context_messages)}")
                 logger.debug(f"Model: {message_model}")
                 logger.info("===============================")
                 
-                return conversation_response
+                # No need to return anything here as we've yielded chunks
                 
             except Exception as e:
                 # If we hit a rate limit or quota error, try falling back to GPT-4o-mini
                 logger.info(f"Error with {message_model}, falling back to mini model: {e}")
                 try:
-                    # Try with the fallback model
-                    response = self.client.chat.completions.create(
+                    # Try with the fallback model and streaming
+                    full_response = ""
+                    stream = self.client.chat.completions.create(
                         model=LOW_TIER_MODEL,
                         messages=api_messages,
                         temperature=0.7,
+                        stream=True,  # Enable streaming
                     )
                     
-                    conversation_response = response.choices[0].message.content
+                    # Process and yield each chunk from fallback model
+                    for chunk in stream:
+                        if hasattr(chunk.choices[0].delta, "content") and chunk.choices[0].delta.content:
+                            content_chunk = chunk.choices[0].delta.content
+                            full_response += content_chunk
+                            # Return the chunk for immediate streaming
+                            yield content_chunk
                     
-                    logger.info(f"Output: \"{conversation_response[:75]}{'...' if len(conversation_response) > 75 else ''}\"")
+                    logger.info(f"Output: \"{full_response[:75]}{'...' if len(full_response) > 75 else ''}\"")
                     logger.debug(f"Context msgs: {len(context_messages)}")
                     logger.debug(f"Model:"+ LOW_TIER_MODEL +"(fallback)")
                     logger.info("===============================")
-                    
-                    return conversation_response
                     
                 except Exception as fallback_error:
                     # If even the fallback fails, provide a hardcoded response
@@ -1299,7 +1328,8 @@ class AIService:
                     logger.debug(f"Model: hardcoded fallback")
                     logger.info("===============================")
                     
-                    return fallback_message
+                    # Yield the fallback message as a single chunk
+                    yield fallback_message
         except Exception as e:
             logger.error(f"Error in _generate_standard_response: {e}")
             # Provide a fallback response
@@ -1310,4 +1340,144 @@ class AIService:
             logger.debug(f"Model: hardcoded fallback (error)")
             logger.info("===============================")
             
-            return fallback_message    
+            # Yield the fallback message as a single chunk
+            yield fallback_message    
+
+    async def generate_streaming_response(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, 
+                                      user_full_name: Optional[str] = None, user_id: Optional[str] = None,
+                                      client_time: Optional[str] = None, 
+                                      stream_callback: Optional[callable] = None) -> Dict[str, Any]:
+        """
+        Streaming version of response generation that yields chunks as they're generated.
+        
+        Args:
+            message: The user's message
+            message_history: Previous message history for context
+            user_full_name: The user's full name for personalization
+            user_id: The user's ID
+            client_time: The current time on the client device (optional)
+            stream_callback: Callback function to receive streaming chunks
+            
+        Returns:
+            Dict[str, Any]: A dictionary containing:
+                - 'response_text': The complete text response
+                - 'needs_checklist': Whether a checklist is needed
+                - 'needs_more_info': Whether more information is needed
+                - 'query_type': Classification of the query (simple/complex)
+        """
+        result = {
+            'response_text': '',
+            'needs_checklist': False,
+            'needs_more_info': False,
+            'query_type': 'simple'
+        }
+        
+        try:
+            # Generate a unique request ID for this interaction
+            request_id = str(uuid.uuid4())[:8]
+            log_buffer.start_request(request_id)
+            
+            # Parse client time if provided for more accurate time-based responses
+            client_datetime = None
+            if client_time:
+                try:
+                    # Parse ISO 8601 format (2023-09-15T14:30:00Z)
+                    client_datetime = datetime.fromisoformat(client_time.replace('Z', '+00:00'))
+                    log_buffer.add(f"Using client time: {client_datetime}")
+                except (ValueError, TypeError) as e:
+                    log_buffer.add(f"Error parsing client time: {e}. Using server time instead.")
+            
+            # Get current date and time (from client or server)
+            now = client_datetime or datetime.now()
+            current_date = now.strftime("%A, %B %d, %Y")
+            current_time = now.strftime("%I:%M %p")
+            
+            # Step 1: Check if this is a checklist request
+            result['needs_checklist'] = await self.should_generate_checklist(message, message_history, now)
+            
+            # Step 2: If it's a checklist request, check if we need more information
+            if result['needs_checklist']:
+                result['needs_more_info'] = await self.should_inquire_further(message, message_history, now)
+                
+                #Step 2a: If we need more info, generate an inquiry response asking for more details
+                if result['needs_more_info']:
+                    # Generate an inquiry response asking for more details with streaming
+                    response_text = ""
+                    async for chunk in self.generate_inquiry_response(message, message_history, user_full_name, now):
+                        if stream_callback:
+                            stream_callback(chunk)
+                        response_text += chunk
+                    result['response_text'] = response_text
+                
+                #Step 2b: If we have enough info, generate an acknowledgment
+                else:
+                    # Check if this is a large checklist
+                    is_large_checklist = await self._classify_checklist_size(message, message_history)
+                    
+                    if is_large_checklist:
+                        # Generate outline
+                        outline = await self._generate_checklist_outline(message, message_history, client_time)
+                        
+                        if outline:
+                            # For outline, we don't stream but send the structured data
+                            result['response_text'] = "I've created an outline for you. Let me know if you'd like to proceed with the detailed checklists."
+                            result['outline'] = outline
+                            if stream_callback:
+                                stream_callback(result['response_text'])
+                        else:
+                            # Fallback to normal checklist if outline generation fails
+                            response_text = ""
+                            async for chunk in self._generate_checklist_acknowledgment(message, message_history, user_full_name, now):
+                                if stream_callback:
+                                    stream_callback(chunk)
+                                response_text += chunk
+                            result['response_text'] = response_text
+                    else:
+                        # Stream the checklist acknowledgment
+                        response_text = ""
+                        async for chunk in self._generate_checklist_acknowledgment(message, message_history, user_full_name, now):
+                            if stream_callback:
+                                stream_callback(chunk)
+                            response_text += chunk
+                        result['response_text'] = response_text
+            
+            # Step 3: If it's not a checklist request, generate a standard response based on query complexity
+            else:
+                # Step 3a: First determine query complexity (ALWAYS needed for model selection)
+                result['query_type'] = await self.classify_query(message, message_history, now)
+                
+                # Stream the standard response
+                response_text = ""
+                async for chunk in self._generate_standard_response(
+                    message, result['query_type'], message_history, user_full_name, now
+                ):
+                    if stream_callback:
+                        stream_callback(chunk)
+                    response_text += chunk
+                result['response_text'] = response_text
+            
+            # End the request and flush all logs
+            log_buffer.end_request()
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in generate_streaming_response: {e}")
+            # Provide a fallback response
+            fallback_response = self._generate_fallback_response(message, user_full_name)
+            result['response_text'] = fallback_response
+            
+            # Stream the fallback response if callback is provided
+            if stream_callback:
+                stream_callback(fallback_response)
+            
+            # Log the error fallback
+            log_buffer.add("=== AGENT: Streaming Response (Error) ===")
+            log_buffer.add(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
+            log_buffer.add(f"Output: \"{result['response_text'][:75]}{'...' if len(result['response_text']) > 75 else ''}\"")
+            log_buffer.add(f"Context msgs: 0")
+            log_buffer.add(f"Model: hardcoded fallback")
+            log_buffer.add("===============================")
+            
+            # End the request and flush all logs
+            log_buffer.end_request()
+            return result    

@@ -1,13 +1,21 @@
+version: "3.8"
 services:
-  db:
-    environment:
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_USER=postgres
-      - POSTGRES_DB=promptly
-
   api:
+    volumes:
+      - ${PWD}/firebase-credentials:/app/firebase-credentials
+      - ${PWD}/pubsub-credentials:/app/pubsub-credentials
     environment:
-      - POSTGRES_SERVER=db
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=promptly 
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/pubsub-credentials/pubsub-credentials.json
+      - GOOGLE_CLOUD_PROJECT=alfred-9fa73
+      - FIREBASE_SERVICE_ACCOUNT=/app/firebase-credentials/alfred-9fa73-firebase-adminsdk-fbsvc-294854bb8e.json
+      - FIREBASE_PROJECT_ID=alfred-9fa73
+  
+  worker:
+    volumes:
+      - ${PWD}/firebase-credentials:/app/firebase-credentials
+      - ${PWD}/pubsub-credentials:/app/pubsub-credentials
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/pubsub-credentials/pubsub-credentials.json
+      - GOOGLE_CLOUD_PROJECT=alfred-9fa73
+      - FIREBASE_SERVICE_ACCOUNT=/app/firebase-credentials/alfred-9fa73-firebase-adminsdk-fbsvc-294854bb8e.json
+      - FIREBASE_PROJECT_ID=alfred-9fa73
