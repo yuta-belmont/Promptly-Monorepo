@@ -23,7 +23,11 @@ final class ChatService {
     private let firestoreService = FirestoreService.shared
     
     // Access the shared view model directly
-    private var chatViewModel: ChatViewModel { ChatViewModel.shared }
+    private var chatViewModel: ChatViewModel {
+        get async {
+            await MainActor.run { ChatViewModel.shared }
+        }
+    }
     
     // Network path monitor for connectivity checking
     private let networkMonitor = NWPathMonitor()
@@ -56,11 +60,14 @@ final class ChatService {
     
     // Helper method to notify the view model
     public func notifyAllViewModels(_ message: String) {
-        Task { @MainActor in
-            chatViewModel.handleMessage(message)
+        Task {
+            let viewModel = await chatViewModel
+            Task { @MainActor in
+                viewModel.handleMessage(message)
+            }
+            // Also call the general callback if set
+            onMessageUpdate?(message)
         }
-        // Also call the general callback if set
-        onMessageUpdate?(message)
     }
     
     deinit {
@@ -686,8 +693,11 @@ final class ChatService {
                     print("📥 RAW CHECKLIST TASK RESPONSE: \(data)")
                     
                     // Update loading indicator based on listener status
-                    Task { @MainActor in
-                        self.chatViewModel.updateLoadingIndicator()
+                    Task {
+                        let viewModel = await self.chatViewModel
+                        Task { @MainActor in
+                            viewModel.updateLoadingIndicator()
+                        }
                     }
                     
                     // First check for a direct response field
@@ -761,8 +771,11 @@ final class ChatService {
                     }
                 } else if status == "failed", let data = data {
                     // Update loading indicator based on listener status
-                    Task { @MainActor in
-                        self.chatViewModel.updateLoadingIndicator()
+                    Task {
+                        let viewModel = await self.chatViewModel
+                        Task { @MainActor in
+                            viewModel.updateLoadingIndicator()
+                        }
                     }
                     
                     // If we have error details, show them to the user
@@ -778,8 +791,11 @@ final class ChatService {
                 currentChecklistTaskId = taskId
                 
                 // Update the loading indicator since we just set up a listener
-                Task { @MainActor in
-                    self.chatViewModel.updateLoadingIndicator()
+                Task {
+                    let viewModel = await self.chatViewModel
+                    Task { @MainActor in
+                        viewModel.updateLoadingIndicator()
+                    }
                 }
             }
         }

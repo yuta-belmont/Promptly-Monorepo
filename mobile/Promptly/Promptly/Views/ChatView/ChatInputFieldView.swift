@@ -113,8 +113,8 @@ struct ChatInputFieldView: View {
                             }
                         } else if hasText {
                             let textToSend = userInput
+                            // Don't remove focus right away - let animations complete first
                             onSend()
-                            
                             DispatchQueue.main.async {
                                 if userInput == textToSend {
                                     userInput = ""

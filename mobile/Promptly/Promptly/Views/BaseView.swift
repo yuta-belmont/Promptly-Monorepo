@@ -24,6 +24,8 @@ struct BaseView: View {
     @State private var isChatExpanded = false
     @State private var isKeyboardActive = false
     @State private var isEditing: Bool = false
+    // Add a state for the current detent selection
+    @State private var chatDetent: PresentationDetent = .medium
     
     @StateObject private var authManager = AuthManager.shared
     
@@ -199,7 +201,7 @@ struct BaseView: View {
                 isExpanded: $isChatExpanded
             )
             .environmentObject(focusManager)
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.medium, .large], selection: $chatDetent)
             .presentationDragIndicator(.visible)
         }
         .onChange(of: showingMenu) { oldValue, newValue in
@@ -217,12 +219,25 @@ struct BaseView: View {
         .onChange(of: themeManager.currentTheme) { oldValue, newValue in
             // This will trigger a redraw when the theme changes
         }
+        // Reset chat detent to medium when chat is closed
+        .onChange(of: isChatExpanded) { oldValue, newValue in
+            if !newValue {
+                // Reset to medium detent when chat is closed
+                chatDetent = .medium
+            }
+        }
         // Close ChatView when EasyListView gains focus
         .onChange(of: focusManager.isEasyListFocused) { oldValue, newValue in
             if newValue && isChatExpanded {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     isChatExpanded = false
                 }
+            }
+        }
+        // Expand chat to large detent when chat gets focus
+        .onChange(of: focusManager.isChatFocused) { oldValue, newValue in
+            if newValue {
+                chatDetent = .large
             }
         }
     }

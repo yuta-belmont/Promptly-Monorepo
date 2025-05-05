@@ -202,6 +202,13 @@ struct ChatView: View {
                             }
                         }
                     }
+                    // Add simultaneous tap gesture to dismiss keyboard
+                    .simultaneousGesture(
+                        TapGesture()
+                            .onEnded { _ in
+                                RemoveAllFocus()
+                            }
+                    )
                 }
                 
                 // New ZStack approach with rounded top corners
@@ -264,15 +271,16 @@ struct ChatView: View {
                                     if lastSentMessageId != messageId {
                                         messageOffset.removeValue(forKey: messageId)
                                     }
+                                    
+                                    // Remove focus after animation completes
+                                    RemoveAllFocus()
                                 }
                             }
                         },
                         onAccept: {
-                            print("🔍 DEBUG: Accept button tapped in ChatView")
                             viewModel.acceptOutline()
                         },
                         onDecline: {
-                            print("🔍 DEBUG: Decline button tapped in ChatView")
                             viewModel.declineOutline()
                         },
                         hasPendingOutline: viewModel.hasPendingOutline,
@@ -283,7 +291,7 @@ struct ChatView: View {
                     .padding(.bottom, 8) // Add some padding to avoid bottom edge
                 }
                 .fixedSize(horizontal: false, vertical: true) // Take minimum vertical height
-                .animation(.easeInOut(duration: 0.2), value: viewModel.isPendingResponse)
+                //.animation(.easeInOut(duration: 0.2), value: viewModel.isPendingResponse)
                 .contentShape(Rectangle().inset(by: -20))
                 .gesture(
                     DragGesture()
@@ -351,36 +359,45 @@ struct ChatView: View {
             }
         }
         // Add observer for chat focus changes
+        
         .onChange(of: focusManager.isChatFocused) { oldValue, newValue in
             if newValue {
-                // When chat is focused, scroll to bottom
-                DispatchQueue.main.async {
-                    withAnimation {
+                // When chat is focused, scroll to bottom with a delay
+                // Wait for keyboard to fully appear before scrolling
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    withAnimation(.easeOut(duration: 0.2)) {
                         scrollViewProxy?.scrollTo("bottom", anchor: .bottom)
                     }
                 }
+                 
             }
         }
+         
         .manageFocus(for: .chat)
         .onDisappear {
             removeKeyboardNotifications()
         }
     }
     
+    
     private func setupKeyboardNotifications() {
         // Remove any existing observers first
+        // Since we already have a scroll for when focus changes (which happens faster than this scroll
+        // we're keeping this scroll as a safety for the cases when the scroll didn't complete.
         removeKeyboardNotifications()
         
         NotificationCenter.default.addObserver(
-            forName: UIResponder.keyboardWillShowNotification,
+            forName: UIResponder.keyboardDidShowNotification,
             object: nil,
             queue: .main
         ) { notification in
-            let animationDuration = (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
+            // Set keyboard active flag
+            self.isKeyboardActive = true
             
-            // Wait for keyboard animation to complete before adjusting height
-            DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration) {
-                isKeyboardActive = true
+            // Scroll to bottom with a simple animation
+            withAnimation(.easeInOut(duration: 0.3)) {
+                self.scrollViewProxy?.scrollTo("bottom", anchor: .bottom)
             }
         }
         
@@ -396,6 +413,7 @@ struct ChatView: View {
     private func removeKeyboardNotifications() {
         NotificationCenter.default.removeObserver(self)
     }
+     
 }
 
 // Typing indicator that mimics iMessage typing bubbles
