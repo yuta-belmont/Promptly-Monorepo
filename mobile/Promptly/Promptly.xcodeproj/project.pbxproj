@@ -34,6 +34,10 @@
 		8F8FE7412D85EA3C00355B3D /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F8FE73F2D85EA3C00355B3D /* LoginView.swift */; };
 		8F8FE7432D85EA7100355B3D /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F8FE7422D85EA7100355B3D /* AuthManager.swift */; };
 		8F91A2782D959DC1008383FF /* ItemDetailsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F91A2772D959DC1008383FF /* ItemDetailsViewModel.swift */; };
+		8F94B7CB2DC85E790066B583 /* SSEManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F94B7CA2DC85E790066B583 /* SSEManager.swift */; };
+		8F94B7CC2DC85E790066B583 /* PubSubChatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F94B7C92DC85E790066B583 /* PubSubChatService.swift */; };
+		8F94B7D42DC85EFA0066B583 /* StreamingChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F94B7D32DC85EFA0066B583 /* StreamingChatMessage.swift */; };
+		8F94B7D62DC85F1F0066B583 /* StreamingChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F94B7D52DC85F1F0066B583 /* StreamingChatViewModel.swift */; };
 		8F9526772DB194E70002C956 /* CheckInService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F9526762DB194E70002C956 /* CheckInService.swift */; };
 		8F9DFEF52D6FA66900F62D5E /* PromptlyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F9DFEF42D6FA66900F62D5E /* PromptlyApp.swift */; };
 		8F9DFEF92D6FA66A00F62D5E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8F9DFEF82D6FA66A00F62D5E /* Assets.xcassets */; };
@@ -112,6 +116,10 @@
 		8F8FE73F2D85EA3C00355B3D /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		8F8FE7422D85EA7100355B3D /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
 		8F91A2772D959DC1008383FF /* ItemDetailsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailsViewModel.swift; sourceTree = "<group>"; };
+		8F94B7C92DC85E790066B583 /* PubSubChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PubSubChatService.swift; sourceTree = "<group>"; };
+		8F94B7CA2DC85E790066B583 /* SSEManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSEManager.swift; sourceTree = "<group>"; };
+		8F94B7D32DC85EFA0066B583 /* StreamingChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingChatMessage.swift; sourceTree = "<group>"; };
+		8F94B7D52DC85F1F0066B583 /* StreamingChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingChatViewModel.swift; sourceTree = "<group>"; };
 		8F9526762DB194E70002C956 /* CheckInService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInService.swift; sourceTree = "<group>"; };
 		8F9DFEF12D6FA66900F62D5E /* Promptly.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Promptly.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8F9DFEF42D6FA66900F62D5E /* PromptlyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptlyApp.swift; sourceTree = "<group>"; };
@@ -147,6 +155,7 @@
 		8F7DEA452D80DF5D00287676 /* MainMenu */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = MainMenu; sourceTree = "<group>"; };
 		8F7DEA462D80DF8400287676 /* CalendarView */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = CalendarView; sourceTree = "<group>"; };
 		8F7DEA472D80DFA300287676 /* ChatView */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ChatView; sourceTree = "<group>"; };
+		8F94B7D02DC85ED40066B583 /* StreamingChatView */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = StreamingChatView; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -258,6 +267,8 @@
 		8F9DFF032D70AE4B00F62D5E /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				8F94B7C92DC85E790066B583 /* PubSubChatService.swift */,
+				8F94B7CA2DC85E790066B583 /* SSEManager.swift */,
 				8F35807E2DBC53F70002ADF5 /* NetworkManager.swift */,
 				8F9526762DB194E70002C956 /* CheckInService.swift */,
 				8F584F812DA61F2C00DDF73A /* CheckInAnalytics.swift */,
@@ -280,6 +291,7 @@
 		8F9DFF042D70AE5F00F62D5E /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
+				8F94B7D52DC85F1F0066B583 /* StreamingChatViewModel.swift */,
 				8F60906A2DA5A2150048CEDD /* GroupDetailsViewModel.swift */,
 				8F91A2772D959DC1008383FF /* ItemDetailsViewModel.swift */,
 				8F2F11A02D83C5B200B47051 /* ManageGroupsViewModel.swift */,
@@ -294,6 +306,7 @@
 		8F9DFF052D70AE6900F62D5E /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				8F94B7D32DC85EFA0066B583 /* StreamingChatMessage.swift */,
 				8FE0E27A2D8B84ED00EE0D83 /* SubItem.swift */,
 				8F35F3672D81E98100A112F1 /* ModelNamespace.swift */,
 				8F35F35E2D81E94B00A112F1 /* CoreData */,
@@ -309,6 +322,7 @@
 		8F9DFF062D70AE7500F62D5E /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				8F94B7D02DC85ED40066B583 /* StreamingChatView */,
 				8F3580832DC23B4A0002ADF5 /* ChecklistOutlineView.swift */,
 				8F8FE7402D85EA3C00355B3D /* Auth */,
 				8F7DEA472D80DFA300287676 /* ChatView */,
@@ -345,6 +359,7 @@
 				8F7DEA452D80DF5D00287676 /* MainMenu */,
 				8F7DEA462D80DF8400287676 /* CalendarView */,
 				8F7DEA472D80DFA300287676 /* ChatView */,
+				8F94B7D02DC85ED40066B583 /* StreamingChatView */,
 			);
 			name = Promptly;
 			productName = Promptly;
@@ -421,6 +436,9 @@
 				8F3C830A2D7A03270072CCAF /* SharedShapes.swift in Sources */,
 				8F3C830B2D7A03270072CCAF /* ViewModifiers.swift in Sources */,
 				8FB9D7AA2D766FD700F8B0E2 /* NotificationManager.swift in Sources */,
+				8F94B7CB2DC85E790066B583 /* SSEManager.swift in Sources */,
+				8F94B7CC2DC85E790066B583 /* PubSubChatService.swift in Sources */,
+				8F94B7D62DC85F1F0066B583 /* StreamingChatViewModel.swift in Sources */,
 				8FC448472D7275F00008E3AB /* Checklist.swift in Sources */,
 				8F60906B2DA5A2150048CEDD /* GroupDetailsViewModel.swift in Sources */,
 				8F9DFF082D70BFBF00F62D5E /* ChatMessage.swift in Sources */,
@@ -436,6 +454,7 @@
 				8F35F35F2D81E94B00A112F1 /* ChecklistItem+CoreDataProperties.swift in Sources */,
 				8F35F3602D81E94B00A112F1 /* Checklist+CoreDataClass.swift in Sources */,
 				8F35807F2DBC53F70002ADF5 /* NetworkManager.swift in Sources */,
+				8F94B7D42DC85EFA0066B583 /* StreamingChatMessage.swift in Sources */,
 				8F35F3612D81E94B00A112F1 /* Checklist+CoreDataProperties.swift in Sources */,
 				8F35F3622D81E94B00A112F1 /* ChecklistItem+CoreDataClass.swift in Sources */,
 				8F35F3632D81E94B00A112F1 /* ItemGroup+CoreDataClass.swift in Sources */,

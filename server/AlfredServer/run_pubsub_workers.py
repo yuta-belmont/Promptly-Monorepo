@@ -22,6 +22,7 @@ import set_env
 from app.pubsub.workers.message_worker import MessageWorker
 from app.pubsub.workers.checklist_worker import ChecklistWorker
 from app.pubsub.workers.checkin_worker import CheckinWorker
+from app.pubsub.workers.unified_pubsub_worker import UnifiedPubSubWorker
 
 # Set up logging
 logging.basicConfig(
@@ -36,7 +37,7 @@ shutdown_flag = False
 class WorkerManager:
     """Manages multiple worker instances."""
     
-    def __init__(self, message_workers=1, checklist_workers=1, checkin_workers=1):
+    def __init__(self, message_workers=1, checklist_workers=1, checkin_workers=1, unified_workers=0):
         """
         Initialize the worker manager.
         
@@ -44,19 +45,22 @@ class WorkerManager:
             message_workers: Number of message workers to start
             checklist_workers: Number of checklist workers to start
             checkin_workers: Number of checkin workers to start
+            unified_workers: Number of unified workers to start
         """
         self.worker_threads = []
         self.workers = []
         self.message_workers = message_workers
         self.checklist_workers = checklist_workers
         self.checkin_workers = checkin_workers
+        self.unified_workers = unified_workers
         
     def start(self):
         """Start all worker instances."""
         logger.info(
             f"Starting {self.message_workers} message workers, "
-            f"{self.checklist_workers} checklist workers, and "
-            f"{self.checkin_workers} checkin workers"
+            f"{self.checklist_workers} checklist workers, "
+            f"{self.checkin_workers} checkin workers, and "
+            f"{self.unified_workers} unified workers"
         )
         
         # Create worker instances
@@ -80,6 +84,13 @@ class WorkerManager:
         for i in range(self.checkin_workers):
             worker_id = f"checkin-worker-{i}"
             worker = CheckinWorker(worker_id=worker_id)
+            self.workers.append(worker)
+            worker_count += 1
+        
+        # Unified workers
+        for i in range(self.unified_workers):
+            worker_id = f"unified-worker-{i}"
+            worker = UnifiedPubSubWorker(worker_id=worker_id)
             self.workers.append(worker)
             worker_count += 1
             
@@ -141,6 +152,8 @@ def parse_arguments():
                         help='Number of checklist workers to start (default: 1)')
     parser.add_argument('--checkin-workers', type=int, default=1,
                         help='Number of checkin workers to start (default: 1)')
+    parser.add_argument('--unified-workers', type=int, default=0,
+                        help='Number of unified workers to start (default: 0)')
     
     return parser.parse_args()
 
@@ -166,7 +179,8 @@ def main():
     manager = WorkerManager(
         message_workers=args.message_workers,
         checklist_workers=args.checklist_workers,
-        checkin_workers=args.checkin_workers
+        checkin_workers=args.checkin_workers,
+        unified_workers=args.unified_workers
     )
     manager.start()
     

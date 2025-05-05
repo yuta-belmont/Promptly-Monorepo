@@ -365,9 +365,13 @@ struct ChatView: View {
                 // When chat is focused, scroll to bottom with a delay
                 // Wait for keyboard to fully appear before scrolling
                 
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        scrollViewProxy?.scrollTo("bottom", anchor: .bottom)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    scrollViewProxy?.scrollTo("bottom", anchor: .bottom)
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            scrollViewProxy?.scrollTo("bottom", anchor: .bottom)
+                        }
                     }
                 }
                  
@@ -395,10 +399,9 @@ struct ChatView: View {
             // Set keyboard active flag
             self.isKeyboardActive = true
             
-            // Scroll to bottom with a simple animation
-            withAnimation(.easeInOut(duration: 0.3)) {
-                self.scrollViewProxy?.scrollTo("bottom", anchor: .bottom)
-            }
+            // Scroll immediately. At this point we assume we've already scrolled,
+            // but if timing is off this will save us.
+            self.scrollViewProxy?.scrollTo("bottom", anchor: .bottom)
         }
         
         NotificationCenter.default.addObserver(

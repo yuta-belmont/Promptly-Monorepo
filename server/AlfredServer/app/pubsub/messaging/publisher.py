@@ -13,7 +13,8 @@ from app.pubsub.config import (
     GCP_PROJECT_ID,
     MESSAGE_TASKS_TOPIC,
     CHECKLIST_TASKS_TOPIC,
-    CHECKIN_TASKS_TOPIC
+    CHECKIN_TASKS_TOPIC,
+    UNIFIED_TASKS_TOPIC
 )
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,8 @@ class TaskPublisher:
             self.topics = {
                 'message': self.publisher.topic_path(self.project_id, MESSAGE_TASKS_TOPIC),
                 'checklist': self.publisher.topic_path(self.project_id, CHECKLIST_TASKS_TOPIC),
-                'checkin': self.publisher.topic_path(self.project_id, CHECKIN_TASKS_TOPIC)
+                'checkin': self.publisher.topic_path(self.project_id, CHECKIN_TASKS_TOPIC),
+                'unified': self.publisher.topic_path(self.project_id, UNIFIED_TASKS_TOPIC)
             }
             
             self._initialized = True
@@ -226,4 +228,42 @@ class TaskPublisher:
             return request_id
         except Exception as e:
             logger.error(f"Error publishing checkin task: {e}")
+            raise
+
+    def publish_to_unified_topic(self, task_data: Dict[str, Any]) -> str:
+        """
+        Publish a task to the unified topic.
+        
+        Args:
+            task_data: The task data to publish. Must include 'task_type'.
+                       Valid task types: 'message', 'checklist', 'checkin'
+            
+        Returns:
+            The request ID (useful for correlation)
+        """
+        # Ensure task has a request_id
+        if 'request_id' not in task_data:
+            task_data['request_id'] = str(uuid.uuid4())
+            
+        request_id = task_data['request_id']
+        task_type = task_data.get('task_type')
+        
+        # Validate the task type
+        if task_type not in ['message', 'checklist', 'checkin']:
+            raise ValueError(f"Invalid task_type: {task_type}. Must be one of: message, checklist, checkin")
+        
+        # Add timestamp
+        task_data['timestamp'] = int(time.time())
+        
+        try:
+            # Encode and publish
+            message_data = json.dumps(task_data).encode("utf-8")
+            future = self.publisher.publish(self.topics['unified'], message_data)
+            
+            pub_message_id = future.result()
+            logger.info(f"Published {task_type} task {request_id} to unified topic with Pub/Sub message ID: {pub_message_id}")
+            
+            return request_id
+        except Exception as e:
+            logger.error(f"Error publishing {task_type} task {request_id} to unified topic: {e}")
             raise 

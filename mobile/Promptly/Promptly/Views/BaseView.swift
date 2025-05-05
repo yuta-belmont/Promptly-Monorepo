@@ -22,12 +22,14 @@ struct BaseView: View {
     // Chat-related states
     @EnvironmentObject private var chatViewModel: ChatViewModel
     @State private var isChatExpanded = false
+    @State private var isStreamingChatExpanded = false  // New state for streaming chat
     @State private var isKeyboardActive = false
     @State private var isEditing: Bool = false
     // Add a state for the current detent selection
     @State private var chatDetent: PresentationDetent = .medium
     
     @StateObject private var authManager = AuthManager.shared
+    @StateObject private var streamingChatViewModel = StreamingChatViewModel.shared  // Add streaming chat view model
     
     // Add state to track which view is showing
     @State private var isItemDetailsViewShowing: Bool = false
@@ -77,6 +79,61 @@ struct BaseView: View {
                         Spacer()
                         HStack {
                             Spacer()
+                            
+                            // Streaming Chat button (new)
+                            if userSettings.isChatEnabled {
+                                Button(action: {
+                                    // Remove all focus when opening the chat
+                                    focusManager.removeAllFocus()
+                                    
+                                    // Save EasyListView state before opening chat
+                                    NotificationCenter.default.post(
+                                        name: NSNotification.Name("SaveEasyListState"),
+                                        object: nil
+                                    )
+                                    
+                                    isStreamingChatExpanded = true
+                                }) {
+                                    ZStack {
+                                        // Bubble background
+                                        Circle()
+                                            .fill(Color.green)
+                                            .opacity(0.9)
+                                            .frame(width: 56, height: 56)
+                                            .shadow(color: .black.opacity(0.2), radius: 5, x: -1, y: 1)
+                                            .overlay(
+                                                Circle()
+                                                    .stroke(Color.gray.opacity(0.1), lineWidth: 0.5)
+                                            )
+                                        
+                                        // Chat icon
+                                        Image("ChatIcon")
+                                            .frame(width: 56, height: 56)
+                                            .padding(.top, 2)
+                                            .padding(.leading, 1)
+                                            .opacity(0.9)
+                                            .shadow(color: Color.black.opacity(0.2), radius: 2, x: -1, y: 1)
+                                        
+                                        // Notification badge - positioned as an overlay
+                                        if streamingChatViewModel.unreadCount > 0 {
+                                            ZStack {
+                                                Circle()
+                                                    .fill(Color.red)
+                                                    .frame(width: 22, height: 22)
+                                                
+                                                Text("\(min(streamingChatViewModel.unreadCount, 99))")
+                                                    .font(.system(size: 12, weight: .bold))
+                                                    .foregroundColor(.white)
+                                            }
+                                            .frame(width: 22, height: 22)
+                                            .offset(x: 22, y: -22) // Position at top-right of the chat icon
+                                        }
+                                    }
+                                }
+                                .padding(.trailing, 16)
+                                .padding(.bottom, 16)
+                            }
+                            
                             //plus button
                             Button(action: onPlusTapped) {
                                 ZStack {
@@ -101,7 +158,6 @@ struct BaseView: View {
                             }
                             .padding(.trailing, 16)
                             .padding(.bottom, userSettings.isChatEnabled ? 16 : 64)
-                            
                             
                         }
                         if userSettings.isChatEnabled {
@@ -204,6 +260,18 @@ struct BaseView: View {
             .presentationDetents([.medium, .large], selection: $chatDetent)
             .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $isStreamingChatExpanded) {
+            StreamingChatView(
+                isKeyboardActive: $isKeyboardActive,
+                isExpanded: $isStreamingChatExpanded
+            )
+                .environmentObject(focusManager)
+                .presentationDetents([.medium, .large], selection: $chatDetent)
+                .presentationDragIndicator(.visible)
+                .onDisappear {
+                    streamingChatViewModel.clearUnreadCount()
+                }
+        }
         .onChange(of: showingMenu) { oldValue, newValue in
             if newValue {
                 focusManager.removeAllFocus()
@@ -226,11 +294,28 @@ struct BaseView: View {
                 chatDetent = .medium
             }
         }
+        // Same for streaming chat
+        .onChange(of: isStreamingChatExpanded) { oldValue, newValue in
+            if !newValue {
+                // Reset to medium detent when chat is closed
+                chatDetent = .medium
+            }
+            
+            // Sync with view model
+            streamingChatViewModel.isExpanded = newValue
+        }
         // Close ChatView when EasyListView gains focus
         .onChange(of: focusManager.isEasyListFocused) { oldValue, newValue in
-            if newValue && isChatExpanded {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    isChatExpanded = false
+            if newValue {
+                if isChatExpanded {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        isChatExpanded = false
+                    }
+                }
+                if isStreamingChatExpanded {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        isStreamingChatExpanded = false
+                    }
                 }
             }
         }
@@ -238,6 +323,12 @@ struct BaseView: View {
         .onChange(of: focusManager.isChatFocused) { oldValue, newValue in
             if newValue {
                 chatDetent = .large
+            }
+        }
+        // Update when streaming chat view model's isExpanded changes
+        .onChange(of: streamingChatViewModel.isExpanded) { oldValue, newValue in
+            if isStreamingChatExpanded != newValue {
+                isStreamingChatExpanded = newValue
             }
         }
     }

@@ -9,6 +9,8 @@ import logging
 import json
 
 from app.api import auth, users, chat
+from app.routes import pubsub_routes  # Import the pubsub routes
+from app.routes import stream_routes  # Import the stream routes
 from app.core.config import settings
 from app.db.base import Base
 from app.db.session import engine
@@ -87,4 +89,6 @@ def health_check():
 # Include routers
 app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(users.router, prefix=settings.API_V1_STR)
-app.include_router(chat.router, prefix=settings.API_V1_STR) 
+app.include_router(chat.router, prefix=settings.API_V1_STR)
+app.include_router(pubsub_routes.router)  # Include the pubsub router
+app.include_router(stream_routes.router)  # Include the stream router 
