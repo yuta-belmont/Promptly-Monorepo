@@ -13,6 +13,7 @@ from app.pubsub.config import UNIFIED_TASKS_SUBSCRIPTION
 from app.pubsub.messaging.publisher import TaskPublisher
 from app.pubsub.messaging.redis_publisher import ResultsPublisher
 from app.services.ai_service import AIService
+from app.pubsub.services.streaming_ai_service import StreamingAIService
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,9 @@ class UnifiedPubSubWorker(PubSubWorker):
         
         # Initialize services
         self.ai_service = AIService()
+        self.streaming_ai_service = StreamingAIService()  # Add streaming service
         self.task_publisher = TaskPublisher()
+        self.results_publisher = ResultsPublisher()  # Initialize Redis publisher
         
         # Create an asyncio event loop for this worker
         self.loop = asyncio.new_event_loop()
@@ -61,6 +64,7 @@ class UnifiedPubSubWorker(PubSubWorker):
                 return False
                 
             logger.info(f"Processing {task_type} task {request_id}")
+            logger.info(f"DEBUG REQUEST FLOW: Worker received task with request_id: {request_id}")
             
             # Route to appropriate processor based on task_type
             if task_type == "message":
@@ -104,6 +108,9 @@ class UnifiedPubSubWorker(PubSubWorker):
             user_full_name = data.get("user_full_name")
             client_time = data.get("client_time")
             
+            # Log for debugging request ID flow
+            logger.info(f"DEBUG REQUEST FLOW: _process_message_task using request_id: {request_id}")
+            
             # Validate required parameters
             if not user_id or not message_content:
                 logger.error(f"Missing required parameters for message task {request_id}")
@@ -112,24 +119,33 @@ class UnifiedPubSubWorker(PubSubWorker):
             # Create a callback function for streaming chunks to Redis
             def stream_callback(chunk: str):
                 # Stream the chunk via Redis for real-time delivery
+                logger.info(f"DEBUG REQUEST FLOW: Publishing chunk with request_id: {request_id}")
                 self.results_publisher.publish_chunk(request_id, chunk)
             
-            # Generate optimized response using the AI service with streaming
+            # Generate optimized response using the streaming AI service with streaming
+            logger.info(f"DEBUG REQUEST FLOW: Calling generate_streaming_response for request_id: {request_id}")
             response = self.loop.run_until_complete(
-                self.ai_service.generate_streaming_response(
+                self.streaming_ai_service.generate_streaming_response(
                     message=message_content,
                     message_history=message_history,
                     user_full_name=user_full_name,
                     user_id=user_id,
                     client_time=client_time,
-                    stream_callback=stream_callback
+                    stream_callback=stream_callback,
+                    request_id=request_id
                 )
             )
+            logger.info(f"DEBUG REQUEST FLOW: Completed generate_streaming_response for request_id: {request_id}")
             
-            # Extract results
+            # Extract results and log the response type
             response_text = response.get("response_text", "")
             needs_checklist = response.get("needs_checklist", False)
             needs_more_info = response.get("needs_more_info", False)
+            has_outline = "outline" in response
+            
+            logger.info(f"DEBUG RESPONSE TYPE: Request {request_id}:")
+            logger.info(f"DEBUG RESPONSE TYPE: needs_checklist={needs_checklist}, needs_more_info={needs_more_info}, has_outline={has_outline}")
+            logger.info(f"DEBUG RESPONSE TYPE: Response keys: {response.keys()}")
             
             # Create completion data
             completion_data = {
@@ -140,6 +156,7 @@ class UnifiedPubSubWorker(PubSubWorker):
             # Add outline if available
             if "outline" in response:
                 completion_data["outline"] = response["outline"]
+                logger.info(f"DEBUG RESPONSE TYPE: Outline included in completion data for request {request_id}")
                 
             # If checklist is needed and we have enough info, create a new checklist task
             if needs_checklist and not needs_more_info and "outline" not in response:
@@ -162,10 +179,12 @@ class UnifiedPubSubWorker(PubSubWorker):
                 # Add checklist task ID to completion data
                 completion_data["checklist_request_id"] = checklist_request_id
                 
-                logger.info(f"Created checklist task {checklist_request_id} from message task {request_id}")
+                logger.info(f"DEBUG RESPONSE TYPE: Created checklist task {checklist_request_id} from message task {request_id}")
             
             # Publish completion event
-            self.results_publisher.publish_completion(request_id, json.dumps(completion_data))
+            completion_json = json.dumps(completion_data)
+            logger.info(f"DEBUG RESPONSE TYPE: Publishing completion with data: {completion_json}")
+            self.results_publisher.publish_completion(request_id, completion_json)
             
             logger.info(f"Message task {request_id} completed successfully")
             return True

@@ -45,7 +45,9 @@ struct StreamingChatView: View {
                                     },
                                     onOutlineTap: {
                                         // When an outline message is tapped, show the ChecklistOutlineView
-                                        if let outline = message.outline {
+                                        if let outline = message.checklistOutline, !message.isBuildingOutline {
+                                            selectedOutline = outline
+                                        } else if let outline = message.outline, !message.isBuildingOutline {
                                             selectedOutline = outline
                                         }
                                     }

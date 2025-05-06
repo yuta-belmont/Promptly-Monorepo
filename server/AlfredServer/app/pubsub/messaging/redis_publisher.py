@@ -107,6 +107,22 @@ class ResultsPublisher:
                 # Include full text if provided
                 if full_text:
                     message_data["full_text"] = full_text
+                    # Log the full_text content for debugging
+                    logger.info(f"DEBUG REDIS PUBLISHER: Publishing completion with full_text for {request_id}")
+                    logger.info(f"DEBUG REDIS PUBLISHER: First 100 chars of full_text: {full_text[:100]}")
+                    
+                    # Try parsing the full_text as JSON for detailed logging
+                    try:
+                        json_data = json.loads(full_text)
+                        logger.info(f"DEBUG REDIS PUBLISHER: full_text is valid JSON with keys: {list(json_data.keys())}")
+                        
+                        # Special logging for outline data
+                        if "outline" in json_data:
+                            logger.info(f"DEBUG REDIS PUBLISHER: Contains OUTLINE data")
+                        elif "checklist_data" in json_data:
+                            logger.info(f"DEBUG REDIS PUBLISHER: Contains CHECKLIST data")
+                    except json.JSONDecodeError:
+                        logger.info(f"DEBUG REDIS PUBLISHER: full_text is not valid JSON")
                     
                 message = json.dumps(message_data)
                 
@@ -167,4 +183,56 @@ class ResultsPublisher:
             logger.error(f"Error publishing error to Redis: {e}")
             # Log the error anyway
             logger.info(f"ERROR (error) [{request_id}]: {error_message}")
+            return False
+    
+    def publish_event(self, request_id: str, event_type: str, event_data: Dict[str, Any]) -> bool:
+        """
+        Publish a custom event type with data to Redis.
+        
+        This method is used for progressive field-by-field streaming of structured data
+        like outlines, checklists, and check-ins.
+        
+        Args:
+            request_id: The unique ID for the request
+            event_type: The custom event type (e.g., 'outline_start', 'outline_summary')
+            event_data: The event data to publish
+            
+        Returns:
+            True if publishing was successful
+        """
+        try:
+            if not hasattr(self, '_redis_available') or self._redis_available:
+                channel = f"ai-stream:{request_id}"
+                
+                # Always include the request_id in the event data for correlation
+                payload = event_data.copy()
+                payload["request_id"] = request_id
+                
+                message = json.dumps({
+                    "event": event_type,
+                    "data": payload
+                })
+                
+                # Add debug logging for request ID flow
+                logger.info(f"DEBUG REQUEST FLOW: Publishing {event_type} event to channel {channel} with request_id: {request_id}")
+                
+                # Publish to Redis
+                result = self.redis.publish(channel, message)
+                
+                if result > 0:
+                    logger.info(f"Published {event_type} event to {channel}")
+                    logger.debug(f"Event data: {json.dumps(payload)[:200]}...")
+                    return True
+                else:
+                    logger.warning(f"No subscribers for channel {channel}")
+                    return False
+            else:
+                # Redis unavailable, just log the event
+                logger.info(f"EVENT [{request_id}]: {event_type} with data: {json.dumps(event_data)[:50]}...")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error publishing {event_type} event to Redis: {e}")
+            # Log the event anyway
+            logger.info(f"EVENT (error) [{request_id}]: {event_type}")
             return False 

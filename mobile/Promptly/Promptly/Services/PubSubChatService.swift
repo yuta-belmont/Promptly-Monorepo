@@ -259,6 +259,7 @@ class PubSubChatService {
     /// - Parameter requestId: The request ID to listen for
     private func setupSSEConnection(for requestId: String) {
         print("🔌 PUBSUB: Setting up SSE connection for request ID: \(requestId)")
+        print("🔌 PUBSUB: IMPORTANT - Client is subscribing to channel: ai-stream:\(requestId)")
         
         sseManager.connect(
             requestId: requestId,

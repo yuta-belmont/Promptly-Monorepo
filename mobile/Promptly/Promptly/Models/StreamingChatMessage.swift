@@ -17,7 +17,20 @@ class StreamingChatMessage: Identifiable, ObservableObject {
     let isReportMessage: Bool
     
     /// Reference to an outline if available
-    var outline: ChecklistOutline?
+    @Published var outline: ChecklistOutline?
+    
+    /// Reference to the final CoreData ChecklistOutline object (used only when outline is complete)
+    @Published var checklistOutline: ChecklistOutline?
+    
+    /// Flag indicating if this message is building an outline progressively
+    @Published var isBuildingOutline: Bool = false
+    
+    /// Properties for temporary outline data during streaming (without using CoreData)
+    @Published var outlineSummary: String?
+    @Published var outlinePeriod: String?
+    @Published var outlineStartDate: Date?
+    @Published var outlineEndDate: Date?
+    @Published var outlineLineItems: [String] = []
     
     /// Initialize a new streaming chat message
     /// - Parameters:
@@ -29,6 +42,8 @@ class StreamingChatMessage: Identifiable, ObservableObject {
     ///   - isError: Whether this is an error message
     ///   - isReportMessage: Whether this is a report message
     ///   - outline: Optional checklist outline
+    ///   - checklistOutline: Optional final CoreData checklist outline
+    ///   - isBuildingOutline: Whether this message is currently building an outline progressively
     init(
         id: UUID = UUID(),
         content: String,
@@ -38,7 +53,9 @@ class StreamingChatMessage: Identifiable, ObservableObject {
         isStreaming: Bool = false,
         isError: Bool = false,
         isReportMessage: Bool = false,
-        outline: ChecklistOutline? = nil
+        outline: ChecklistOutline? = nil,
+        checklistOutline: ChecklistOutline? = nil,
+        isBuildingOutline: Bool = false
     ) {
         self.id = id
         self.content = content
@@ -49,6 +66,8 @@ class StreamingChatMessage: Identifiable, ObservableObject {
         self.isError = isError
         self.isReportMessage = isReportMessage
         self.outline = outline
+        self.checklistOutline = checklistOutline
+        self.isBuildingOutline = isBuildingOutline
     }
     
     /// Append text to the content of the message
@@ -104,6 +123,17 @@ struct StreamingChatMessageFactory {
             role: "assistant",
             isComplete: false,
             isStreaming: true
+        )
+    }
+    
+    /// Create an assistant message that is building an outline
+    static func createOutlineBuildingMessage() -> StreamingChatMessage {
+        return StreamingChatMessage(
+            content: "Creating an outline based on your request...",
+            role: "assistant",
+            isComplete: false,
+            isStreaming: true,
+            isBuildingOutline: true
         )
     }
     

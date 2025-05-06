@@ -200,10 +200,31 @@ class SSEManager: NSObject, URLSessionDataDelegate {
     }
     
     private func processEvent(_ eventData: String, eventType: String) {
+        print("DEBUG SSE EVENT: Processing event type: \(eventType)")
+        print("DEBUG SSE EVENT DATA: \(String(eventData.prefix(100)))")
+        
         do {
             // Ignore connected events completely - don't pass them to UI
             if eventType == "connected" {
-                print("SSE: Received connection event for request ID: \(requestId), ignoring for UI")
+                print("DEBUG SSE EVENT: Received connection event, ignoring for UI")
+                return
+            }
+            
+            // Process outline-specific event types
+            if eventType.starts(with: "outline_") {
+                print("DEBUG SSE EVENT: Processing outline event: \(eventType)")
+                if let data = eventData.data(using: .utf8),
+                   let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    
+                    print("DEBUG SSE EVENT: Outline event data keys: \(json.keys.joined(separator: ", "))")
+                    
+                    // Forward the event with its type and data to the handler
+                    DispatchQueue.main.async {
+                        self.onEventHandler?(eventData)
+                    }
+                } else {
+                    print("DEBUG SSE EVENT: Failed to parse outline event data as JSON")
+                }
                 return
             }
             
@@ -213,15 +234,20 @@ class SSEManager: NSObject, URLSessionDataDelegate {
                 if let data = eventData.data(using: .utf8),
                    let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     
+                    print("DEBUG SSE EVENT: Successfully parsed JSON with keys: \(json.keys.joined(separator: ", "))")
+                    
                     if eventType == "done" {
                         // This is a completion event
-                        print("SSE: Received DONE event for request ID: \(requestId)")
+                        print("DEBUG SSE EVENT: Received DONE event")
                         if let fullText = json["full_text"] as? String {
+                            print("DEBUG SSE EVENT: DONE contains full_text of length: \(fullText.count)")
+                            
                             // Call completion handler with full text
                             DispatchQueue.main.async {
                                 self.onCompleteHandler?(fullText)
                             }
                         } else {
+                            print("DEBUG SSE EVENT: DONE with no full_text")
                             // Call completion with empty string if no full text
                             DispatchQueue.main.async {
                                 self.onCompleteHandler?("")
@@ -234,7 +260,7 @@ class SSEManager: NSObject, URLSessionDataDelegate {
                     } else if eventType == "error" {
                         // This is an error event
                         let errorMessage = json["error"] as? String ?? "Unknown error"
-                        print("SSE: Received ERROR event for request ID: \(requestId) - \(errorMessage)")
+                        print("DEBUG SSE EVENT: Received ERROR event - \(errorMessage)")
                         let error = NSError(domain: "SSEManager", code: 0, 
                                            userInfo: [NSLocalizedDescriptionKey: errorMessage])
                         
@@ -247,34 +273,57 @@ class SSEManager: NSObject, URLSessionDataDelegate {
                         
                     } else if let chunk = json["chunk"] as? String {
                         // This is a data chunk from a text event
-                        print("SSE: Received chunk of length \(chunk.count) for request ID: \(requestId)")
+                        print("DEBUG SSE EVENT: Received text chunk of length \(chunk.count)")
                         DispatchQueue.main.async {
                             self.onEventHandler?(chunk)
                         }
                     } else {
                         // Unknown JSON format - log it but don't send to UI
-                        print("SSE: Received unknown JSON format for text event: \(json)")
+                        print("DEBUG SSE EVENT: Received unknown JSON format: \(json)")
                     }
                 } else {
                     // Not valid JSON - log it but don't send to UI for text events
-                    print("SSE: Received non-JSON data for event type: \(eventType)")
+                    print("DEBUG SSE EVENT: Received non-JSON data for event type: \(eventType)")
                     
                     // Only pass the raw data for message events (default), not for text/connected events
                     if eventType == "message" {
+                        print("DEBUG SSE EVENT: Forwarding raw message event to UI")
                         DispatchQueue.main.async {
                             self.onEventHandler?(eventData)
                         }
                     }
                 }
+            } else if eventType == "message" {
+                // Check if this message contains an outline event
+                if let data = eventData.data(using: .utf8),
+                   let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let outlineEventType = json["event"] as? String,
+                   outlineEventType.starts(with: "outline_") {
+                    
+                    print("DEBUG SSE EVENT: Found outline event \(outlineEventType) in message")
+                    
+                    // Just forward the original message with the outline event
+                    DispatchQueue.main.async {
+                        self.onEventHandler?(eventData)
+                    }
+                    return
+                }
+                
+                // Regular message event - forward the raw data
+                print("DEBUG SSE EVENT: Forwarding regular message event to UI")
+                DispatchQueue.main.async {
+                    self.onEventHandler?(eventData)
+                }
             } else {
                 // Unknown event type - log but don't send to UI
-                print("SSE: Received unknown event type: \(eventType)")
+                print("DEBUG SSE EVENT: Received unknown event type: \(eventType)")
             }
         } catch {
-            print("SSE: Error parsing event for request ID: \(requestId) - \(error)")
+            print("DEBUG SSE EVENT: Error parsing event: \(error)")
             
             // Only send raw data for message events (default), not for structured events
             if eventType == "message" {
+                print("DEBUG SSE EVENT: Forwarding raw message event to UI despite parse error")
                 DispatchQueue.main.async {
                     self.onEventHandler?(eventData)
                 }
