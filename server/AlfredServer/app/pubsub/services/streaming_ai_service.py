@@ -12,6 +12,106 @@ import asyncio
 # Set up logging
 logger = logging.getLogger(__name__)
 
+# Checklist streaming event types
+CHECKLIST_START = "checklist_start"
+CHECKLIST_UPDATE = "checklist_update"
+CHECKLIST_COMPLETE = "checklist_complete"
+
+class ChecklistParser:
+    def __init__(self):
+        self.current_date = None
+        self.current_item = None
+        self.buffer = ""
+        self.in_subitems = False
+        self.current_subitems = []
+
+    async def parse_line(self, line: str, results_publisher, request_id: str):
+        # Early return if no publisher
+        if not results_publisher:
+            return
+            
+        self.buffer += line
+        
+        # Look for date pattern
+        date_match = re.search(r'"(\d{4}-\d{2}-\d{2})":\s*{', self.buffer)
+        if date_match:
+            self.current_date = date_match.group(1)
+            self.buffer = self.buffer[date_match.end():]
+            
+        # Look for item title pattern
+        item_match = re.search(r'"title":\s*"([^"]+)"', self.buffer)
+        if item_match and self.current_date:
+            self.current_item = item_match.group(1)
+            # Send update with both date and item
+            await results_publisher.publish_event(
+                request_id=request_id,
+                event_type=CHECKLIST_UPDATE,
+                event_data={
+                    "date": self.current_date,
+                    "last_item": self.current_item
+                }
+            )
+            self.buffer = self.buffer[item_match.end():]
+            
+        # New workout item
+        elif line.startswith("WORKOUT:") and self.current_date:
+            workout = line.replace("WORKOUT:", "").strip()
+            self.current_item = workout
+            # Send update with both date and item
+            await results_publisher.publish_event(
+                request_id=request_id,
+                event_type=CHECKLIST_UPDATE,
+                event_data={
+                    "date": self.current_date,
+                    "last_item": self.current_item
+                }
+            )
+            
+        # Notes for current workout
+        elif line.startswith("NOTES:") and self.current_date:
+            notes = line.replace("NOTES:", "").strip()
+            if self.current_item:
+                self.current_item = notes
+                
+        # Start of subitems
+        elif line == "SUBITEMS:" and self.current_date:
+            self.in_subitems = True
+            self.current_subitems = []
+            
+        # Subitem entry
+        elif line.startswith("- ") and self.in_subitems:
+            subitem = line.replace("- ", "").strip()
+            if self.current_item:
+                self.current_subitems.append({
+                    "title": subitem
+                })
+                
+        # Empty line might indicate end of date block
+        elif not line and self.current_date:
+            await self._send_date_complete(results_publisher, request_id)
+            self.in_subitems = False
+
+    async def _send_date_complete(self, results_publisher, request_id: str):
+        # Early return if no publisher
+        if not results_publisher:
+            return
+            
+        if self.current_date and self.current_item:
+            await results_publisher.publish_event(
+                request_id=request_id,
+                event_type=CHECKLIST_COMPLETE,
+                event_data={
+                    "date": self.current_date,
+                    "items": [
+                        {
+                            "title": self.current_item,
+                            "notification": None,
+                            "subitems": self.current_subitems
+                        }
+                    ]
+                }
+            )
+
 class LogBuffer:
     def __init__(self):
         self.buffer = []
@@ -759,29 +859,11 @@ class StreamingAIService:
                                           client_time: Optional[str] = None, user_full_name: Optional[str] = None,
                                           request_id: str = None, results_publisher = None) -> Dict[str, Any]:
         """
-        Generate an outline progressively, streaming each field as it's generated.
-        
-        Args:
-            message: The user's message
-            message_history: Previous message history for context
-            client_time: Client's current time (optional)
-            user_full_name: User's full name for personalization
-            request_id: The unique request ID for correlating events
-            results_publisher: The Redis publisher for streaming events
-            
-        Returns:
-            Dict[str, Any]: A dictionary containing the complete outline
+        Generate an outline with streaming updates using Pydantic models.
         """
         try:
-            logger.info(f"DEBUG REQUEST FLOW: _generate_streaming_outline RECEIVED request_id: {request_id}")
-            logger.info(f"Generating streaming outline for request {request_id}")
-            
-            # Ensure we have a publisher
-            if results_publisher is None:
-                logger.error("Results publisher is required for streaming outline")
-                return None
-            
-            # Get current date
+            # Use client_time for date calculations if provided
+            logger.info(f"Generating streaming outline with client_time: {client_time}")
             current_date = datetime.now()
             date_str = current_date.strftime("%Y-%m-%d")
             if client_time:
@@ -789,111 +871,296 @@ class StreamingAIService:
                     current_date = datetime.fromisoformat(client_time)
                     date_str = current_date.strftime("%Y-%m-%d")
                 except ValueError:
-                    logger.warning(f"Invalid client_time format: {client_time}")
+                    print(f"Warning: Invalid client_time format: {client_time}")
             
-            # 1. Send outline_start event to signal the beginning of outline generation
-            results_publisher.publish_event(
-                request_id=request_id, 
-                event_type="outline_start",
-                event_data={"message": "Creating an outline based on your request..."}
-            )
+            # Add client time to the message
+            user_message = f"Current date: {date_str}\n\n{message}"
             
-            # 2. Generate the complete outline first (we'll stream it progressively)
-            outline_data = await self._generate_checklist_outline(message, message_history, client_time)
+            # Prepare context messages
+            context_messages = self._prepare_context_messages(message_history)
             
-            if not outline_data or "outline" not in outline_data:
-                logger.error("Failed to generate outline data")
+            # Add system message for outline generation
+            system_message = {
+                "role": "system",
+                "content": CHECKLIST_OUTLINE_INSTRUCTIONS
+            }
+            
+            # Add user message with client time
+            user_message = {
+                "role": "user",
+                "content": user_message
+            }
+            
+            # Combine messages
+            messages = [system_message] + context_messages + [user_message]
+            
+            # Track published details to avoid duplicates
+            published_details = set()
+            complete_summary = None
+            last_period = None
+            complete_dates = None
+            
+            # Start streaming
+            with self.client.beta.chat.completions.stream(
+                model=MID_TIER_MODEL,
+                messages=messages,
+                response_format=OutlineResponse,
+                temperature=0.7
+            ) as stream:
+                # Send outline start event
                 results_publisher.publish_event(
                     request_id=request_id,
-                    event_type="outline_error",
-                    event_data={"error": "Failed to generate outline. Please try again."}
+                    event_type="outline_start",
+                    event_data={"request_id": request_id}
                 )
-                return None
-            
-            # Extract the outline
-            outline = outline_data["outline"]
-            logger.info(f"Generated outline with {len(outline.get('details', []))} details")
-            
-            # 3. Stream the outline summary
-            if "summary" in outline:
-                logger.info(f"Streaming outline summary: {outline['summary']}")
-                results_publisher.publish_event(
-                    request_id=request_id,
-                    event_type="outline_summary",
-                    event_data={"summary": outline["summary"]}
-                )
-                # Add a short delay for better UX
-                await asyncio.sleep(0.5)
-            
-            # 4. Stream the time period
-            if "period" in outline:
-                logger.info(f"Streaming outline period: {outline['period']}")
-                results_publisher.publish_event(
-                    request_id=request_id,
-                    event_type="outline_period",
-                    event_data={"period": outline["period"]}
-                )
-                # Add a short delay for better UX
-                await asyncio.sleep(0.3)
-            
-            # 5. Stream the date range
-            date_data = {}
-            if "start_date" in outline:
-                date_data["start_date"] = outline["start_date"]
-            if "end_date" in outline:
-                date_data["end_date"] = outline["end_date"]
-            
-            if date_data:
-                logger.info(f"Streaming outline dates: {date_data}")
-                results_publisher.publish_event(
-                    request_id=request_id,
-                    event_type="outline_date",
-                    event_data=date_data
-                )
-                # Add a short delay for better UX
-                await asyncio.sleep(0.3)
-            
-            # 6. Stream each detail item with a slight delay between them
-            if "details" in outline and outline["details"]:
-                details = outline["details"]
-                for i, detail in enumerate(details):
-                    logger.info(f"Streaming outline detail {i+1}/{len(details)}")
-                    results_publisher.publish_event(
-                        request_id=request_id,
-                        event_type="outline_detail",
-                        event_data={
-                            "index": i,
-                            "total": len(details),
-                            "detail": detail
-                        }
-                    )
-                    # Shorter delay between details
-                    await asyncio.sleep(0.2)
-            
-            # 7. Send outline_complete event
-            logger.info("Streaming outline complete")
-            results_publisher.publish_event(
-                request_id=request_id,
-                event_type="outline_complete",
-                event_data={
-                    "outline": outline,
-                    "message": "I've created an outline for you. Let me know if you'd like to proceed with the detailed checklists."
-                }
-            )
-            
-            # Return the entire outline data
-            return outline_data
-            
+
+                
+                for event in stream:
+                    if event.type == "content.delta":
+                        # Get the current snapshot of the response
+                        if hasattr(event, 'snapshot') and event.snapshot:
+                            try:
+                                # The snapshot contains the raw JSON string being built
+                                snapshot_str = event.snapshot
+
+                                if isinstance(snapshot_str, str):
+                                    
+                                    # PARSE SUMMARY
+                                    if complete_summary is None:  # Only try to parse summary if we haven't published it yet
+                                        # Find the start of the summary field
+                                        summary_start = snapshot_str.find('"summary": "')
+                                        if summary_start != -1:
+                                            # Get everything after the summary start
+                                            summary_text = snapshot_str[summary_start + 12:]  # 12 is length of '"summary": "'
+                                            # Look for the closing quote that ends the summary string
+                                            closing_quote = summary_text.find('"')
+                                            if closing_quote != -1:
+                                                # We found a complete summary string
+                                                complete_summary = summary_text[:closing_quote]
+                                                results_publisher.publish_event(
+                                                    request_id=request_id,
+                                                    event_type="outline_summary",
+                                                    event_data={"summary": complete_summary}
+                                                )
+
+                                    # PARSE DATES
+                                    if complete_dates is None:
+                                        # Find start date
+                                        start_date_start = snapshot_str.find('"start_date": "')
+                                        if start_date_start != -1:
+                                            start_date_text = snapshot_str[start_date_start + 15:]  # 15 is length of '"start_date": "'
+                                            start_date_end = start_date_text.find('"')
+                                            if start_date_end != -1:
+                                                start_date = start_date_text[:start_date_end]
+                                                
+                                                # Find end date
+                                                end_date_start = snapshot_str.find('"end_date": "')
+                                                if end_date_start != -1:
+                                                    end_date_text = snapshot_str[end_date_start + 13:]  # 13 is length of '"end_date": "'
+                                                    end_date_end = end_date_text.find('"')
+                                                    if end_date_end != -1:
+                                                        end_date = end_date_text[:end_date_end]
+                                                        complete_dates = True
+                                                        logger.info(f"_____________________OUTLINE: Found dates: {start_date} - {end_date}")
+                                                        results_publisher.publish_event(
+                                                            request_id=request_id,
+                                                            event_type="outline_dates",
+                                                            event_data={
+                                                                "start_date": start_date,
+                                                                "end_date": end_date
+                                                            }
+                                                        )
+
+                                    # PARSE DETAILS
+                                    #if complete_summary is not None and complete_dates is not None:  # Only parse details after we have the summary
+                                    # json comes in different orders, we have to check for all the fields
+                                    # Find the start of the details array
+                                    details_start = snapshot_str.find('"details": [')
+                                    if details_start != -1:
+                                        # Get everything after the details start
+                                        details_text = snapshot_str[details_start + 11:]  # 11 is length of '"details": ['
+                                        
+                                        # Look for complete detail objects
+                                        while True:
+                                            # Find the start of a detail object
+                                            detail_start = details_text.find('{')
+                                            if detail_start == -1:
+                                                break
+                                                
+                                            # Get everything after this detail object
+                                            detail_text = details_text[detail_start:]
+                                            
+                                            # Find the end of this detail object
+                                            bracket_count = 0
+                                            detail_end = 0
+                                            for i, char in enumerate(detail_text):
+                                                if char == '{':
+                                                    bracket_count += 1
+                                                elif char == '}':
+                                                    bracket_count -= 1
+                                                    if bracket_count == 0:
+                                                        detail_end = i + 1
+                                                        break
+                                            
+                                            if detail_end > 0:
+                                                # We found a complete detail object
+                                                try:
+                                                    detail_obj = json.loads(detail_text[:detail_end])
+                                                    if isinstance(detail_obj, dict):
+                                                        detail_key = f"{detail_obj.get('title', '')}:{detail_obj.get('breakdown', '')}"
+                                                        if detail_key not in published_details:
+                                                            published_details.add(detail_key)
+                                                            results_publisher.publish_event(
+                                                                request_id=request_id,
+                                                                event_type="outline_detail",
+                                                                event_data={"detail": detail_obj}
+                                                            )
+                                                except json.JSONDecodeError:
+                                                    pass
+                                                
+                                                # Move past this detail object
+                                                details_text = detail_text[detail_end:]
+                                            else:
+                                                # No complete detail object found
+                                                break
+
+                                    # Then try to parse the current snapshot as JSON for other fields
+                            except Exception as e:
+                                logger.error(f"Error processing outline chunk: {str(e)}")
+                                continue
+                    
+                    elif event.type == "content.done":
+                        # Get final completion and extract the actual JSON data
+                        final_completion = stream.get_final_completion()
+                        # Extract the content from the completion message
+                        if hasattr(final_completion, 'choices') and final_completion.choices:
+                            content = final_completion.choices[0].message.content
+                            try:
+                                # Parse the JSON content
+                                json_data = json.loads(content)
+                                # Create OutlineResponse from the parsed JSON
+                                final_outline = OutlineResponse.parse_obj(json_data)
+                                results_publisher.publish_event(
+                                    request_id=request_id,
+                                    event_type="outline_complete",
+                                    event_data={"outline": final_outline.dict()}
+                                )
+                                return final_outline.dict()
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Error parsing final completion JSON: {str(e)}")
+                                results_publisher.publish_event(
+                                    request_id=request_id,
+                                    event_type="outline_error",
+                                    event_data={"error": "Invalid JSON in final completion"}
+                                )
+                                return None
+                        else:
+                            logger.error("No content found in final completion")
+                            results_publisher.publish_event(
+                                request_id=request_id,
+                                event_type="outline_error",
+                                event_data={"error": "No content in final completion"}
+                            )
+                            return None
+                    
+                    elif event.type == "error":
+                        logger.error(f"Error in outline stream: {event.error}")
+                        results_publisher.publish_event(
+                            request_id=request_id,
+                            event_type="outline_error",
+                            event_data={"error": str(event.error)}
+                        )
+                        return None
+                        
         except Exception as e:
-            logger.error(f"Error generating streaming outline: {e}")
-            # Send error event
-            if results_publisher and request_id:
+            logger.error(f"Error generating streaming outline: {str(e)}")
+            if results_publisher:
                 results_publisher.publish_event(
                     request_id=request_id,
                     event_type="outline_error",
-                    event_data={"error": f"Failed to generate outline: {str(e)}"}
+                    event_data={"error": str(e)}
                 )
             return None
+
+    async def _generate_streaming_checklist(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, 
+                                          client_time: Optional[str] = None, user_full_name: Optional[str] = None,
+                                          request_id: str = None, results_publisher = None) -> Dict[str, Any]:
+        """
+        Generate a checklist with streaming updates for each date.
+        """
+        try:
+            # Send start event
+            results_publisher.publish_event(
+                request_id=request_id,
+                event_type=CHECKLIST_START,
+                event_data={
+                    "message": "Starting to create your checklist..."
+                }
+            )
+
+            # Prepare the prompt for structured checklist generation
+            prompt = f"""
+            Create a detailed checklist based on this request: {message}
+            
+            Generate each date's items in this exact format:
+            
+            DATE: YYYY-MM-DD
+            WORKOUT: [workout description]
+            NOTES: [optional notes]
+            SUBITEMS:
+            - [subitem 1]
+            - [subitem 2]
+            
+            [empty line between dates]
+            """
+            logger.error(f"1. We are HERE!!!!!")
+            # Initialize parser
+            parser = ChecklistParser()
+            logger.error(f"2. We are HERE!!!!!")
+
+            # Get streaming response from AI
+            response = self.client.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant that creates detailed checklists."},
+                    {"role": "user", "content": prompt}
+                ],
+                stream=True
+            )
+            logger.error(f"3. We are HERE!!!!!")
+
+
+            # Process the streaming response
+            logger.error(f"4.We are HERE!!!!!")
+
+            async for chunk in response:
+                if chunk.choices[0].delta.content:
+                    # Split the content into lines and process each line
+                    for line in chunk.choices[0].delta.content.split('\n'):
+                        await parser.parse_line(line, results_publisher, request_id)
+            logger.error(f"5. We are HERE 2!!!!!")
+
+            # Send completion event
+            results_publisher.publish_event(
+                request_id=request_id,
+                event_type=CHECKLIST_COMPLETE,
+                event_data={
+                    "message": "Completed creating your checklist"
+                }
+            )
+
+            return {"status": "success"}
+
+        except Exception as e:
+            logger.error(f"Error in streaming checklist generation: {str(e)}")
+            results_publisher.publish({
+                "event": "error",
+                "data": {
+                    "request_id": request_id,
+                    "error": str(e)
+                }
+            })
+            raise
 
     async def generate_streaming_response(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, 
                                       user_full_name: Optional[str] = None, user_id: Optional[str] = None,
@@ -1588,57 +1855,133 @@ class StreamingAIService:
                 "response": "Thanks for checking in!"
             }) 
 
-    async def generate_checklist_from_outline(self, summary: str, start_date: str, end_date: str, line_items: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """
-        Generate a detailed checklist from an outline.
+    async def generate_checklist_from_outline(self, summary: str, start_date: str, end_date: str, line_items: List[Dict[str, Any]], 
+                                          request_id: str = None, results_publisher = None) -> Optional[Dict[str, Any]]:
+        logger.debug("Starting checklist generation")
+        logger.debug(f"Input params: summary={summary}, start_date={start_date}, end_date={end_date}")
+        logger.debug(f"Results publisher type: {type(results_publisher)}")
+        logger.debug(f"Request ID: {request_id}")
         
-        Args:
-            summary: The summary of the plan
-            start_date: The start date of the plan
-            end_date: The end date of the plan
-            line_items: The line items from the outline
-            
-        Returns:
-            The generated checklist data or None if generation fails
-        """
         try:
-            # Create a prompt that includes the outline data
-            prompt = f"""{CHECKLIST_FROM_OUTLINE_INSTRUCTIONS}
+            # Send start event
+            if results_publisher:
+                logger.debug("Sending start event")
+                results_publisher.publish_event(
+                    request_id=request_id,
+                    event_type=CHECKLIST_START,
+                    event_data={
+                        "message": "Starting to generate your detailed checklist..."
+                    }
+                )
+                logger.debug("Start event sent")
 
-            Plan Summary: {summary}
-            Start Date: {start_date}
-            End Date: {end_date}
+            # Create the prompt with outline data
+            logger.debug("Creating prompt")
+            prompt = f"""Based on this outline, generate a detailed checklist:
+                Summary: {summary}
+                Period: {start_date} to {end_date}
+                Items: {json.dumps(line_items)}
 
-            Outline Structure:
-            {json.dumps(line_items, indent=2)}
+                Generate a detailed checklist following this exact JSON format:
+                {{
+                    "checklist_data": {{
+                        "name": "string",
+                        "dates": {{
+                            "YYYY-MM-DD": {{
+                                "items": [
+                                    {{
+                                        "title": "string",
+                                        "notification": "string or null",
+                                        "subitems": [
+                                            {{
+                                                "title": "string"
+                                            }}
+                                        ]
+                                    }}
+                                ]
+                            }}
+                        }}
+                    }}
+                }}"""
+            logger.debug("Prompt created")
 
-            Generate a detailed checklist that breaks down each section into specific tasks."""
+            # Initialize buffer for complete response
+            logger.debug("Initializing response buffer")
+            complete_response = ""
+            parser = ChecklistParser()
+            logger.debug("Buffer initialized")
 
-            # Generate the checklist using the OpenAI client
+            # Get streaming response
+            logger.debug("Getting streaming response from AI")
             response = self.client.chat.completions.create(
                 model=MID_TIER_MODEL,
                 messages=[
-                    {"role": "system", "content": CHECKLIST_FROM_OUTLINE_INSTRUCTIONS},
+                    {"role": "system", "content": "You are a helpful assistant that creates detailed checklists."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.7,
-                max_tokens=20000,
-                response_format={"type": "json_object"}
-
+                stream=True
             )
-            
-            # Extract the response content
-            checklist_text = response.choices[0].message.content
-            
-            # Parse the response
+            logger.debug(f"Got response object type: {type(response)}")
+
+            # Process streaming response
+            logger.debug("Processing streaming response")
+            for chunk in response:
+                logger.debug(f"Processing chunk type: {type(chunk)}")
+                if chunk.choices[0].delta and chunk.choices[0].delta.content and isinstance(chunk.choices[0].delta.content, str):
+                    content = chunk.choices[0].delta.content
+                    logger.debug(f"Chunk content: {content[:100]}...")  # First 100 chars
+                    complete_response += content
+                    # Only call parse_line if we have a valid results_publisher
+                    if results_publisher:
+                        logger.debug("Calling parse_line")
+                        await parser.parse_line(content, results_publisher, request_id)
+                        logger.debug("parse_line completed")
+                else:
+                    logger.debug("Skipping chunk - no content or wrong type")
+
+            # Parse the complete response
+            logger.debug("Parsing complete response")
             try:
-                checklist_json = json.loads(checklist_text)
-                checklist_data = checklist_json.get("checklist_data", {})
-                return checklist_data
-            except json.JSONDecodeError:
-                logger.error("Failed to parse checklist data from AI response")
-                return None
+                logger.debug(f"Complete response length: {len(complete_response)}")
+                logger.debug(f"First 200 chars: {complete_response[:200]}")
+                checklist_data = json.loads(complete_response)
+                logger.debug("JSON parsed successfully")
                 
+                # Send complete event with final data if we have a results_publisher
+                if results_publisher:
+                    logger.debug("Sending complete event")
+                    await results_publisher.publish_event(
+                        request_id=request_id,
+                        event_type=CHECKLIST_COMPLETE,
+                        event_data=checklist_data
+                    )
+                    logger.debug("Complete event sent")
+                
+                logger.debug("Checklist generation completed successfully")
+                return checklist_data
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON parsing error: {str(e)}")
+                logger.error(f"Error type: {type(e)}")
+                logger.error(f"Error args: {e.args}")
+                return None
+
         except Exception as e:
-            logger.error(f"Error generating checklist from outline: {e}")
+            logger.error(f"Error in checklist generation: {str(e)}")
+            logger.error(f"Error type: {type(e)}")
+            logger.error(f"Error args: {e.args}")
             return None
+
+class DetailItem(BaseModel):
+    title: str
+    breakdown: str
+
+class Outline(BaseModel):
+    summary: str
+    start_date: str  # Using str instead of date for easier JSON handling
+    end_date: str
+    period: str  # "week" or "day"
+    details: List[DetailItem]
+
+class OutlineResponse(BaseModel):
+    outline: Outline

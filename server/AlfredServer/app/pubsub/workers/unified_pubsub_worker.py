@@ -147,15 +147,16 @@ class UnifiedPubSubWorker(PubSubWorker):
             logger.info(f"DEBUG RESPONSE TYPE: needs_checklist={needs_checklist}, needs_more_info={needs_more_info}, has_outline={has_outline}")
             logger.info(f"DEBUG RESPONSE TYPE: Response keys: {response.keys()}")
             
-            # Create completion data
+            # Create completion data with only the response text
             completion_data = {
-                "needs_checklist": needs_checklist,
-                "needs_more_info": needs_more_info
+                "response_text": response_text
             }
             
             # Add outline if available
             if "outline" in response:
-                completion_data["outline"] = response["outline"]
+                completion_data = {
+                    "outline": response["outline"]
+                }
                 logger.info(f"DEBUG RESPONSE TYPE: Outline included in completion data for request {request_id}")
                 
             # If checklist is needed and we have enough info, create a new checklist task
@@ -177,14 +178,25 @@ class UnifiedPubSubWorker(PubSubWorker):
                 checklist_request_id = self.task_publisher.publish_to_unified_topic(checklist_task_data)
                 
                 # Add checklist task ID to completion data
-                completion_data["checklist_request_id"] = checklist_request_id
+                if isinstance(completion_data, dict):
+                    completion_data["checklist_request_id"] = checklist_request_id
+                else:
+                    completion_data = {
+                        "response_text": completion_data,
+                        "checklist_request_id": checklist_request_id
+                    }
                 
                 logger.info(f"DEBUG RESPONSE TYPE: Created checklist task {checklist_request_id} from message task {request_id}")
             
-            # Publish completion event
-            completion_json = json.dumps(completion_data)
-            logger.info(f"DEBUG RESPONSE TYPE: Publishing completion with data: {completion_json}")
-            self.results_publisher.publish_completion(request_id, completion_json)
+            # Only publish completion event if we don't have an outline
+            # (outlines are handled by their own completion event)
+            if "outline" not in response:
+                # Publish completion event
+                completion_json = json.dumps(completion_data)
+                logger.info(f"DEBUG RESPONSE TYPE: Publishing completion with data: {completion_json}")
+                self.results_publisher.publish_completion(request_id, completion_json)
+            else:
+                logger.info(f"DEBUG RESPONSE TYPE: Skipping completion event for outline request {request_id}")
             
             logger.info(f"Message task {request_id} completed successfully")
             return True
@@ -226,6 +238,8 @@ class UnifiedPubSubWorker(PubSubWorker):
                 
             # Either generate checklist from an outline or directly from the message
             if outline_data:
+                logger.error(f"PROCESS_CHECKLIST_TASK: outline_data found")
+
                 # Extract outline components
                 summary = outline_data.get("summary", "")
                 start_date = outline_data.get("start_date", "")
@@ -234,12 +248,16 @@ class UnifiedPubSubWorker(PubSubWorker):
                 
                 # Generate checklist from outline
                 logger.info(f"Generating checklist from outline for task {request_id}")
+                logger.error(f"WE MADE IT HERE, BUT THE RUN UNTIL COMPLETE SHIT AINT GONNA WORK!")
+
                 checklist_data = self.loop.run_until_complete(
-                    self.ai_service.generate_checklist_from_outline(
+                    self.streaming_ai_service.generate_checklist_from_outline(
                         summary=summary,
                         start_date=start_date,
                         end_date=end_date,
-                        line_items=line_items
+                        line_items=line_items,
+                        request_id=request_id,
+                        results_publisher=self.results_publisher
                     )
                 )
             else:
@@ -250,10 +268,12 @@ class UnifiedPubSubWorker(PubSubWorker):
                     
                 logger.info(f"Generating checklist from message for task {request_id}")
                 checklist_data = self.loop.run_until_complete(
-                    self.ai_service.generate_checklist(
+                    self.streaming_ai_service.generate_checklist(
                         message=message_content,
                         message_history=message_history,
-                        client_time=client_time
+                        client_time=client_time,
+                        request_id=request_id,
+                        results_publisher=self.results_publisher
                     )
                 )
             

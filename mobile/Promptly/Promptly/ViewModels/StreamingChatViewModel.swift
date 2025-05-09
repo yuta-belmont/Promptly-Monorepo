@@ -14,6 +14,12 @@ final class StreamingChatViewModel: ObservableObject {
     @Published var isStreaming: Bool = false
     @Published var unreadCount: Int = 0
     @Published var isExpanded: Bool = false
+    @Published var shouldScrollToBottom: Bool = false
+    
+    // Add debounce timer property
+    private var scrollDebounceTimer: Timer?
+    private let scrollDebounceInterval: TimeInterval = 0.1
+    private var lastScrollTime: Date?
     
     // Services
     private let pubSubChatService = PubSubChatService.shared
@@ -43,9 +49,21 @@ final class StreamingChatViewModel: ObservableObject {
     // Use a dictionary of these temp outlines instead of CoreData objects during streaming
     private var activeOutlineData: [String: TempOutline] = [:]
     
+    // Add this at the top of the class with other properties
+    private let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+    
+    // Add haptic feedback generator
+    private let hapticGenerator = UIImpactFeedbackGenerator(style: .medium)
+    
     // Private initializer for singleton pattern
     private init() {
         setupCallbacks()
+        // Prepare the haptic generator
+        hapticGenerator.prepare()
     }
     
     // Set up the callbacks for pubsub service streaming events
@@ -77,7 +95,43 @@ final class StreamingChatViewModel: ObservableObject {
     
     // MARK: - Message Handling
     
-    // Send a message
+    // Send a pre-created message
+    func sendMessage(_ message: StreamingChatMessage) {
+        // Check if user is authenticated
+        guard authManager.isAuthenticated && !authManager.isGuestUser else {
+            return
+        }
+        
+        // Add the user message
+        messages.append(message)
+        
+        // Create and add a streaming assistant message
+        let assistantMessage = StreamingChatMessageFactory.createAssistantMessage()
+        messages.append(assistantMessage)
+        currentStreamingMessage = assistantMessage
+        
+        // Update UI state
+        isLoading = true
+        isStreaming = true
+        
+        // Prepare message history context
+        let context = prepareMessageContext()
+        
+        // Send the message to the PubSub service
+        Task {
+            do {
+                _ = try await pubSubChatService.sendMessage(
+                    content: message.content,
+                    messageHistory: context
+                )
+            } catch {
+                // Handle send error
+                handleError(error)
+            }
+        }
+    }
+    
+    // Keep the old method for backward compatibility
     func sendMessage(_ text: String) {
         // Check if user is authenticated
         guard authManager.isAuthenticated && !authManager.isGuestUser else {
@@ -114,8 +168,6 @@ final class StreamingChatViewModel: ObservableObject {
                     content: trimmedText,
                     messageHistory: context
                 )
-                // Request ID is returned but we don't need to store it
-                // The SSE connection is managed by PubSubChatService
             } catch {
                 // Handle send error
                 handleError(error)
@@ -123,29 +175,84 @@ final class StreamingChatViewModel: ObservableObject {
         }
     }
     
+    // Add debounced scroll method
+    private func debouncedScrollToBottom() {
+        // If we haven't scrolled in the last 0.1 seconds, scroll now
+        if lastScrollTime == nil || Date().timeIntervalSince(lastScrollTime!) > scrollDebounceInterval {
+            shouldScrollToBottom = true
+            lastScrollTime = Date()
+        } else if scrollDebounceTimer == nil {
+            // Only schedule a delayed scroll if we don't already have one pending
+            scrollDebounceTimer = Timer.scheduledTimer(withTimeInterval: scrollDebounceInterval, repeats: false) { [weak self] _ in
+                Task { @MainActor in
+                    self?.shouldScrollToBottom = true
+                    self?.lastScrollTime = Date()
+                    self?.scrollDebounceTimer = nil
+                }
+            }
+        }
+    }
+    
     // Handle received chunk during streaming
     private func handleChunkReceived(_ chunk: String) {
-        // First check if this is a progressive outline event
+        
+        // Try to parse the JSON data
         if let data = chunk.data(using: .utf8) {
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let eventType = json["event"] as? String,
-                   eventType.starts(with: "outline_"),
-                   let eventData = json["data"] as? [String: Any] {
+                   let eventType = json["event"] as? String {
                     
-                    print("DEBUG OUTLINE EVENT: Received event type: \(eventType)")
-                    handleOutlineEvent(eventType: eventType, eventData: eventData)
-                    return
+                    // Route based on event type
+                    switch eventType {
+                    case "DONE":
+                        if let fullText = json["full_text"] as? String {
+                            handleMessageCompleted(fullText)
+                        }
+                        return
+                        
+                    case let type where type.starts(with: "outline_"):
+                        if let eventData = json["data"] as? [String: Any] {
+                            Task {
+                                await handleOutlineEvent(eventType: type, eventData: eventData)
+                                debouncedScrollToBottom()
+                            }
+                        }
+                        return
+                        
+                    case let type where type.starts(with: "checklist_"):
+                        if let eventData = json["data"] as? [String: Any] {
+                            handleChecklistEvent(eventType: type, eventData: eventData)
+                            debouncedScrollToBottom()
+                        }
+                        return
+                        
+                    default:
+                        // If it's a JSON message but not a known event type, append as normal
+                        appendChunkToMessage(chunk)
+                    }
+                } else {
+                    // If JSON parsing succeeded but no event type, append as normal
+                    appendChunkToMessage(chunk)
                 }
             } catch {
-                print("DEBUG CHUNK: Not a JSON outline event, processing as normal text")
+                // If JSON parsing failed, append as normal text
+                appendChunkToMessage(chunk)
             }
+        } else {
+            // If data conversion failed, append as normal text
+            appendChunkToMessage(chunk)
         }
-        
-        // If not an outline event, process as normal text chunk
+    }
+    
+    // Helper method to append chunk to message
+    private func appendChunkToMessage(_ chunk: String) {
         if let currentMessage = currentStreamingMessage {
             // Append the chunk to the current message
             currentMessage.appendContent(chunk)
+            // Use debounced scroll for text chunks
+            debouncedScrollToBottom()
+            // Force UI update
+            objectWillChange.send()
         } else {
             // If we don't have a streaming message, create one
             let newMessage = StreamingChatMessageFactory.createAssistantMessage()
@@ -153,162 +260,106 @@ final class StreamingChatViewModel: ObservableObject {
             messages.append(newMessage)
             currentStreamingMessage = newMessage
             isStreaming = true
+            // Use debounced scroll for new messages
+            debouncedScrollToBottom()
+            // Force UI update
+            objectWillChange.send()
         }
     }
     
     // Handle message completion
     private func handleMessageCompleted(_ fullText: String) {
-        print("DEBUG MESSAGE TYPE: Received message completion with text length: \(fullText.count)")
-        print("DEBUG MESSAGE TEXT: First 100 chars: \(String(fullText.prefix(100)))")
+        print("🔍 StreamingChatViewModel.handleMessageCompleted(fullText: \(fullText.prefix(50))...)")
+        // Early handling of empty strings (disconnection events)
+        if fullText.isEmpty {
+            return
+        }
         
-        // Try to parse as JSON to determine message type
-        if let data = fullText.data(using: .utf8) {
-            do {
-                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    print("DEBUG MESSAGE TYPE: Message is valid JSON with keys: \(json.keys.joined(separator: ", "))")
-                    
-                    // Check for outline directly in the top-level JSON
-                    if let outline = json["outline"] as? [String: Any] {
-                        print("DEBUG MESSAGE TYPE: Found outline in top-level JSON")
-                        processOutlineFromCompletion(outline)
-                        return
-                    }
-                    
-                    // First check if we have a nested JSON structure (from completion event)
-                    if let fullTextString = json["full_text"] as? String,
-                       fullTextString.count > 0 {
-                        print("DEBUG MESSAGE TYPE: Found full_text string with length: \(fullTextString.count)")
-                        print("DEBUG MESSAGE TYPE: Full_text first 100 chars: \(String(fullTextString.prefix(100)))")
-                        
-                        // Try to parse the nested full_text as JSON
-                        if let fullTextData = fullTextString.data(using: .utf8) {
-                            do {
-                                if let fullTextJson = try JSONSerialization.jsonObject(with: fullTextData) as? [String: Any] {
-                                    print("DEBUG MESSAGE TYPE: Found nested JSON in full_text with keys: \(fullTextJson.keys.joined(separator: ", "))")
-                                    
-                                    // Check for outline data in the nested JSON
-                                    if let outline = fullTextJson["outline"] as? [String: Any] {
-                                        print("DEBUG MESSAGE TYPE: Found outline in nested JSON")
-                                        processOutlineFromCompletion(outline)
-                                        return
-                                    } else if let needsChecklist = fullTextJson["needs_checklist"] as? Bool, needsChecklist == true {
-                                        print("DEBUG MESSAGE TYPE: Found needs_checklist=true but no outline field. Looking for outline key...")
-                                        
-                                        // Print all the keys to help debug
-                                        for (key, value) in fullTextJson {
-                                            print("DEBUG JSON KEY: \(key) = \(type(of: value))")
-                                        }
-                                        
-                                        // Completion messages might have the outline at the top level
-                                        processCompletedMessage(fullTextJson)
-                                    } else {
-                                        // Handle other JSON formats in the nested structure
-                                        processCompletedMessage(fullTextJson)
-                                    }
-                                } else {
-                                    print("DEBUG MESSAGE TYPE: JSONSerialization returned nil for fullTextJson")
-                                }
-                            } catch {
-                                print("DEBUG MESSAGE TYPE: Error parsing full_text as JSON: \(error)")
-                                completeMessageWithText(fullTextString)
-                            }
-                        } else {
-                            print("DEBUG MESSAGE TYPE: full_text doesn't contain valid JSON, treating as text")
-                            completeMessageWithText(fullTextString)
+        if let currentMessage = currentStreamingMessage {
+            
+            // If we already have a completed outline, skip processing
+            if currentMessage.checklistOutline != nil {
+                return
+            }
+            
+            // Try to parse as JSON to determine message type
+            if let data = fullText.data(using: .utf8) {
+                do {
+                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        // Check for outline directly in the top-level JSON
+                        if let outline = json["outline"] as? [String: Any] {
+                            createAndAttachOutline(to: currentMessage, from: outline)
+                            // Trigger haptic feedback for outline completion
+                            self.hapticGenerator.impactOccurred()
+                            return
                         }
-                    } else {
-                        // Process the direct JSON
+                        
+                        // Check for response_text field in the JSON
+                        if let responseText = json["response_text"] as? String {
+                            currentMessage.markAsComplete()
+                            currentMessage.replaceContent(with: responseText)
+                            // Trigger haptic feedback for message completion with delay
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                self.hapticGenerator.impactOccurred()
+                            }
+                            objectWillChange.send()
+                            return
+                        }
+                        
+                        // Process other JSON formats
                         if json["outline"] != nil {
-                            print("DEBUG MESSAGE TYPE: This is a direct OUTLINE message")
                             processCompletedMessage(json)
                         } else if json["checklist_data"] != nil {
-                            print("DEBUG MESSAGE TYPE: This is a CHECKLIST message")
                             processCompletedMessage(json)
                         } else if json["event"] as? String == "DONE" {
-                            print("DEBUG MESSAGE TYPE: This is a DONE event without full_text")
-                            completeMessageWithText(currentStreamingMessage?.content ?? "")
+                            currentMessage.markAsComplete()
+                            currentMessage.replaceContent(with: currentMessage.content)
+                            objectWillChange.send()
                         } else {
-                            print("DEBUG MESSAGE TYPE: This is a JSON message but not an outline or checklist")
                             processCompletedMessage(json)
                         }
                     }
+                } catch {
+                    // Only process as direct text if we haven't already handled an outline
+                    if !currentMessage.isBuildingOutline {
+                        currentMessage.markAsComplete()
+                        currentMessage.replaceContent(with: fullText)
+                        // Trigger haptic feedback for direct text completion with delay
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            self.hapticGenerator.impactOccurred()
+                        }
+                        objectWillChange.send()
+                    }
+                    
+                    // Reset streaming state
+                    isStreaming = false
+                    currentStreamingMessage = nil
                 }
-            } catch {
-                print("DEBUG MESSAGE TYPE: Message is not valid JSON, treating as normal message")
-                completeMessageWithText(fullText)
             }
-        } else {
-            print("DEBUG MESSAGE TYPE: Could not convert message to data, treating as normal message")
-            completeMessageWithText(fullText)
         }
     }
     
     // Add this helper method to process outlines from completion messages
     private func processOutlineFromCompletion(_ outline: [String: Any]) {
-        print("DEBUG OUTLINE: Processing outline from completion event")
-        
-        // Create a new message or use existing streaming message
-        let message: StreamingChatMessage
-        if let currentMessage = currentStreamingMessage {
-            message = currentMessage
-        } else {
-            message = StreamingChatMessageFactory.createOutlineBuildingMessage()
-            messages.append(message)
+        print("🔍 StreamingChatViewModel.processOutlineFromCompletion(outline: \(outline))")
+        // Only proceed if we have a current streaming message
+        guard let currentMessage = currentStreamingMessage else {
+            return
         }
         
-        // Set the message to building outline state to show the special UI
-        message.isBuildingOutline = true
-        message.content = "Creating your outline..."
-        
-        // Create an outline model
-        if let outlineModel = createOutlineModel(from: outline) {
-            // Attach the outline to the message right away, but keep in building state
-            message.outline = outlineModel
-            
-            // Simulate progressive building by showing UI for a moment
-            // This makes the outline appear to build itself even though we got the whole thing at once
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                // Update the message
-                message.markAsComplete()
-                message.isBuildingOutline = false
-                message.content = "I've created an outline for you. Let me know if you'd like to proceed with the detailed checklists."
-                print("DEBUG OUTLINE: Successfully applied outline to message")
-                
-                // Reset state
-                self.isLoading = false
-                self.isStreaming = false
-                self.currentStreamingMessage = nil
-            }
-        } else {
-            // Fallback if outline creation failed
-            message.markAsComplete()
-            message.isBuildingOutline = false
-            message.content = "I've prepared a plan for you, but there was an issue with the outline formatting. Let me know if you'd like me to try again."
-            print("DEBUG OUTLINE: Failed to create outline model")
-            
-            // Reset state
-            isLoading = false
-            isStreaming = false
-            currentStreamingMessage = nil
-        }
-        
-        // Increment unread count if not expanded
-        if !isExpanded {
-            unreadCount += 1
-        }
+        // Create and attach the outline
+        createAndAttachOutline(to: currentMessage, from: outline)
     }
     
     // Helper method to process the completed message data
     private func processCompletedMessage(_ json: [String: Any]) {
-        print("DEBUG PROCESS: Processing completed message with keys: \(json.keys.joined(separator: ", "))")
+        print("🔍 StreamingChatViewModel.processCompletedMessage(json: \(json))")
         
         // Check for needs_checklist flag
         if let needsChecklist = json["needs_checklist"] as? Bool, needsChecklist == true {
-            print("DEBUG PROCESS: Found needs_checklist=true, looking for outline data")
             
             // Handle direct outline data
             if let outline = json["outline"] as? [String: Any] {
-                print("DEBUG PROCESS: Found outline directly in the JSON")
                 processOutlineData(outline)
                 return
             }
@@ -354,17 +405,13 @@ final class StreamingChatViewModel: ObservableObject {
             
             // If we have enough data to create an outline
             if !outlineData.isEmpty {
-                print("DEBUG PROCESS: Created synthetic outline from message data")
                 processOutlineData(outlineData)
                 return
-            } else {
-                print("DEBUG PROCESS: Could not extract outline data, treating as regular message")
             }
         }
         
         // Handle outline data
         else if let outline = json["outline"] as? [String: Any] {
-            print("DEBUG PROCESS: Processing outline data directly")
             processOutlineData(outline)
             return
         }
@@ -383,7 +430,6 @@ final class StreamingChatViewModel: ObservableObject {
     }
     
     private func processOutlineData(_ outline: [String: Any]) {
-        print("DEBUG OUTLINE PROCESS: Processing outline data with keys: \(outline.keys.joined(separator: ", "))")
         
         // Text response to show
         let responseText = "I've created an outline for you. Let me know if you'd like to proceed with the detailed checklists."
@@ -392,19 +438,20 @@ final class StreamingChatViewModel: ObservableObject {
         if let outlineModel = createOutlineModel(from: outline) {
             if let currentMessage = currentStreamingMessage {
                 currentMessage.markAsComplete()
-                currentMessage.outline = outlineModel
+                currentMessage.outlineSummary = outlineModel.summary
+                currentMessage.outlinePeriod = outlineModel.period
+                currentMessage.outlineStartDate = outlineModel.startDate
+                currentMessage.outlineEndDate = outlineModel.endDate
+                currentMessage.outlineLineItems = outlineModel.lineItem as? [String] ?? []
                 currentMessage.replaceContent(with: responseText)
-                print("DEBUG PROCESS: Successfully applied outline to message")
             } else {
                 // Create a new message if needed
                 let newMessage = StreamingChatMessageFactory.createOutlineMessage(content: responseText, outline: outlineModel)
             messages.append(newMessage)
-                print("DEBUG PROCESS: Created new message with outline")
             }
         } else {
             // Fallback to plain text if outline creation failed
             completeMessageWithText(responseText)
-            print("DEBUG PROCESS: Failed to create outline model")
         }
         
         // Reset state
@@ -420,13 +467,19 @@ final class StreamingChatViewModel: ObservableObject {
     
     // Helper method to complete a message with plain text
     private func completeMessageWithText(_ text: String) {
+        
         if let currentMessage = currentStreamingMessage {
             currentMessage.markAsComplete()
             currentMessage.replaceContent(with: text)
+            
+            // Force UI update
+            objectWillChange.send()
         } else if !text.isEmpty {
-            // Create a new complete message if we don't have one
             let newMessage = StreamingChatMessageFactory.createCompleteAssistantMessage(content: text)
             messages.append(newMessage)
+            
+            // Force UI update
+            objectWillChange.send()
         }
     }
     
@@ -483,9 +536,6 @@ final class StreamingChatViewModel: ObservableObject {
     
     // Create an outline model from JSON data
     private func createOutlineModel(from outlineData: [String: Any]) -> ChecklistOutline? {
-        // Print the outline data for debugging
-        print("DEBUG OUTLINE: Got outline data with keys: \(outlineData.keys.joined(separator: ", "))")
-        
         // Get the managed object context from ChatPersistenceService
         let context = ChatPersistenceService.shared.viewContext
         
@@ -498,61 +548,23 @@ final class StreamingChatViewModel: ObservableObject {
         // Extract data from the outline JSON
         if let summary = outlineData["summary"] as? String {
             outline.summary = summary
-            print("DEBUG OUTLINE: Set summary: \(summary)")
         } else if let summary = outlineData["title"] as? String {
             // Alternative key that might be used
             outline.summary = summary
-            print("DEBUG OUTLINE: Set summary from title: \(summary)")
         } else {
-            print("DEBUG OUTLINE: Missing summary in outline data")
             outline.summary = "Task outline"
         }
         
-        if let period = outlineData["period"] as? String {
-            outline.period = period
-            print("DEBUG OUTLINE: Set period: \(period)")
-        } else if let period = outlineData["time_period"] as? String {
-            // Alternative key that might be used
-            outline.period = period
-            print("DEBUG OUTLINE: Set period from time_period: \(period)")
-        } else {
-            print("DEBUG OUTLINE: Missing period in outline data")
-            outline.period = "Unspecified period"
-        }
-        
-        // Extract dates using DateFormatter
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        
-        // Set default dates (today and a week from today)
-        let today = Date()
-        outline.startDate = today
-        outline.endDate = Calendar.current.date(byAdding: .day, value: 7, to: today) ?? today
-        
+        // Try to parse start date from various possible formats
         if let startDateStr = outlineData["start_date"] as? String,
            let startDate = dateFormatter.date(from: startDateStr) {
             outline.startDate = startDate
-            print("DEBUG OUTLINE: Set start date: \(startDateStr)")
-        } else if let startDateStr = outlineData["startDate"] as? String,
-                 let startDate = dateFormatter.date(from: startDateStr) {
-            // Alternative key that might be used
-            outline.startDate = startDate
-            print("DEBUG OUTLINE: Set start date from startDate: \(startDateStr)")
-        } else {
-            print("DEBUG OUTLINE: Missing or invalid start_date in outline data, using today")
         }
         
+        // Try to parse end date from various possible formats
         if let endDateStr = outlineData["end_date"] as? String,
            let endDate = dateFormatter.date(from: endDateStr) {
             outline.endDate = endDate
-            print("DEBUG OUTLINE: Set end date: \(endDateStr)")
-        } else if let endDateStr = outlineData["endDate"] as? String,
-                 let endDate = dateFormatter.date(from: endDateStr) {
-            // Alternative key that might be used
-            outline.endDate = endDate
-            print("DEBUG OUTLINE: Set end date from endDate: \(endDateStr)")
-        } else {
-            print("DEBUG OUTLINE: Missing or invalid end_date in outline data, using today + 7 days")
         }
         
         // Extract line items - try multiple possible formats
@@ -560,11 +572,10 @@ final class StreamingChatViewModel: ObservableObject {
         
         // Try details array format
         if let details = outlineData["details"] as? [[String: Any]] {
-            print("DEBUG OUTLINE: Found details array with \(details.count) items")
             for detail in details {
                 if let title = detail["title"] as? String {
                     if let breakdown = detail["breakdown"] as? String {
-                    lineItems.append("\(title): \(breakdown)")
+                        lineItems.append("\(title): \(breakdown)")
                     } else {
                         lineItems.append(title)
                     }
@@ -573,30 +584,23 @@ final class StreamingChatViewModel: ObservableObject {
         } 
         // Try line_items array format (plural)
         else if let items = outlineData["line_items"] as? [String] {
-            print("DEBUG OUTLINE: Found line_items array with \(items.count) items")
             lineItems = items
         }
         // Try line_item array format (singular)
         else if let items = outlineData["line_item"] as? [String] {
-            print("DEBUG OUTLINE: Found line_item array with \(items.count) items")
             lineItems = items
         }
         // Try items array format (alternative)
         else if let items = outlineData["items"] as? [String] {
-            print("DEBUG OUTLINE: Found items array with \(items.count) items")
             lineItems = items
         }
         // Try tasks array format (alternative)
         else if let items = outlineData["tasks"] as? [String] {
-            print("DEBUG OUTLINE: Found tasks array with \(items.count) items")
             lineItems = items
         }
         
         if lineItems.isEmpty {
-            print("DEBUG OUTLINE: Could not find any line items in outline data, adding placeholder")
             lineItems = ["No details available"]
-        } else {
-            print("DEBUG OUTLINE: Set \(lineItems.count) line items")
         }
         
         outline.lineItem = lineItems as NSArray
@@ -604,10 +608,8 @@ final class StreamingChatViewModel: ObservableObject {
         // Save the context
         do {
             try context.save()
-            print("DEBUG OUTLINE: Successfully created outline model with ID: \(outline.id)")
             return outline
         } catch {
-            print("DEBUG OUTLINE: Error saving CoreData outline: \(error)")
             return nil
         }
     }
@@ -624,45 +626,35 @@ final class StreamingChatViewModel: ObservableObject {
         pubSubChatService.cleanup()
     }
     
+    // Check if there's a pending outline
+    var hasPendingOutline: Bool {
+        return messages.contains { message in
+            message.checklistOutline?.isDone == false
+        }
+    }
+    
     // Accept outline
     func acceptOutline() {
-        if let message = messages.first(where: { $0.outline?.isDone == false }),
-           let outline = message.outline {
+        if let message = messages.last(where: { $0.checklistOutline != nil }),
+           let outline = message.checklistOutline {
+            // Trigger haptic feedback, remove input buttons
+            outline.isDone = true //this removes input buttons
+            objectWillChange.send()
+            hapticGenerator.impactOccurred()
             
-            // Mark outline as done
-            outline.isDone = true
+            // Prepare outline data
+            let outlineData: [String: Any] = [
+                "summary": outline.summary ?? "",
+                "period": outline.period ?? "",
+                "start_date": outline.startDate?.ISO8601Format() ?? "",
+                "end_date": outline.endDate?.ISO8601Format() ?? "",
+                "details": (outline.lineItem as? [String])?.map { ["title": $0] } ?? []
+            ]
             
-            // Prepare outline data for API
-            var outlineData: [String: Any] = [:]
-            
-            if let summary = outline.summary {
-                outlineData["summary"] = summary
-            }
-            
-            if let period = outline.period {
-                outlineData["period"] = period
-            }
-            
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd"
-            
-            if let startDate = outline.startDate {
-                outlineData["start_date"] = dateFormatter.string(from: startDate)
-            }
-            
-            if let endDate = outline.endDate {
-                outlineData["end_date"] = dateFormatter.string(from: endDate)
-            }
-            
-            if let lineItems = outline.lineItem as? [String] {
-                outlineData["line_item"] = lineItems
-            }
-            
-            // Send outline to server
+            // Send outline acceptance request
             Task {
                 do {
-                    _ = try await pubSubChatService.sendChecklistRequest(
-                        content: "",
+                    _ = try await pubSubChatService.sendOutlineRequest(
                         outline: outlineData
                     )
                     
@@ -684,53 +676,44 @@ final class StreamingChatViewModel: ObservableObject {
     
     // Decline outline
     func declineOutline() {
-        if let message = messages.first(where: { $0.outline?.isDone == false }),
-           let outline = message.outline {
+        if let message = messages.last(where: { $0.checklistOutline != nil }),
+           let outline = message.checklistOutline {
+            // Trigger haptic feedback
+            hapticGenerator.impactOccurred()
+            
             outline.isDone = true
+            // Notify UI of state change
+            objectWillChange.send()
         }
     }
     
-    // Check if there's a pending outline
-    var hasPendingOutline: Bool {
-        return messages.contains { $0.outline?.isDone == false }
-    }
-    
     // Add this new method to handle outline events
-    private func handleOutlineEvent(eventType: String, eventData: [String: Any]) {
-        print("DEBUG OUTLINE EVENT: Processing \(eventType) with keys: \(eventData.keys.joined(separator: ", "))")
-        
+    private func handleOutlineEvent(eventType: String, eventData: [String: Any]) async {
+        print("🔍 StreamingChatViewModel.handleOutlineEvent(eventType: \(eventType), eventData: \(eventData))")
         // Get the request ID from the event data
         guard let requestId = eventData["request_id"] as? String else {
-            print("DEBUG OUTLINE EVENT: Missing request_id, unable to process event")
             return
         }
         
         // Initialize the outline if it doesn't exist yet or if it's a start event
         if eventType == "outline_start" || activeOutlines[requestId] == nil {
             if eventType == "outline_start" {
-                print("DEBUG OUTLINE EVENT: Starting new outline for request \(requestId)")
-                
-                // Create a new message for the outline if needed
-                if currentStreamingMessage == nil || !currentStreamingMessage!.isBuildingOutline {
-                    let newMessage = StreamingChatMessageFactory.createOutlineBuildingMessage()
-                    messages.append(newMessage)
-                    currentStreamingMessage = newMessage
+                // Update the current streaming message instead of creating a new one
+                if let currentMessage = currentStreamingMessage {
+                    // Update the existing message to be an outline building message
+                    currentMessage.isBuildingOutline = true
+                    currentMessage.outlineSummary = "Building outline..."
+                    currentMessage.outlinePeriod = "Calculating..."
+                    currentMessage.outlineLineItems = ["Gathering items..."]
+                    currentMessage.content = "Starting to create your outline..."
+                    
+                    // Store the request ID for tracking
+                    currentOutlineRequestId = requestId
+                    
+                    // Ensure streaming state is properly set
                     isStreaming = true
+                    currentMessage.isStreaming = true
                 }
-                
-                // Instead of creating a CoreData object, use temporary properties
-                currentStreamingMessage?.outlineSummary = "Building outline..."
-                currentStreamingMessage?.outlinePeriod = "Calculating..."
-                currentStreamingMessage?.outlineStartDate = Date()
-                currentStreamingMessage?.outlineEndDate = Date().addingTimeInterval(7 * 24 * 60 * 60) // Default 1 week
-                currentStreamingMessage?.outlineLineItems = ["Gathering items..."]
-                
-                // Store the request ID for tracking
-                currentOutlineRequestId = requestId
-                
-                // Ensure the message is marked as building an outline
-                currentStreamingMessage?.isBuildingOutline = true
-                currentStreamingMessage?.content = "Starting to create your outline..."
             }
         }
         
@@ -750,22 +733,27 @@ final class StreamingChatViewModel: ObservableObject {
                 currentStreamingMessage?.content = "Creating a \(period) outline..."
             }
             
-        case "outline_date":
+        case "outline_dates":
             // Update the temporary start and end date properties
             if let startDateString = eventData["start_date"] as? String,
-               let startDate = ISO8601DateFormatter().date(from: startDateString) {
+               let startDate = dateFormatter.date(from: startDateString) {
                 currentStreamingMessage?.outlineStartDate = startDate
             }
             
             if let endDateString = eventData["end_date"] as? String,
-               let endDate = ISO8601DateFormatter().date(from: endDateString) {
+               let endDate = dateFormatter.date(from: endDateString) {
                 currentStreamingMessage?.outlineEndDate = endDate
             }
             
             // Update content to show progress
-            let startDateString = currentStreamingMessage?.outlineStartDate?.formatted(date: .abbreviated, time: .omitted) ?? "today"
-            let endDateString = currentStreamingMessage?.outlineEndDate?.formatted(date: .abbreviated, time: .omitted) ?? "next week"
-            currentStreamingMessage?.content = "Creating outline from \(startDateString) to \(endDateString)..."
+            if let startDate = currentStreamingMessage?.outlineStartDate,
+               let endDate = currentStreamingMessage?.outlineEndDate {
+                let startDateString = startDate.formatted(date: .abbreviated, time: .omitted)
+                let endDateString = endDate.formatted(date: .abbreviated, time: .omitted)
+                currentStreamingMessage?.content = "Creating outline from \(startDateString) to \(endDateString)..."
+            } else {
+                currentStreamingMessage?.content = "Calculating date range..."
+            }
             
         case "outline_detail":
             // Fix: Handle detail as a dictionary containing title and breakdown fields
@@ -791,57 +779,44 @@ final class StreamingChatViewModel: ObservableObject {
                 // Update the content to show progress
                 let itemCount = currentStreamingMessage?.outlineLineItems.count ?? 0
                 currentStreamingMessage?.content = "Building outline with \(itemCount) items..."
-                
-                // Print debug info
-                print("DEBUG OUTLINE DETAIL: Added item '\(formattedDetail)' to outline")
-            } else {
-                print("DEBUG OUTLINE DETAIL: Failed to parse detail dictionary or missing title")
             }
             
         case "outline_complete":
-            if let outline = eventData["outline"] as? [String: Any] {
-                // Use the persistence service's view context to create the Core Data object
+            if let outlineData = eventData["outline"] as? [String: Any],
+               let outline = outlineData["outline"] as? [String: Any] {
+                // Create a new CoreData outline object
                 let context = ChatPersistenceService.shared.viewContext
                 let outlineModel = ChecklistOutline(context: context)
-                
-                // Set the ID properly
                 outlineModel.id = UUID()
                 outlineModel.timestamp = Date()
+                outlineModel.isDone = false
                 
-                // Set properties from the complete outline data
+                // Extract and set the outline data
                 if let summary = outline["summary"] as? String {
                     outlineModel.summary = summary
-                } else {
-                    outlineModel.summary = currentStreamingMessage?.outlineSummary ?? "Checklist"
                 }
                 
                 if let period = outline["period"] as? String {
                     outlineModel.period = period
-                } else {
-                    outlineModel.period = currentStreamingMessage?.outlinePeriod ?? "Daily"
                 }
                 
-                // Parse dates if available in the outline
+                // Parse dates
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd"
                 
                 if let startDateStr = outline["start_date"] as? String,
                    let startDate = dateFormatter.date(from: startDateStr) {
                     outlineModel.startDate = startDate
-                } else {
-                    outlineModel.startDate = currentStreamingMessage?.outlineStartDate ?? Date()
                 }
                 
                 if let endDateStr = outline["end_date"] as? String,
                    let endDate = dateFormatter.date(from: endDateStr) {
                     outlineModel.endDate = endDate
-                } else {
-                    outlineModel.endDate = currentStreamingMessage?.outlineEndDate ?? Date().addingTimeInterval(7 * 24 * 60 * 60)
                 }
                 
-                // Create line items from details if available
-                var lineItems: [String] = []
+                // Extract line items from details
                 if let details = outline["details"] as? [[String: Any]] {
+                    var lineItems: [String] = []
                     for detail in details {
                         if let title = detail["title"] as? String {
                             if let breakdown = detail["breakdown"] as? String {
@@ -851,47 +826,106 @@ final class StreamingChatViewModel: ObservableObject {
                             }
                         }
                     }
+                    outlineModel.lineItem = lineItems as NSArray
                 }
-                
-                // Use our accumulated line items if we have them
-                if lineItems.isEmpty && !(currentStreamingMessage?.outlineLineItems.isEmpty ?? true) {
-                    lineItems = currentStreamingMessage?.outlineLineItems ?? []
-                }
-                
-                // Ensure we have at least one item
-                if lineItems.isEmpty {
-                    lineItems = ["No items"]
-                }
-                
-                outlineModel.lineItem = lineItems as NSArray
                 
                 // Save the context
                 do {
                     try context.save()
-                    print("DEBUG OUTLINE: Successfully saved CoreData outline with ID: \(outlineModel.id)")
+                    
+                    // Batch all UI updates together
+                    await MainActor.run {
+                        if let currentMessage = currentStreamingMessage {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                // Update message state
+                                currentMessage.checklistOutline = outlineModel
+                                currentMessage.isBuildingOutline = false
+                                currentMessage.markAsComplete()
+                                currentMessage.content = eventData["message"] as? String ?? "I've created an outline for you. Let me know if you'd like to proceed with the detailed checklists."
+                                
+                                // Trigger haptic feedback
+                                hapticGenerator.impactOccurred()
+                                
+                                // Reset streaming state
+                                isStreaming = false
+                                currentStreamingMessage = nil
+                                currentOutlineRequestId = nil
+                            }
+                        }
+                        
+                        // Close the SSE connection after UI updates
+                        pubSubChatService.cleanup()
+                        
+                        // Call the completion handler
+                        outlineCompletionHandler?(nil)
+                    }
                 } catch {
                     print("DEBUG OUTLINE: Error saving CoreData outline: \(error)")
+                    
+                    // Batch fallback UI updates
+                    await MainActor.run {
+                        if let currentMessage = currentStreamingMessage {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                // Update with temporary properties
+                                currentMessage.outlineSummary = outline["summary"] as? String ?? "Task outline"
+                                currentMessage.outlinePeriod = outline["period"] as? String ?? "Unspecified period"
+                                if let details = outline["details"] as? [[String: Any]] {
+                                    var lineItems: [String] = []
+                                    for detail in details {
+                                        if let title = detail["title"] as? String {
+                                            if let breakdown = detail["breakdown"] as? String {
+                                                lineItems.append("\(title): \(breakdown)")
+                                            } else {
+                                                lineItems.append(title)
+                                            }
+                                        }
+                                    }
+                                    currentMessage.outlineLineItems = lineItems
+                                }
+                                currentMessage.isBuildingOutline = false
+                                currentMessage.markAsComplete()
+                                currentMessage.content = eventData["message"] as? String ?? "I've prepared a plan for you, but there was an issue with the outline formatting. Let me know if you'd like me to try again."
+                                
+                                // Reset streaming state
+                                isStreaming = false
+                                currentStreamingMessage = nil
+                                currentOutlineRequestId = nil
+                            }
+                        }
+                        
+                        // Close the SSE connection after UI updates
+                        pubSubChatService.cleanup()
+                    }
                 }
-                
-                // Update the streaming message with the created outline
-                currentStreamingMessage?.checklistOutline = outlineModel
-                currentStreamingMessage?.isBuildingOutline = false
-                currentStreamingMessage?.content = "Your outline is ready!"
-                
-                // Reset streaming state
-                isStreaming = false
-                currentStreamingMessage = nil
-                currentOutlineRequestId = nil
-                
-                // Call the completion handler
-                outlineCompletionHandler?(nil)
             } else {
-                print("DEBUG OUTLINE COMPLETE: Failed to find outline in completion data")
+                // Handle missing outline data
+                await MainActor.run {
+                    guard let message = currentStreamingMessage else {
+                        outlineCompletionHandler?(nil)
+                        return
+                    }
+                    
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        // Complete the message with existing data
+                        message.isBuildingOutline = false
+                        message.markAsComplete()
+                        message.content = "Outline creation complete."
+                        
+                        // Reset streaming state
+                        isStreaming = false
+                        currentStreamingMessage = nil
+                        currentOutlineRequestId = nil
+                    }
+                    
+                    // Close the SSE connection after UI updates
+                    pubSubChatService.cleanup()
+                    
+                    // Call the completion handler
+                    outlineCompletionHandler?(nil)
+                }
             }
             
         case "outline_error":
-            print("DEBUG OUTLINE EVENT: Outline error for request \(requestId)")
-            
             // Set error message
             if let errorMessage = eventData["error"] as? String {
                 currentStreamingMessage?.content = "Error creating outline: \(errorMessage)"
@@ -915,38 +949,166 @@ final class StreamingChatViewModel: ObservableObject {
         }
     }
     
-    // Helper method to create a CoreData outline from the temporary properties
-    private func createOutlineModelFromTemp() -> ChecklistOutline? {
-        guard let message = currentStreamingMessage else {
-            return nil
+    private func handleStreamingMessage(_ message: StreamingChatMessage) {
+        print("🔍 StreamingChatViewModel.handleStreamingMessage(message: \(message.id))")
+        if let index = messages.firstIndex(where: { $0.id == message.id }) {
+            messages[index] = message
+        }
+    }
+    
+    private func handleStreamingComplete(_ message: StreamingChatMessage) {
+        print("🔍 StreamingChatViewModel.handleStreamingComplete(message: \(message.id))")
+        if let index = messages.firstIndex(where: { $0.id == message.id }) {
+            messages[index] = message
+        }
+    }
+    
+    // Add this new method to handle outline creation and message updates
+    private func createAndAttachOutline(to message: StreamingChatMessage, from outline: [String: Any]) {
+        print("🔍 StreamingChatViewModel.createAndAttachOutline(message: \(message.id), outline: \(outline))")
+        // Create the CoreData outline object
+        let context = ChatPersistenceService.shared.viewContext
+        let outlineModel = ChecklistOutline(context: context)
+        outlineModel.id = UUID()
+        outlineModel.timestamp = Date()
+        outlineModel.isDone = false
+        
+        // Extract data from the outline JSON
+        if let summary = outline["summary"] as? String {
+            outlineModel.summary = summary
+        } else if let summary = outline["title"] as? String {
+            outlineModel.summary = summary
+        } else {
+            outlineModel.summary = "Task outline"
         }
         
-        // Get the managed object context from ChatPersistenceService
-        let context = ChatPersistenceService.shared.viewContext
+        if let period = outline["period"] as? String {
+            outlineModel.period = period
+        } else if let period = outline["time_period"] as? String {
+            outlineModel.period = period
+        } else {
+            outlineModel.period = "Unspecified period"
+        }
         
-        // Create a new CoreData outline object
-        let outline = ChecklistOutline(context: context)
-        outline.id = UUID()
-        outline.timestamp = Date()
-        outline.isDone = false
+        // Extract dates using DateFormatter
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
         
-        // Copy data from temporary properties
-        outline.summary = message.outlineSummary ?? "Task outline"
-        outline.period = message.outlinePeriod ?? "Unspecified period"
-        outline.startDate = message.outlineStartDate ?? Date()
-        outline.endDate = message.outlineEndDate ?? Date().addingTimeInterval(7 * 24 * 60 * 60)
-        outline.lineItem = message.outlineLineItems.isEmpty ? 
-            ["No details available"] as NSArray : 
-            message.outlineLineItems as NSArray
+        // Set default dates (today and a week from today)
+        let today = Date()
+        outlineModel.startDate = today
+        outlineModel.endDate = Calendar.current.date(byAdding: .day, value: 7, to: today) ?? today
+        
+        if let startDateStr = outline["start_date"] as? String,
+           let startDate = dateFormatter.date(from: startDateStr) {
+            outlineModel.startDate = startDate
+        }
+        
+        if let endDateStr = outline["end_date"] as? String,
+           let endDate = dateFormatter.date(from: endDateStr) {
+            outlineModel.endDate = endDate
+        }
+        
+        // Extract line items
+        var lineItems: [String] = []
+        if let details = outline["details"] as? [[String: Any]] {
+            for detail in details {
+                if let title = detail["title"] as? String {
+                    if let breakdown = detail["breakdown"] as? String {
+                        lineItems.append("\(title): \(breakdown)")
+                    } else {
+                        lineItems.append(title)
+                    }
+                }
+            }
+        } else if let items = outline["line_items"] as? [String] {
+            lineItems = items
+        } else if let items = outline["line_item"] as? [String] {
+            lineItems = items
+        } else if let items = outline["items"] as? [String] {
+            lineItems = items
+        } else if let items = outline["tasks"] as? [String] {
+            lineItems = items
+        }
+        
+        if lineItems.isEmpty {
+            lineItems = ["No details available"]
+        }
+        
+        outlineModel.lineItem = lineItems as NSArray
         
         // Save the context
         do {
             try context.save()
-            print("DEBUG OUTLINE: Successfully saved CoreData outline with ID: \(outline.id)")
-            return outline
+            
+            // Update the message with the completed outline
+            message.checklistOutline = outlineModel
+            message.isBuildingOutline = false
+            message.markAsComplete()
+            message.content = "I've created an outline for you. Let me know if you'd like to proceed with the detailed checklists."
+            
+            // Reset streaming state
+            isStreaming = false
+            currentStreamingMessage = nil
+            
+            // Increment unread count if not expanded
+            if !isExpanded {
+                unreadCount += 1
+            }
         } catch {
             print("DEBUG OUTLINE: Error saving CoreData outline: \(error)")
-            return nil
+            // Fallback to temporary properties if save fails
+            message.outlineSummary = outline["summary"] as? String ?? "Task outline"
+            message.outlinePeriod = outline["period"] as? String ?? "Unspecified period"
+            message.outlineLineItems = lineItems
+            message.isBuildingOutline = false
+            message.markAsComplete()
+            message.content = "I've prepared a plan for you, but there was an issue with the outline formatting. Let me know if you'd like me to try again."
+        }
+    }
+    
+    // Handle checklist events
+    private func handleChecklistEvent(eventType: String, eventData: [String: Any]) {
+        print("🔍 StreamingChatViewModel.handleChecklistEvent(eventType: \(eventType), eventData: \(eventData))")
+        
+        switch eventType {
+        case "checklist_start":
+            // Create a new message for the checklist creation
+            let message = StreamingChatMessageFactory.createAssistantMessage()
+            message.content = "Creating plan..."
+            messages.append(message)
+            currentStreamingMessage = message
+            
+        case "checklist_update":
+            // Update the current message with the new item
+            if let currentMessage = currentStreamingMessage,
+               let date = eventData["date"] as? String,
+               let title = eventData["last_item"] as? String {
+                currentMessage.content = "Adding \"\(title)\" to \(date)"
+            }
+            
+        case "checklist_complete":
+            // Complete the current message
+            if let currentMessage = currentStreamingMessage {
+                currentMessage.markAsComplete()
+                // Keep the last update message as the final content
+                
+                // Trigger haptic feedback for completion
+                hapticGenerator.impactOccurred()
+                
+                // Reset streaming state
+                isStreaming = false
+                currentStreamingMessage = nil
+                
+                // Increment unread count if not expanded
+                if !isExpanded {
+                    unreadCount += 1
+                }
+            }
+            return
+            
+        default:
+            print("DEBUG CHECKLIST: Unknown checklist event type: \(eventType)")
         }
     }
 } 

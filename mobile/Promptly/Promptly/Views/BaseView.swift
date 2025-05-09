@@ -26,7 +26,7 @@ struct BaseView: View {
     @State private var isKeyboardActive = false
     @State private var isEditing: Bool = false
     // Add a state for the current detent selection
-    @State private var chatDetent: PresentationDetent = .medium
+    @State private var chatDetent: PresentationDetent = .large
     
     @StateObject private var authManager = AuthManager.shared
     @StateObject private var streamingChatViewModel = StreamingChatViewModel.shared  // Add streaming chat view model
@@ -79,7 +79,7 @@ struct BaseView: View {
                         Spacer()
                         HStack {
                             Spacer()
-                            
+                            /*
                             // Streaming Chat button (new)
                             if userSettings.isChatEnabled {
                                 Button(action: {
@@ -133,6 +133,7 @@ struct BaseView: View {
                                 .padding(.trailing, 16)
                                 .padding(.bottom, 16)
                             }
+                            */
                             
                             //plus button
                             Button(action: onPlusTapped) {
@@ -174,7 +175,7 @@ struct BaseView: View {
                                         object: nil
                                     )
                                     
-                                    isChatExpanded = true
+                                    isStreamingChatExpanded = true
                                 }) {
                                     ZStack {
                                         // Bubble background
@@ -199,13 +200,13 @@ struct BaseView: View {
                                         
                                         
                                         // Notification badge - positioned as an overlay
-                                        if chatViewModel.unreadCount > 0 {
+                                        if streamingChatViewModel.unreadCount > 0 {
                                             ZStack {
                                                 Circle()
                                                     .fill(Color.red)
                                                     .frame(width: 22, height: 22)
                                                 
-                                                Text("\(min(chatViewModel.unreadCount, 99))")
+                                                Text("\(min(streamingChatViewModel.unreadCount, 99))")
                                                     .font(.system(size: 12, weight: .bold))
                                                     .foregroundColor(.white)
                                             }
@@ -291,14 +292,14 @@ struct BaseView: View {
         .onChange(of: isChatExpanded) { oldValue, newValue in
             if !newValue {
                 // Reset to medium detent when chat is closed
-                chatDetent = .medium
+                chatDetent = .large
             }
         }
         // Same for streaming chat
         .onChange(of: isStreamingChatExpanded) { oldValue, newValue in
             if !newValue {
                 // Reset to medium detent when chat is closed
-                chatDetent = .medium
+                chatDetent = .large
             }
             
             // Sync with view model

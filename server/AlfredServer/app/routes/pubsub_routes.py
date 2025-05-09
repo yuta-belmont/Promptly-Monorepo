@@ -16,7 +16,7 @@ from app.models.user import User
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@router.post("/api/v1/pubsub/message")
+@router.post("/pubsub/message")
 async def process_message(request: Request, current_user: User = Depends(get_current_user)):
     """
     Process a message using Pub/Sub.
@@ -55,7 +55,7 @@ async def process_message(request: Request, current_user: User = Depends(get_cur
     # Return request ID for SSE subscription
     return {"request_id": request_id}
 
-@router.post("/api/v1/pubsub/checklist")
+@router.post("/pubsub/checklist")
 async def process_checklist(request: Request, current_user: User = Depends(get_current_user)):
     """
     Process a checklist request using Pub/Sub.
@@ -99,7 +99,7 @@ async def process_checklist(request: Request, current_user: User = Depends(get_c
     # Return request ID for SSE subscription
     return {"request_id": request_id}
 
-@router.post("/api/v1/pubsub/checkin")
+@router.post("/pubsub/checkin")
 async def process_checkin(request: Request, current_user: User = Depends(get_current_user)):
     """
     Process a check-in analysis request using Pub/Sub.
@@ -136,6 +136,46 @@ async def process_checkin(request: Request, current_user: User = Depends(get_cur
     )
     
     logger.info(f"Created check-in task {request_id} for user {user_id}")
+    
+    # Return request ID for SSE subscription
+    return {"request_id": request_id}
+
+@router.post("/pubsub/outline")
+async def process_outline(request: Request, current_user: User = Depends(get_current_user)):
+    """
+    Process an outline acceptance request using Pub/Sub.
+    
+    This endpoint creates a checklist task from an outline and returns a request ID that can be used
+    to subscribe to the SSE stream for real-time updates.
+    """
+    # Extract user ID from the authenticated user
+    user_id = current_user.id
+    
+    # Get request data
+    data = await request.json()
+    
+    # Extract outline data
+    outline_data = data.get("outline")
+    if not outline_data:
+        raise HTTPException(
+            status_code=400, 
+            detail="Outline data is required"
+        )
+    
+    # Extract optional fields
+    client_time = data.get("current_time")
+    
+    # Create and publish task
+    task_manager = PubSubTaskManager()
+    request_id = task_manager.create_checklist_task(
+        user_id=user_id,
+        message_content="",  # Empty string since we're using outline data
+        message_history=[],  # No message history needed for outline-based tasks
+        client_time=client_time,
+        outline_data=outline_data
+    )
+    
+    logger.info(f"Created outline-based checklist task {request_id} for user {user_id}")
     
     # Return request ID for SSE subscription
     return {"request_id": request_id} 

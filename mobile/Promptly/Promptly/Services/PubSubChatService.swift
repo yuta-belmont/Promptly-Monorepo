@@ -44,8 +44,6 @@ class PubSubChatService {
         userFullName: String? = nil,
         clientTime: String? = nil
     ) async throws -> String {
-        print("📤 PUBSUB: Sending message: \(content)")
-        
         // Prepare the request payload
         var payload: [String: Any] = [
             "message": content
@@ -82,9 +80,7 @@ class PubSubChatService {
                   let requestId = responseJson["request_id"] as? String else {
                 throw PubSubChatError.invalidResponse("Invalid response format")
             }
-            
-            print("📥 PUBSUB: Received request_id: \(requestId)")
-            
+                        
             // Add to active requests
             activeRequestIds.insert(requestId)
             
@@ -126,7 +122,6 @@ class PubSubChatService {
         outline: [String: Any]? = nil,
         clientTime: String? = nil
     ) async throws -> String {
-        print("📤 PUBSUB: Sending checklist request")
         
         // Prepare the request payload
         var payload: [String: Any] = [
@@ -165,8 +160,6 @@ class PubSubChatService {
                 throw PubSubChatError.invalidResponse("Invalid response format")
             }
             
-            print("📥 PUBSUB: Received checklist request_id: \(requestId)")
-            
             // Add to active requests
             activeRequestIds.insert(requestId)
             
@@ -196,7 +189,6 @@ class PubSubChatService {
         alfredPersonality: String? = nil,
         userObjectives: String? = nil
     ) async throws -> String {
-        print("📤 PUBSUB: Sending check-in request")
         
         // Prepare the request payload
         var payload: [String: Any] = [
@@ -238,8 +230,49 @@ class PubSubChatService {
                   let requestId = responseJson["request_id"] as? String else {
                 throw PubSubChatError.invalidResponse("Invalid response format")
             }
+                        
+            // Add to active requests
+            activeRequestIds.insert(requestId)
             
-            print("📥 PUBSUB: Received check-in request_id: \(requestId)")
+            // Set up SSE connection for streaming
+            setupSSEConnection(for: requestId)
+            
+            return requestId
+        } catch {
+            throw error
+        }
+    }
+    
+    /// Send an outline acceptance request using the PubSub API
+    /// - Parameters:
+    ///   - outline: The outline data to process
+    /// - Returns: The request ID for tracking the task
+    func sendOutlineRequest(outline: [String: Any]) async throws -> String {
+        // Prepare the request payload
+        let payload: [String: Any] = [
+            "outline": outline,
+            "current_time": ISO8601DateFormatter().string(from: Date())
+        ]
+        
+        // Convert to JSON data
+        guard let requestData = try? JSONSerialization.data(withJSONObject: payload) else {
+            throw PubSubChatError.invalidResponse("Failed to create request data")
+        }
+        
+        do {
+            // Send the request to the PubSub API
+            let responseData = try await networkManager.makeAuthenticatedRequest(
+                endpoint: "/v1/pubsub/outline",
+                method: "POST",
+                body: requestData,
+                contentType: "application/json"
+            )
+            
+            // Parse the response
+            guard let responseJson = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any],
+                  let requestId = responseJson["request_id"] as? String else {
+                throw PubSubChatError.invalidResponse("Invalid response format")
+            }
             
             // Add to active requests
             activeRequestIds.insert(requestId)
@@ -258,35 +291,26 @@ class PubSubChatService {
     /// Set up an SSE connection for a given request ID
     /// - Parameter requestId: The request ID to listen for
     private func setupSSEConnection(for requestId: String) {
-        print("🔌 PUBSUB: Setting up SSE connection for request ID: \(requestId)")
-        print("🔌 PUBSUB: IMPORTANT - Client is subscribing to channel: ai-stream:\(requestId)")
         
         sseManager.connect(
             requestId: requestId,
             baseURL: serverBaseURL,
             onEvent: { [weak self] chunk in
-                print("📥 PUBSUB: Received chunk of length: \(chunk.count)")
-                print("📥 PUBSUB: Chunk preview: \(chunk.prefix(50))...")
                 self?.onChunkReceived?(chunk)
             },
             onComplete: { [weak self] fullText in
-                print("📥 PUBSUB: Completed with full text length: \(fullText.count)")
-                print("📥 PUBSUB: Full text preview: \(fullText.prefix(50))...")
                 self?.activeRequestIds.remove(requestId)
                 self?.onMessageCompleted?(fullText)
             },
             onError: { [weak self] error in
-                print("📥 PUBSUB: Error: \(error.localizedDescription)")
                 self?.activeRequestIds.remove(requestId)
                 self?.onError?(error)
             }
         )
-        print("🔌 PUBSUB: SSE connection setup complete for request ID: \(requestId)")
     }
     
     /// Clean up any active SSE connections
     func cleanup() {
-        print("🧹 PUBSUB: Cleaning up all SSE connections")
         sseManager.disconnect()
         activeRequestIds.removeAll()
     }
@@ -294,7 +318,6 @@ class PubSubChatService {
     /// Check if any requests are currently active
     var hasActiveRequests: Bool {
         let result = !activeRequestIds.isEmpty
-        print("🔍 PUBSUB: Has active requests: \(result), count: \(activeRequestIds.count)")
         return result
     }
 } 

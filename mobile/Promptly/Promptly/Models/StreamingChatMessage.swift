@@ -16,9 +16,6 @@ class StreamingChatMessage: Identifiable, ObservableObject {
     /// Flag indicating if the message is a report
     let isReportMessage: Bool
     
-    /// Reference to an outline if available
-    @Published var outline: ChecklistOutline?
-    
     /// Reference to the final CoreData ChecklistOutline object (used only when outline is complete)
     @Published var checklistOutline: ChecklistOutline?
     
@@ -41,7 +38,6 @@ class StreamingChatMessage: Identifiable, ObservableObject {
     ///   - isComplete: Whether the message is complete (true for user messages, false for streaming)
     ///   - isError: Whether this is an error message
     ///   - isReportMessage: Whether this is a report message
-    ///   - outline: Optional checklist outline
     ///   - checklistOutline: Optional final CoreData checklist outline
     ///   - isBuildingOutline: Whether this message is currently building an outline progressively
     init(
@@ -53,7 +49,6 @@ class StreamingChatMessage: Identifiable, ObservableObject {
         isStreaming: Bool = false,
         isError: Bool = false,
         isReportMessage: Bool = false,
-        outline: ChecklistOutline? = nil,
         checklistOutline: ChecklistOutline? = nil,
         isBuildingOutline: Bool = false
     ) {
@@ -65,7 +60,6 @@ class StreamingChatMessage: Identifiable, ObservableObject {
         self.isStreaming = isStreaming
         self.isError = isError
         self.isReportMessage = isReportMessage
-        self.outline = outline
         self.checklistOutline = checklistOutline
         self.isBuildingOutline = isBuildingOutline
     }
@@ -108,8 +102,9 @@ class StreamingChatMessage: Identifiable, ObservableObject {
 /// Factory for creating different types of streaming chat messages
 struct StreamingChatMessageFactory {
     /// Create a user message (always complete on creation)
-    static func createUserMessage(content: String) -> StreamingChatMessage {
+    static func createUserMessage(content: String, id: UUID = UUID()) -> StreamingChatMessage {
         return StreamingChatMessage(
+            id: id,
             content: content,
             role: "user",
             isComplete: true
@@ -117,8 +112,9 @@ struct StreamingChatMessageFactory {
     }
     
     /// Create an assistant message that will be streaming
-    static func createAssistantMessage() -> StreamingChatMessage {
+    static func createAssistantMessage(id: UUID = UUID()) -> StreamingChatMessage {
         return StreamingChatMessage(
+            id: id,
             content: "",
             role: "assistant",
             isComplete: false,
@@ -127,8 +123,9 @@ struct StreamingChatMessageFactory {
     }
     
     /// Create an assistant message that is building an outline
-    static func createOutlineBuildingMessage() -> StreamingChatMessage {
+    static func createOutlineBuildingMessage(id: UUID = UUID()) -> StreamingChatMessage {
         return StreamingChatMessage(
+            id: id,
             content: "Creating an outline based on your request...",
             role: "assistant",
             isComplete: false,
@@ -138,8 +135,9 @@ struct StreamingChatMessageFactory {
     }
     
     /// Create a complete assistant message (for non-streaming or already complete)
-    static func createCompleteAssistantMessage(content: String) -> StreamingChatMessage {
+    static func createCompleteAssistantMessage(content: String, id: UUID = UUID()) -> StreamingChatMessage {
         return StreamingChatMessage(
+            id: id,
             content: content,
             role: "assistant",
             isComplete: true
@@ -147,8 +145,9 @@ struct StreamingChatMessageFactory {
     }
     
     /// Create an error message
-    static func createErrorMessage(content: String) -> StreamingChatMessage {
+    static func createErrorMessage(content: String, id: UUID = UUID()) -> StreamingChatMessage {
         return StreamingChatMessage(
+            id: id,
             content: content,
             role: "assistant",
             isComplete: true,
@@ -157,8 +156,9 @@ struct StreamingChatMessageFactory {
     }
     
     /// Create a report message
-    static func createReportMessage(content: String) -> StreamingChatMessage {
+    static func createReportMessage(content: String, id: UUID = UUID()) -> StreamingChatMessage {
         return StreamingChatMessage(
+            id: id,
             content: content,
             role: "assistant",
             isComplete: true,
@@ -167,13 +167,14 @@ struct StreamingChatMessageFactory {
     }
     
     /// Create an assistant message with an outline
-    static func createOutlineMessage(content: String, outline: ChecklistOutline) -> StreamingChatMessage {
+    static func createOutlineMessage(content: String, outline: ChecklistOutline, id: UUID = UUID()) -> StreamingChatMessage {
         return StreamingChatMessage(
+            id: id,
             content: content,
             role: "assistant",
             isComplete: true,
             isReportMessage: false,
-            outline: outline
+            checklistOutline: outline
         )
     }
 } 

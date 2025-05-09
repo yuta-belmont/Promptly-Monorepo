@@ -12,9 +12,12 @@ struct StreamingChatView: View {
     // Animation state for messages
     @State private var messageOffset: [UUID: CGFloat] = [:]
     @State private var lastSentMessageId: UUID?
+    @State private var lastInputClearTime: Date?
     
     // Add ScrollView proxy reference to control scrolling programmatically
     @State private var scrollViewProxy: ScrollViewProxy? = nil
+    @State private var lastContentOffset: CGFloat = 0
+    @State private var isScrollingUp: Bool = false
     
     // Add binding for external control of expanded state
     @Binding var isExpanded: Bool
@@ -47,8 +50,6 @@ struct StreamingChatView: View {
                                         // When an outline message is tapped, show the ChecklistOutlineView
                                         if let outline = message.checklistOutline, !message.isBuildingOutline {
                                             selectedOutline = outline
-                                        } else if let outline = message.outline, !message.isBuildingOutline {
-                                            selectedOutline = outline
                                         }
                                     }
                                 )
@@ -73,6 +74,14 @@ struct StreamingChatView: View {
                                 .id("bottom")
                         }
                     }
+                    // Add simultaneous tap gesture to dismiss keyboard
+                    .simultaneousGesture(
+                        TapGesture()
+                            .onEnded { _ in
+                                isTextFieldFocused = false
+                                focusManager.removeAllFocus()
+                            }
+                    )
                     .onAppear {
                         // Scroll to bottom when view appears if there are messages
                         if !viewModel.messages.isEmpty {
@@ -83,23 +92,36 @@ struct StreamingChatView: View {
                         scrollViewProxy = proxy
                     }
                     .onChange(of: viewModel.messages.count) { oldValue, newValue in
-                        // Animate scrolling to bottom when new messages are added
-                        if newValue > oldValue {
-                            withAnimation(.spring(response: 0.5, dampingFraction: 0.9)) {
-                                proxy.scrollTo("bottom", anchor: .bottom)
-                            }
-                        } else {
-                            // If messages are being removed, scroll without animation
+                        // Scroll to bottom when messages are added/removed
+                        withAnimation(.spring(response: 0.5, dampingFraction: 0.9)) {
                             proxy.scrollTo("bottom", anchor: .bottom)
                         }
                     }
-                    // Simultaneous tap gesture to dismiss keyboard
-                    .simultaneousGesture(
-                        TapGesture()
-                            .onEnded { _ in
-                                focusManager.removeAllFocus()
+                    .onChange(of: viewModel.shouldScrollToBottom) { oldValue, newValue in
+                        if newValue {
+                            
+                            // Keep the delay to ensure content is rendered
+                            DispatchQueue.main.async {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    proxy.scrollTo("bottom", anchor: .bottom)
+                                } completion: {
+                                    
+                                    // Only set back to false after animation completes
+                                    viewModel.shouldScrollToBottom = false
+                                    
+                                    // Safety scroll since scrolling can be unpredicable while other things are animating
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            proxy.scrollTo("bottom", anchor: .bottom)
+                                        } completion: {
+                                            
+                                        }
+                                    }
+
+                                }
                             }
-                    )
+                        }
+                    }
                 }
                 
                 // Input field
@@ -117,41 +139,39 @@ struct StreamingChatView: View {
                     // Outline controls if there's a pending outline
                     if viewModel.hasPendingOutline {
                         VStack(spacing: 8) {
-                            Text("Do you want to create this checklist?")
+                            Text("Create plan?")
+                                .foregroundColor(.white.opacity(0.8))
                                 .font(.subheadline)
-                                .foregroundColor(.white)
                             
-                            HStack(spacing: 16) {
-                                Button(action: {
-                                    viewModel.declineOutline()
-                                }) {
-                                    Text("No")
-                                        .fontWeight(.medium)
-                                        .padding(.horizontal, 24)
-                                        .padding(.vertical, 8)
-                                        .background(Color.red.opacity(0.8))
-                                        .cornerRadius(8)
-                                        .foregroundColor(.white)
-                                }
-                                
+                            HStack(spacing: 12) {
                                 Button(action: {
                                     viewModel.acceptOutline()
                                 }) {
-                                    Text("Yes")
-                                        .fontWeight(.medium)
-                                        .padding(.horizontal, 24)
+                                    Text("Accept")
+                                        .frame(maxWidth: .infinity)
                                         .padding(.vertical, 8)
-                                        .background(Color.green.opacity(0.8))
-                                        .cornerRadius(8)
+                                        .background(Color.blue)
                                         .foregroundColor(.white)
+                                        .cornerRadius(8)
+                                }
+                                Button(action: {
+                                    viewModel.declineOutline()
+                                }) {
+                                    Text("Decline")
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 8)
+                                        .background(Color.gray.opacity(0.3))
+                                        .foregroundColor(.white)
+                                        .cornerRadius(8)
                                 }
                             }
                         }
-                        .padding()
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
                     } else {
                         // Standard input field
                         HStack(alignment: .center, spacing: 8) {
-                            TextField("Message Alfred...", text: $viewModel.userInput, axis: .vertical)
+                            TextField("Message Ai...", text: $viewModel.userInput, axis: .vertical)
                                 .lineLimit(1...10)
                                 .padding(.leading, 12)
                                 .padding(.trailing, 12)
@@ -189,31 +209,43 @@ struct StreamingChatView: View {
                                     let messageId = UUID()
                                     lastSentMessageId = messageId
                                     
-                                    // Set initial offset for animation
+                                    // Set initial offset for the new message
                                     messageOffset[messageId] = UIScreen.main.bounds.height * 0.3
                                     
-                                    // Send the message
-                                    viewModel.sendMessage(viewModel.userInput.trimmingCharacters(in: .whitespacesAndNewlines))
+                                    // SYNCHRONOUSLY clear the input field before any async operations
+                                    let inputText = viewModel.userInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    viewModel.userInput = ""
+                                    lastInputClearTime = Date()
                                     
-                                    // Clear input
+                                    // Force UI update immediately to ensure the text field clears
                                     DispatchQueue.main.async {
-                                        viewModel.userInput = ""
+                                        // Double-ensure the input is cleared
+                                        if !viewModel.userInput.isEmpty {
+                                            viewModel.userInput = ""
+                                        }
                                     }
                                     
-                                    // Animate the message
-                                    let animationDuration = 0.5
+                                    // Create and send the message with the specific ID
+                                    let message = StreamingChatMessageFactory.createUserMessage(content: inputText, id: messageId)
+                                    viewModel.sendMessage(message)
+                                    
+                                    // Animation happens after clearing input and starting the send process
+                                    let animationDuration = 0.3
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                        // Animate the message bubble to its final position
                                         withAnimation(.spring(response: animationDuration, dampingFraction: 0.9)) {
                                             messageOffset[messageId] = 0
                                         }
                                         
-                                        // Clean up
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration + 0.3) {
+                                        // Clean up the messageOffset dictionary after animation completes
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration + 0.1) {
+                                            // Only remove if this is not the newest message
                                             if lastSentMessageId != messageId {
                                                 messageOffset.removeValue(forKey: messageId)
                                             }
                                             
-                                            // Remove focus after animation
+                                            // Remove focus after animation completes
+                                            isTextFieldFocused = false
                                             focusManager.removeAllFocus()
                                         }
                                     }
@@ -238,6 +270,7 @@ struct StreamingChatView: View {
                     DragGesture()
                         .onChanged { value in
                             if value.translation.height > 20 {
+                                isTextFieldFocused = false
                                 focusManager.removeAllFocus()
                             }
                         }
@@ -373,5 +406,12 @@ struct StreamingChatView: View {
     
     private func removeKeyboardNotifications() {
         NotificationCenter.default.removeObserver(self)
+    }
+}
+
+struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }

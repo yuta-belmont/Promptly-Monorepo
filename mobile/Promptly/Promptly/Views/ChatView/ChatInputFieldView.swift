@@ -69,13 +69,13 @@ struct ChatInputFieldView: View {
             }
         }
         .padding(.horizontal)
+        .padding(.vertical, 8)
     }
 
     var body: some View {
         Group {
             if hasPendingOutline {
                 outlineActionButtons
-                    .padding(.vertical, 8)
             } else {
                 HStack(alignment: .center, spacing: 8) {
                     TextField("Message Alfred...", text: $userInput, axis: .vertical)

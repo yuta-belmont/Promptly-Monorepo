@@ -98,7 +98,7 @@ async def stream_generator(request_id: str, request: Request) -> AsyncGenerator[
         await pubsub.unsubscribe(channel)
         await redis.close()
         
-@router.get("/api/v1/stream/{request_id}")
+@router.get("/stream/{request_id}")
 async def stream_response(request_id: str, request: Request) -> StreamingResponse:
     """
     Stream an AI response as Server-Sent Events.
