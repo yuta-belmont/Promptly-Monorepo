@@ -72,7 +72,6 @@ class ResultsPublisher:
                 result = self.redis.publish(channel, message)
                 
                 if result > 0:
-                    logger.debug(f"Published chunk to {channel}, {len(chunk_data)} chars")
                     return True
                 else:
                     logger.warning(f"No subscribers for channel {channel}")
@@ -107,20 +106,8 @@ class ResultsPublisher:
                 # Include full text if provided
                 if full_text:
                     message_data["full_text"] = full_text
-                    # Log the full_text content for debugging
-                    logger.info(f"DEBUG REDIS PUBLISHER: Publishing completion with full_text for {request_id}")
-                    logger.info(f"DEBUG REDIS PUBLISHER: First 100 chars of full_text: {full_text[:100]}")
-                    
-                    # Try parsing the full_text as JSON for detailed logging
                     try:
-                        json_data = json.loads(full_text)
-                        logger.info(f"DEBUG REDIS PUBLISHER: full_text is valid JSON with keys: {list(json_data.keys())}")
-                        
-                        # Special logging for outline data
-                        if "outline" in json_data:
-                            logger.info(f"DEBUG REDIS PUBLISHER: Contains OUTLINE data")
-                        elif "checklist_data" in json_data:
-                            logger.info(f"DEBUG REDIS PUBLISHER: Contains CHECKLIST data")
+                        json_data = json.loads(full_text)                        
                     except json.JSONDecodeError:
                         logger.info(f"DEBUG REDIS PUBLISHER: full_text is not valid JSON")
                     
@@ -130,7 +117,6 @@ class ResultsPublisher:
                 result = self.redis.publish(channel, message)
                 
                 if result > 0:
-                    logger.info(f"Published completion event to {channel}")
                     return True
                 else:
                     logger.warning(f"No subscribers for channel {channel}")
@@ -169,7 +155,6 @@ class ResultsPublisher:
                 result = self.redis.publish(channel, message)
                 
                 if result > 0:
-                    logger.info(f"Published error event to {channel}: {error_message}")
                     return True
                 else:
                     logger.warning(f"No subscribers for channel {channel}")
@@ -212,16 +197,11 @@ class ResultsPublisher:
                     "event": event_type,
                     "data": payload
                 })
-                
-                # Add debug logging for request ID flow
-                logger.info(f"DEBUG REQUEST FLOW: Publishing {event_type} event to channel {channel} with request_id: {request_id}")
-                
+                                
                 # Publish to Redis
                 result = self.redis.publish(channel, message)
                 
                 if result > 0:
-                    logger.info(f"Published {event_type} event to {channel}")
-                    logger.debug(f"Event data: {json.dumps(payload)[:200]}...")
                     return True
                 else:
                     logger.warning(f"No subscribers for channel {channel}")

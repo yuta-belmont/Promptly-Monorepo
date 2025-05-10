@@ -10,6 +10,7 @@ import traceback
 from typing import Dict, Any, Optional
 from google.cloud import pubsub_v1
 from google.api_core.exceptions import GoogleAPICallError
+import asyncio
 
 from app.pubsub.config import GCP_PROJECT_ID
 from app.pubsub.messaging.redis_publisher import ResultsPublisher
@@ -46,7 +47,7 @@ class PubSubWorker:
         
         logger.info(f"Worker {self.worker_id} initialized for subscription {self.subscription_id}")
     
-    def process_message(self, message):
+    async def process_message(self, message):
         """
         Process a message from Pub/Sub.
         
@@ -64,7 +65,7 @@ class PubSubWorker:
             logger.info(f"Worker {self.worker_id} processing message {request_id}")
             
             # Call the implementation in the subclass
-            success = self._process_message(data)
+            success = await self._process_message(data)
             
             if success:
                 # Acknowledge the message
@@ -118,7 +119,7 @@ class PubSubWorker:
                 message.ack()
                 logger.error(f"Message {retry_key} processing failed after {self.max_retries} retries, giving up")
     
-    def _process_message(self, data: Dict[str, Any]) -> bool:
+    async def _process_message(self, data: Dict[str, Any]) -> bool:
         """
         Process the message data.
         
@@ -133,6 +134,21 @@ class PubSubWorker:
         logger.warning("Base class _process_message called, no processing performed")
         return False
     
+    def _sync_process_message(self, message):
+        """
+        Synchronous wrapper for process_message.
+        
+        Args:
+            message: The Pub/Sub message
+        """
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            # Create a new event loop if one doesn't exist
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        return loop.run_until_complete(self.process_message(message))
+
     def start(self):
         """Start the worker."""
         if self.running:
@@ -149,7 +165,7 @@ class PubSubWorker:
         # Subscribe to the subscription
         self.streaming_pull_future = self.subscriber.subscribe(
             self.subscription_path, 
-            callback=self.process_message,
+            callback=self._sync_process_message,
             flow_control=flow_control
         )
         

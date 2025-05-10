@@ -26,9 +26,14 @@ class ChecklistParser:
         self.current_subitems = []
 
     async def parse_line(self, line: str, results_publisher, request_id: str):
+        logger.debug(f"parse_line called with line: {line[:50]}...")
+        logger.debug(f"results_publisher type: {type(results_publisher)}")
+        logger.debug(f"request_id: {request_id}")
+        
         # Early return if no publisher
         if not results_publisher:
-            return
+            logger.debug("No results_publisher, returning early")
+            return None
             
         self.buffer += line
         
@@ -37,11 +42,13 @@ class ChecklistParser:
         if date_match:
             self.current_date = date_match.group(1)
             self.buffer = self.buffer[date_match.end():]
+            logger.debug(f"Found date: {self.current_date}")
             
         # Look for item title pattern
         item_match = re.search(r'"title":\s*"([^"]+)"', self.buffer)
         if item_match and self.current_date:
             self.current_item = item_match.group(1)
+            logger.debug(f"Found item: {self.current_item}")
             # Send update with both date and item
             await results_publisher.publish_event(
                 request_id=request_id,
@@ -90,6 +97,8 @@ class ChecklistParser:
         elif not line and self.current_date:
             await self._send_date_complete(results_publisher, request_id)
             self.in_subitems = False
+            
+        return True  # Return a coroutine-compatible value
 
     async def _send_date_complete(self, results_publisher, request_id: str):
         # Early return if no publisher
@@ -710,102 +719,6 @@ class StreamingAIService:
             # Yield the fallback message as a single chunk
             yield fallback
     
-    async def generate_checklist(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, now: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
-        """
-        Generate checklist items based on the user's message.
-        This method is separate from generate_response and only handles checklist generation.
-        
-        Args:
-            message: The user's message
-            message_history: Previous message history for context
-            now: Current datetime (optional)
-            
-        Returns:
-            Optional[Dict[str, Any]]: A dictionary of checklist data, or None if generation fails
-        """
-        try:
-            logger.info("=== AGENT: Checklist Generator ===")
-            logger.info(f"Input: \"{message[:50]}{'...' if len(message) > 50 else ''}\"")
-            
-            # Get current date and time
-            if now is None:
-                now = datetime.now()
-            current_date = now.strftime("%A, %B %d, %Y")
-            current_time = now.strftime("%I:%M %p")
-            
-            # Create a specialized system message for checklist generation
-            checklist_system_message = CHECKLIST_AGENT_INSTRUCTIONS.format(
-                current_date=current_date,
-                current_time=current_time
-            )
-            
-            # Create messages for checklist generation
-            checklist_messages = [
-                {"role": "system", "content": checklist_system_message}
-            ]
-            
-            # Prepare context from message history using the standardized method
-            context_messages = self._prepare_context_messages(message_history)
-            
-            # Add context messages if available
-            if context_messages:
-                checklist_messages.extend(context_messages)
-            else:
-                # If no history provided, just add the current message
-                checklist_messages.append({"role": "user", "content": message})
-            
-            # Add instructions for the output format
-            format_instruction = CHECKLIST_FORMAT_INSTRUCTIONS
-            
-            # Add the format instruction to the last message
-            if checklist_messages[-1]["role"] == "user":
-                checklist_messages[-1]["content"] += "\n\n" + format_instruction
-            else:
-                checklist_messages.append({"role": "user", "content": format_instruction})
-            
-            # Generate checklist items
-            checklist_response = self.client.chat.completions.create(
-                model="gpt-4.1-2025-04-14",  # Always use the more capable model for checklists
-                messages=checklist_messages,
-                temperature=0.7,
-                max_tokens=5000,
-                response_format={"type": "json_object"}
-            )
-            
-            checklist_content = checklist_response.choices[0].message.content
-            
-            # Try to parse the checklist JSON
-            try:
-                checklist_json = json.loads(checklist_content)
-                checklist_data = checklist_json.get("checklist_data", {})
-                
-                # Log a sample of the checklist data
-                data_preview = json.dumps(checklist_data, indent=2)[:200] + "..." if len(json.dumps(checklist_data, indent=2)) > 200 else json.dumps(checklist_data, indent=2)
-                logger.info(f"Output: Generated checklist with {len(checklist_data)} date(s)")
-                logger.debug(f"Context msgs: {len(context_messages)}")
-                logger.debug(f"Model: gpt-4.1-2025-04-14")
-                logger.info("=====================================")
-                
-                return checklist_data
-                
-            except json.JSONDecodeError as e:
-                logger.error(f"Error parsing checklist JSON: {e}")
-                logger.info(f"Output: Failed to parse JSON response")
-                logger.debug(f"Context msgs: {len(context_messages)}")
-                logger.debug(f"Model: gpt-4.1-2025-04-14")
-                logger.info("=====================================")
-                # Return None if parsing fails
-                return None
-                
-        except Exception as e:
-            logger.error(f"Error generating checklist: {e}")
-            logger.info(f"Output: Failed to generate checklist due to exception")
-            logger.debug(f"Context msgs: 0")
-            logger.debug(f"Model: failed call")
-            logger.info("=====================================")
-            # Return None on error
-            return None
-    
     def _generate_fallback_response(self, message: str, user_full_name: Optional[str] = None) -> str:
         """Generate a fallback response when API calls fail"""
         greeting = f"Hi {user_full_name.split()[0] if user_full_name else 'there'}"
@@ -1082,12 +995,9 @@ class StreamingAIService:
                 )
             return None
 
-    async def _generate_streaming_checklist(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, 
-                                          client_time: Optional[str] = None, user_full_name: Optional[str] = None,
-                                          request_id: str = None, results_publisher = None) -> Dict[str, Any]:
-        """
-        Generate a checklist with streaming updates for each date.
-        """
+    async def generate_streaming_checklist(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, 
+                                      client_time: Optional[str] = None, user_full_name: Optional[str] = None,
+                                      request_id: str = None, results_publisher = None) -> Dict[str, Any]:
         try:
             # Send start event
             results_publisher.publish_event(
@@ -1098,68 +1008,97 @@ class StreamingAIService:
                 }
             )
 
-            # Prepare the prompt for structured checklist generation
-            prompt = f"""
-            Create a detailed checklist based on this request: {message}
-            
-            Generate each date's items in this exact format:
-            
-            DATE: YYYY-MM-DD
-            WORKOUT: [workout description]
-            NOTES: [optional notes]
-            SUBITEMS:
-            - [subitem 1]
-            - [subitem 2]
-            
-            [empty line between dates]
-            """
-            logger.error(f"1. We are HERE!!!!!")
-            # Initialize parser
-            parser = ChecklistParser()
-            logger.error(f"2. We are HERE!!!!!")
+            # Create messages array with the proper instructions
+            messages = [
+                {"role": "system", "content": CHECKLIST_FROM_OUTLINE_INSTRUCTIONS},
+                {"role": "user", "content": message}
+            ]
 
-            # Get streaming response from AI
-            response = self.client.chat.completions.create(
-                model="gpt-4-turbo-preview",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that creates detailed checklists."},
-                    {"role": "user", "content": prompt}
-                ],
-                stream=True
-            )
-            logger.error(f"3. We are HERE!!!!!")
+            # Start streaming with beta API and JSON response format
+            with self.client.beta.chat.completions.stream(
+                model=MID_TIER_MODEL,
+                messages=messages,
+                response_format={"type": "json_object"},
+                temperature=0.7
+            ) as stream:
+                for event in stream:
+                    if event.type == "content.delta":
+                        if hasattr(event, 'snapshot') and event.snapshot:
+                            try:
+                                snapshot_str = event.snapshot
+                                logger.info(f"=== START STREAM: checklist event received:\n {snapshot_str[:100]} ===")
 
+                                # Initialize search position if not exists
+                                if not hasattr(self, 'last_search_pos'):
+                                    self.last_search_pos = 0
 
-            # Process the streaming response
-            logger.error(f"4.We are HERE!!!!!")
+                                # Look for date field in the snapshot from last position
+                                date_match = re.search(r'"date":\s*"(\d{4}-\d{2}-\d{2})"', snapshot_str[self.last_search_pos:])
+                                if date_match:
+                                    current_date = date_match.group(1)
+                                    logger.info(f"Found date: {current_date}")
+                                    # Update search position to after this match
+                                    self.last_search_pos += date_match.end()
+                                
+                                # Look for title field after a date
+                                if current_date:
+                                    title_match = re.search(r'"title":\s*"([^"]+)"', snapshot_str[self.last_search_pos:])
+                                    if title_match:
+                                        current_title = title_match.group(1)
+                                        logger.info(f"Found title: {current_title}")
+                                        
+                                        # Publish update with both date and title
+                                        results_publisher.publish_event(
+                                            request_id=request_id,
+                                            event_type=CHECKLIST_UPDATE,
+                                            event_data={
+                                                "date": current_date,
+                                                "last_item": current_title
+                                            }
+                                        )
+                                        # Reset current_date and update search position
+                                        current_date = None
+                                        self.last_search_pos += title_match.end()
 
-            async for chunk in response:
-                if chunk.choices[0].delta.content:
-                    # Split the content into lines and process each line
-                    for line in chunk.choices[0].delta.content.split('\n'):
-                        await parser.parse_line(line, results_publisher, request_id)
-            logger.error(f"5. We are HERE 2!!!!!")
-
-            # Send completion event
-            results_publisher.publish_event(
-                request_id=request_id,
-                event_type=CHECKLIST_COMPLETE,
-                event_data={
-                    "message": "Completed creating your checklist"
-                }
-            )
-
-            return {"status": "success"}
+                            except Exception as e:
+                                logger.error(f"Error processing snapshot: {str(e)}")
+                                continue
+                    
+                    elif event.type == "content.done":
+                        # Get final completion and extract the actual JSON data
+                        final_completion = stream.get_final_completion()
+                        if hasattr(final_completion, 'choices') and final_completion.choices:
+                            content = final_completion.choices[0].message.content
+                            try:
+                                # Parse the JSON content
+                                checklist_data = json.loads(content)
+                                # Send complete event with final data
+                                results_publisher.publish_event(
+                                    request_id=request_id,
+                                    event_type=CHECKLIST_COMPLETE,
+                                    event_data=checklist_data
+                                )
+                                return checklist_data
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Error parsing final completion JSON: {str(e)}")
+                                return None
+                    
+                    elif event.type == "error":
+                        logger.error(f"Error in checklist stream: {event.error}")
+                        results_publisher.publish_event(
+                            request_id=request_id,
+                            event_type="error",
+                            event_data={"error": str(event.error)}
+                        )
+                        return None
 
         except Exception as e:
             logger.error(f"Error in streaming checklist generation: {str(e)}")
-            results_publisher.publish({
-                "event": "error",
-                "data": {
-                    "request_id": request_id,
-                    "error": str(e)
-                }
-            })
+            results_publisher.publish_event(
+                request_id=request_id,
+                event_type="error",
+                event_data={"error": str(e)}
+            )
             raise
 
     async def generate_streaming_response(self, message: str, message_history: Optional[List[Dict[str, Any]]] = None, 
@@ -1197,9 +1136,6 @@ class StreamingAIService:
             # Use the provided request_id or generate a new one if none was provided
             if request_id is None:
                 request_id = str(uuid.uuid4())
-                logger.info(f"DEBUG REQUEST FLOW: generate_streaming_response CREATED new request_id: {request_id}")
-            else:
-                logger.info(f"DEBUG REQUEST FLOW: generate_streaming_response USING existing request_id: {request_id}")
             
             log_buffer.start_request(request_id)
             
@@ -1857,120 +1793,183 @@ class StreamingAIService:
 
     async def generate_checklist_from_outline(self, summary: str, start_date: str, end_date: str, line_items: List[Dict[str, Any]], 
                                           request_id: str = None, results_publisher = None) -> Optional[Dict[str, Any]]:
-        logger.debug("Starting checklist generation")
-        logger.debug(f"Input params: summary={summary}, start_date={start_date}, end_date={end_date}")
-        logger.debug(f"Results publisher type: {type(results_publisher)}")
-        logger.debug(f"Request ID: {request_id}")
-        
+        logger.info("=== START: generate_checklist_from_outline ===")
         try:
-            # Send start event
-            if results_publisher:
-                logger.debug("Sending start event")
-                results_publisher.publish_event(
-                    request_id=request_id,
-                    event_type=CHECKLIST_START,
-                    event_data={
-                        "message": "Starting to generate your detailed checklist..."
-                    }
-                )
-                logger.debug("Start event sent")
+            # Prepare outline data
+            outline_data = {
+                "summary": summary,
+                "start_date": start_date,
+                "end_date": end_date,
+                "line_items": line_items
+            }
 
-            # Create the prompt with outline data
-            logger.debug("Creating prompt")
-            prompt = f"""Based on this outline, generate a detailed checklist:
-                Summary: {summary}
-                Period: {start_date} to {end_date}
-                Items: {json.dumps(line_items)}
-
-                Generate a detailed checklist following this exact JSON format:
-                {{
-                    "checklist_data": {{
-                        "name": "string",
-                        "dates": {{
-                            "YYYY-MM-DD": {{
-                                "items": [
-                                    {{
-                                        "title": "string",
-                                        "notification": "string or null",
-                                        "subitems": [
-                                            {{
-                                                "title": "string"
-                                            }}
-                                        ]
-                                    }}
-                                ]
-                            }}
-                        }}
-                    }}
-                }}"""
-            logger.debug("Prompt created")
-
-            # Initialize buffer for complete response
-            logger.debug("Initializing response buffer")
-            complete_response = ""
-            parser = ChecklistParser()
-            logger.debug("Buffer initialized")
-
-            # Get streaming response
-            logger.debug("Getting streaming response from AI")
-            response = self.client.chat.completions.create(
-                model=MID_TIER_MODEL,
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that creates detailed checklists."},
-                    {"role": "user", "content": prompt}
-                ],
-                stream=True
+            # Call the unified generate_checklist function with outline data
+            return await self.generate_checklist(
+                request_id=request_id,
+                results_publisher=results_publisher,
+                outline_data=outline_data
             )
-            logger.debug(f"Got response object type: {type(response)}")
-
-            # Process streaming response
-            logger.debug("Processing streaming response")
-            for chunk in response:
-                logger.debug(f"Processing chunk type: {type(chunk)}")
-                if chunk.choices[0].delta and chunk.choices[0].delta.content and isinstance(chunk.choices[0].delta.content, str):
-                    content = chunk.choices[0].delta.content
-                    logger.debug(f"Chunk content: {content[:100]}...")  # First 100 chars
-                    complete_response += content
-                    # Only call parse_line if we have a valid results_publisher
-                    if results_publisher:
-                        logger.debug("Calling parse_line")
-                        await parser.parse_line(content, results_publisher, request_id)
-                        logger.debug("parse_line completed")
-                else:
-                    logger.debug("Skipping chunk - no content or wrong type")
-
-            # Parse the complete response
-            logger.debug("Parsing complete response")
-            try:
-                logger.debug(f"Complete response length: {len(complete_response)}")
-                logger.debug(f"First 200 chars: {complete_response[:200]}")
-                checklist_data = json.loads(complete_response)
-                logger.debug("JSON parsed successfully")
-                
-                # Send complete event with final data if we have a results_publisher
-                if results_publisher:
-                    logger.debug("Sending complete event")
-                    await results_publisher.publish_event(
-                        request_id=request_id,
-                        event_type=CHECKLIST_COMPLETE,
-                        event_data=checklist_data
-                    )
-                    logger.debug("Complete event sent")
-                
-                logger.debug("Checklist generation completed successfully")
-                return checklist_data
-                
-            except json.JSONDecodeError as e:
-                logger.error(f"JSON parsing error: {str(e)}")
-                logger.error(f"Error type: {type(e)}")
-                logger.error(f"Error args: {e.args}")
-                return None
 
         except Exception as e:
             logger.error(f"Error in checklist generation: {str(e)}")
-            logger.error(f"Error type: {type(e)}")
-            logger.error(f"Error args: {e.args}")
             return None
+
+    async def generate_checklist(
+        self,
+        # Required params
+        request_id: str,
+        results_publisher: Any,
+        
+        # Optional params - either message or outline data must be provided
+        message: Optional[str] = None,
+        message_history: Optional[List[Dict[str, Any]]] = None,
+        
+        # Outline params
+        outline_data: Optional[Dict[str, Any]] = None,  # Contains summary, start_date, end_date, line_items
+        
+        # Optional context
+        client_time: Optional[str] = None,
+        user_full_name: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Unified checklist generation function that can handle both message-based and outline-based generation.
+        
+        Args:
+            request_id: Unique identifier for this request
+            results_publisher: Publisher for streaming events
+            message: User's message (for message-based generation)
+            message_history: Previous message history (for message-based generation)
+            outline_data: Dictionary containing outline information (for outline-based generation)
+                {
+                    "summary": str,
+                    "start_date": str,
+                    "end_date": str,
+                    "line_items": List[Dict[str, Any]]
+                }
+            client_time: Current time on client device
+            user_full_name: User's full name for personalization
+            
+        Returns:
+            Optional[Dict[str, Any]]: The generated checklist data
+        """
+
+        logger.info(f"DEBUG CHECKLIST GENERATION: Starting checklist generation for request {request_id}")
+        try:
+            # Prepare messages based on input type
+            if outline_data:
+                # Outline-based generation
+                user_message = f"""Based on this outline, generate a detailed checklist:
+                    Summary: {outline_data['summary']}
+                    Period: {outline_data['start_date']} to {outline_data['end_date']}
+                    Items: {json.dumps(outline_data['line_items'])}"""
+            else:
+                # Message-based generation
+                user_message = message
+
+            # Create messages array with the proper instructions
+            messages = [
+                {"role": "system", "content": CHECKLIST_FROM_OUTLINE_INSTRUCTIONS},
+                {"role": "user", "content": user_message}
+            ]
+
+            # Add message history if provided
+            if message_history:
+                messages.extend(message_history)
+            logger.info("=== START: parsed params for checklist generation ===")
+
+            # Start streaming with beta API and JSON response format
+            with self.client.beta.chat.completions.stream(
+                model=MID_TIER_MODEL,
+                messages=messages,
+                response_format={"type": "json_object"},
+                temperature=0.7
+            ) as stream:
+                logger.info("=== START STREAM: generate_checklist streaming commencing===")
+
+                            # Send start event
+                results_publisher.publish_event(
+                    request_id=request_id,
+                    event_type=CHECKLIST_START,
+                    event_data={"message": "Starting to create your checklist..."}
+                )
+                for event in stream:
+                    #logger.info(f"=== START STREAM: checklist event received: {event.type} ===")
+
+                    if event.type == "content.delta":
+                        if hasattr(event, 'snapshot') and event.snapshot:
+                            try:
+                                snapshot_str = event.snapshot
+                                logger.info(f"=== START STREAM: checklist event received:\n {snapshot_str[:100]} ===")
+
+                                # Initialize search position if not exists
+                                if not hasattr(self, 'last_search_pos'):
+                                    self.last_search_pos = 0
+
+                                # Look for date field in the snapshot from last position
+                                date_match = re.search(r'"date":\s*"(\d{4}-\d{2}-\d{2})"', snapshot_str[self.last_search_pos:])
+                                if date_match:
+                                    current_date = date_match.group(1)
+                                    logger.info(f"Found date: {current_date}")
+                                    # Update search position to after this match
+                                    self.last_search_pos += date_match.end()
+                                
+                                # Look for title field after a date
+                                if current_date:
+                                    title_match = re.search(r'"title":\s*"([^"]+)"', snapshot_str[self.last_search_pos:])
+                                    if title_match:
+                                        current_title = title_match.group(1)
+                                        logger.info(f"Found title: {current_title}")
+                                        
+                                        # Publish update with both date and title
+                                        results_publisher.publish_event(
+                                            request_id=request_id,
+                                            event_type=CHECKLIST_UPDATE,
+                                            event_data={
+                                                "date": current_date,
+                                                "last_item": current_title
+                                            }
+                                        )
+                                        # Reset current_date and update search position
+                                        current_date = None
+                                        self.last_search_pos += title_match.end()
+
+                            except Exception as e:
+                                logger.error(f"Error processing snapshot: {str(e)}")
+                                continue
+                    
+                    elif event.type == "content.done":
+                        final_completion = stream.get_final_completion()
+                        if hasattr(final_completion, 'choices') and final_completion.choices:
+                            content = final_completion.choices[0].message.content
+                            try:
+                                checklist_data = json.loads(content)
+                                results_publisher.publish_event(
+                                    request_id=request_id,
+                                    event_type=CHECKLIST_COMPLETE,
+                                    event_data=checklist_data
+                                )
+                                return checklist_data
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Error parsing final completion JSON: {str(e)}")
+                                return None
+                    
+                    elif event.type == "error":
+                        logger.error(f"Error in checklist stream: {event.error}")
+                        results_publisher.publish_event(
+                            request_id=request_id,
+                            event_type="error",
+                            event_data={"error": str(event.error)}
+                        )
+                        return None
+
+        except Exception as e:
+            logger.error(f"Error in checklist generation: {str(e)}")
+            results_publisher.publish_event(
+                request_id=request_id,
+                event_type="error",
+                event_data={"error": str(e)}
+            )
+            raise
 
 class DetailItem(BaseModel):
     title: str

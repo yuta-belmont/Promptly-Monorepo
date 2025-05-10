@@ -44,35 +44,32 @@ class UnifiedPubSubWorker(PubSubWorker):
         
         logger.info(f"Unified PubSub worker {self.worker_id} initialized")
     
-    def _process_message(self, data: Dict[str, Any]) -> bool:
+    async def _process_message(self, data: Dict[str, Any]) -> bool:
         """
-        Process any task from Pub/Sub based on task_type.
+        Process a message from Pub/Sub.
         
         Args:
-            data: The decoded message data
+            data: The message data
             
         Returns:
             True if processing was successful, False otherwise
         """
         try:
-            # Extract task parameters
-            request_id = data.get("request_id", "unknown")
+            # Extract task type and request ID
             task_type = data.get("task_type")
+            request_id = data.get("request_id")
             
-            if not task_type:
-                logger.error(f"Missing task_type for task {request_id}")
+            if not task_type or not request_id:
+                logger.error("Missing task_type or request_id in message data")
                 return False
-                
-            logger.info(f"Processing {task_type} task {request_id}")
-            logger.info(f"DEBUG REQUEST FLOW: Worker received task with request_id: {request_id}")
-            
+                            
             # Route to appropriate processor based on task_type
             if task_type == "message":
-                return self._process_message_task(request_id, data)
+                return await self._process_message_task(request_id, data)
             elif task_type == "checklist":
-                return self._process_checklist_task(request_id, data)
+                return await self._process_checklist_task(request_id, data)
             elif task_type == "checkin":
-                return self._process_checkin_task(request_id, data)
+                return await self._process_checkin_task(request_id, data)
             else:
                 logger.error(f"Unknown task type: {task_type} for task {request_id}")
                 return False
@@ -89,7 +86,7 @@ class UnifiedPubSubWorker(PubSubWorker):
                 
             return False
     
-    def _process_message_task(self, request_id: str, data: Dict[str, Any]) -> bool:
+    async def _process_message_task(self, request_id: str, data: Dict[str, Any]) -> bool:
         """
         Process a message task.
         
@@ -108,8 +105,6 @@ class UnifiedPubSubWorker(PubSubWorker):
             user_full_name = data.get("user_full_name")
             client_time = data.get("client_time")
             
-            # Log for debugging request ID flow
-            logger.info(f"DEBUG REQUEST FLOW: _process_message_task using request_id: {request_id}")
             
             # Validate required parameters
             if not user_id or not message_content:
@@ -119,23 +114,18 @@ class UnifiedPubSubWorker(PubSubWorker):
             # Create a callback function for streaming chunks to Redis
             def stream_callback(chunk: str):
                 # Stream the chunk via Redis for real-time delivery
-                logger.info(f"DEBUG REQUEST FLOW: Publishing chunk with request_id: {request_id}")
                 self.results_publisher.publish_chunk(request_id, chunk)
             
             # Generate optimized response using the streaming AI service with streaming
-            logger.info(f"DEBUG REQUEST FLOW: Calling generate_streaming_response for request_id: {request_id}")
-            response = self.loop.run_until_complete(
-                self.streaming_ai_service.generate_streaming_response(
-                    message=message_content,
-                    message_history=message_history,
-                    user_full_name=user_full_name,
-                    user_id=user_id,
-                    client_time=client_time,
-                    stream_callback=stream_callback,
-                    request_id=request_id
-                )
+            response = await self.streaming_ai_service.generate_streaming_response(
+                message=message_content,
+                message_history=message_history,
+                user_full_name=user_full_name,
+                user_id=user_id,
+                client_time=client_time,
+                stream_callback=stream_callback,
+                request_id=request_id
             )
-            logger.info(f"DEBUG REQUEST FLOW: Completed generate_streaming_response for request_id: {request_id}")
             
             # Extract results and log the response type
             response_text = response.get("response_text", "")
@@ -157,7 +147,6 @@ class UnifiedPubSubWorker(PubSubWorker):
                 completion_data = {
                     "outline": response["outline"]
                 }
-                logger.info(f"DEBUG RESPONSE TYPE: Outline included in completion data for request {request_id}")
                 
             # If checklist is needed and we have enough info, create a new checklist task
             if needs_checklist and not needs_more_info and "outline" not in response:
@@ -185,15 +174,12 @@ class UnifiedPubSubWorker(PubSubWorker):
                         "response_text": completion_data,
                         "checklist_request_id": checklist_request_id
                     }
-                
-                logger.info(f"DEBUG RESPONSE TYPE: Created checklist task {checklist_request_id} from message task {request_id}")
-            
+                            
             # Only publish completion event if we don't have an outline
             # (outlines are handled by their own completion event)
             if "outline" not in response:
                 # Publish completion event
                 completion_json = json.dumps(completion_data)
-                logger.info(f"DEBUG RESPONSE TYPE: Publishing completion with data: {completion_json}")
                 self.results_publisher.publish_completion(request_id, completion_json)
             else:
                 logger.info(f"DEBUG RESPONSE TYPE: Skipping completion event for outline request {request_id}")
@@ -212,7 +198,7 @@ class UnifiedPubSubWorker(PubSubWorker):
                 
             return False
     
-    def _process_checklist_task(self, request_id: str, data: Dict[str, Any]) -> bool:
+    async def _process_checklist_task(self, request_id: str, data: Dict[str, Any]) -> bool:
         """
         Process a checklist task.
         
@@ -233,12 +219,10 @@ class UnifiedPubSubWorker(PubSubWorker):
             
             # Validate required parameters
             if not user_id:
-                logger.error(f"Missing required user_id for checklist task {request_id}")
                 return False
                 
             # Either generate checklist from an outline or directly from the message
             if outline_data:
-                logger.error(f"PROCESS_CHECKLIST_TASK: outline_data found")
 
                 # Extract outline components
                 summary = outline_data.get("summary", "")
@@ -246,27 +230,23 @@ class UnifiedPubSubWorker(PubSubWorker):
                 end_date = outline_data.get("end_date", "")
                 line_items = outline_data.get("details", [])
                 
+                
                 # Generate checklist from outline
-                logger.info(f"Generating checklist from outline for task {request_id}")
-                logger.error(f"WE MADE IT HERE, BUT THE RUN UNTIL COMPLETE SHIT AINT GONNA WORK!")
 
-                checklist_data = self.loop.run_until_complete(
-                    self.streaming_ai_service.generate_checklist_from_outline(
-                        summary=summary,
-                        start_date=start_date,
-                        end_date=end_date,
-                        line_items=line_items,
-                        request_id=request_id,
-                        results_publisher=self.results_publisher
-                    )
+                checklist_data = await self.streaming_ai_service.generate_checklist_from_outline(
+                    summary=summary,
+                    start_date=start_date,
+                    end_date=end_date,
+                    line_items=line_items,
+                    request_id=request_id,
+                    results_publisher=self.results_publisher
                 )
+            
             else:
                 # Generate checklist directly from message
                 if not message_content:
-                    logger.error(f"Missing message_content for checklist task {request_id}")
                     return False
                     
-                logger.info(f"Generating checklist from message for task {request_id}")
                 checklist_data = self.loop.run_until_complete(
                     self.streaming_ai_service.generate_checklist(
                         message=message_content,
@@ -279,7 +259,6 @@ class UnifiedPubSubWorker(PubSubWorker):
             
             # Check if we successfully generated checklist data
             if not checklist_data:
-                logger.error(f"Failed to generate checklist data for task {request_id}")
                 self.results_publisher.publish_error(request_id, "Failed to generate checklist data")
                 return False
                 
@@ -289,7 +268,6 @@ class UnifiedPubSubWorker(PubSubWorker):
             # Publish the results
             self.results_publisher.publish_completion(request_id, checklist_json)
             
-            logger.info(f"Checklist task {request_id} completed successfully")
             return True
             
         except Exception as e:
@@ -303,7 +281,7 @@ class UnifiedPubSubWorker(PubSubWorker):
                 
             return False
     
-    def _process_checkin_task(self, request_id: str, data: Dict[str, Any]) -> bool:
+    async def _process_checkin_task(self, request_id: str, data: Dict[str, Any]) -> bool:
         """
         Process a check-in task.
         
@@ -328,7 +306,6 @@ class UnifiedPubSubWorker(PubSubWorker):
                 return False
             
             # Process the check-in analysis
-            logger.info(f"Analyzing check-in for user {user_id}, request {request_id}")
             
             # Use the AI service to analyze the checklist
             analysis_json = self.ai_service.analyze_checkin(
